@@ -9,6 +9,7 @@ import Timeline from "./Timeline";
 import StatusBar from "./StatusBar";
 import CommentsPanel from "./CommentsPanel";
 import OperationProperties from "./OperationProperties";
+import CodeEditorPanel from "./CodeEditorPanel";
 import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
 
@@ -84,6 +85,9 @@ const CADLayout = () => {
       <div className="flex-1 flex overflow-hidden">
         {/* Left browser panel */}
         <BrowserPanel />
+
+        {/* Code Editor Panel */}
+        <CodeEditorPanel />
 
         {/* Center viewport */}
         <div className="flex-1 flex flex-col relative">

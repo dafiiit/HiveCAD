@@ -1,6 +1,15 @@
 import { create } from 'zustand';
 import * as THREE from 'three';
 import { initCAD, makeBoxHelper, makeCylinderHelper, makeSphereHelper, replicadToThreeGeometry, createSketchHelper, createSketchFromPrimitives } from '../lib/cad-kernel';
+import * as replicad from 'replicad';
+import { toast } from 'sonner';
+
+const DEFAULT_CODE = `const { drawEllipse, makeBox, makeCylinder } = replicad;
+const main = () => {
+  let shapes = [];
+  shapes.push(drawEllipse(20, 30).sketchOnPlane().extrude(50).fillet(2));
+  return shapes;
+};`;
 
 const shapeRegistry = new Map<string, any>(); // Stores WASM objects
 
@@ -168,6 +177,11 @@ interface CADState {
   updateOperationParams: (params: any) => void;
   cancelOperation: () => void;
   applyOperation: () => void;
+
+  // Code Editor
+  code: string;
+  setCode: (code: string) => void;
+  runCode: () => void;
 }
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -221,8 +235,10 @@ export const useCADStore = create<CADState>((set, get) => ({
   helpOpen: false,
   notificationsOpen: false,
   activeOperation: null,
+  code: DEFAULT_CODE,
 
   // Object actions
+  // Code-First Object actions
   addObject: async (type, options = {}) => {
     try {
       await initCAD();
@@ -231,113 +247,45 @@ export const useCADStore = create<CADState>((set, get) => ({
       return;
     }
 
-    const state = get();
-    const id = generateId();
-    const count = state.objects.filter(o => o.type === type).length + 1;
-
-    const newObject: CADObject = {
-      id,
-      name: options.name || `${type.charAt(0).toUpperCase() + type.slice(1)}${count}`,
-      type,
-      position: options.position || [0, 5, 0],
-      rotation: options.rotation || [0, 0, 0],
-      scale: options.scale || [1, 1, 1],
-      dimensions: options.dimensions || getDefaultDimensions(type),
-      color: options.color || getNextColor(),
-      visible: true,
-      selected: false,
-    };
+    const currentState = get();
+    // Generate Code Snippet
+    let snippet = "";
 
     if (type === 'box') {
-      try {
-        console.log('Creating box with dimensions:', newObject.dimensions);
-        const { width, height, depth } = newObject.dimensions;
-        // Call the kernel
-        const shape = makeBoxHelper(width, height, depth);
-
-        // Store the raw B-Rep shape if needed
-        shapeRegistry.set(id, shape);
-
-        // Convert to mesh (Tesselation)
-        const geometry = replicadToThreeGeometry(shape);
-        newObject.geometry = geometry;
-
-        console.log('Box created successfully, geometry:', geometry);
-      } catch (e) {
-        console.error("Failed to create box via replicad kernel:", e);
-        // Fallback or alert user?
-      }
+      const { width, height, depth } = options.dimensions || { width: 10, height: 10, depth: 10 };
+      snippet = `shapes.push(replicad.makeBox(${width}, ${height}, ${depth}));`;
     } else if (type === 'cylinder') {
-      try {
-        const { radius, height } = newObject.dimensions;
-        const shape = makeCylinderHelper(radius, height);
-        shapeRegistry.set(id, shape);
-        const geometry = replicadToThreeGeometry(shape);
-        newObject.geometry = geometry;
-      } catch (e) {
-        console.error("Failed to create cylinder:", e);
-      }
+      const { radius, height } = options.dimensions || { radius: 5, height: 15 };
+      snippet = `shapes.push(replicad.makeCylinder(${radius}, ${height}));`;
     } else if (type === 'sphere') {
-      try {
-        const { radius } = newObject.dimensions;
-        const shape = makeSphereHelper(radius);
-        shapeRegistry.set(id, shape);
-        const geometry = replicadToThreeGeometry(shape);
-        newObject.geometry = geometry;
-      } catch (e) {
-        console.error("Failed to create sphere:", e);
-      }
-    } else if (type === 'extrusion') {
-      try {
-        const state = get();
-        const selectedId = [...state.selectedIds][0];
-        const sourceShape = shapeRegistry.get(selectedId);
-
-        if (sourceShape) {
-          const { distance, twistAngle, endFactor, profile } = newObject.dimensions;
-
-          // Configure extrusion
-          const extrusionConfig: any = {
-            twistAngle,
-            extrusionProfile: { profile, endFactor }
-          };
-
-          // Attempt to extrude
-          // Note: sourceShape needs to be a sketch/face
-          const shape = sourceShape.extrude(distance, extrusionConfig);
-
-          shapeRegistry.set(id, shape);
-          const geometry = replicadToThreeGeometry(shape);
-          newObject.geometry = geometry;
-
-          console.log('Extrusion created successfully');
-        } else {
-          console.warn("No source shape found for extrusion (select a sketch first)");
-          // We should probably allow creating the metadata anyway or abort?
-          // For now, abort if no source
-          return;
-        }
-      } catch (e) {
-        console.error("Failed to extrude:", e);
-        return;
-      }
+      const { radius } = options.dimensions || { radius: 10 };
+      snippet = `shapes.push(replicad.makeSphere(${radius}));`;
+    } else if (type === 'torus') {
+      // Replicad API for Torus is likely makeTorus(major, minor)
+      const { radius, tube } = options.dimensions || { radius: 10, tube: 2 };
+      snippet = `shapes.push(replicad.makeTorus(${radius}, ${tube}));`;
     }
 
-    const historyItem: HistoryItem = {
-      id: generateId(),
-      type: 'create',
-      name: `Create ${newObject.name}`,
-      timestamp: Date.now(),
-      objectIds: [id],
-    };
+    if (snippet) {
+      // Parse current code to find insertion point
+      let newCode = currentState.code;
+      // Simple insertion before "return shapes;" or at end of main
+      // We assume strict structure for now or just append to main
 
-    set({
-      objects: [...state.objects, newObject],
-      history: [...state.history.slice(0, state.historyIndex + 1), historyItem],
-      historyIndex: state.historyIndex + 1,
-      isSaved: false,
-      activeTool: 'select',
-    });
+      const returnIndex = newCode.lastIndexOf("return shapes;");
+      if (returnIndex !== -1) {
+        newCode = newCode.slice(0, returnIndex) + "  " + snippet + "\n  " + newCode.slice(returnIndex);
+      } else {
+        // Fallback if structure is broken, append to end of main? tricky.
+        // Let's just regex replace the end of function
+        newCode = newCode.replace(/};$/, `  ${snippet}\n  return shapes;\n};`);
+      }
+
+      set({ code: newCode });
+
+      // Run code immediately (or let the effect handle it)
+      // get().runCode(); 
+    }
   },
 
   updateObject: (id, updates) => {
@@ -666,5 +614,74 @@ export const useCADStore = create<CADState>((set, get) => ({
     state.addObject(type as any, { dimensions: params });
 
     set({ activeOperation: null });
+  },
+
+  setCode: (code) => set({ code }),
+
+  runCode: async () => {
+    const state = get();
+    try {
+      await initCAD();
+
+      // Execute code
+      // We expect the user to define a function 'main' or return a shape
+      // We wrap it to return the result of 'main()' if defined, or the last expression
+
+      const evaluator = new Function('replicad', state.code + "\nreturn main();");
+      const result = evaluator(replicad);
+
+      let shapesArray: any[] = [];
+      if (Array.isArray(result)) {
+        shapesArray = result;
+      } else if (result && typeof result === 'object') {
+        if (result.shape) {
+          // Handle { shape: ..., name: ... } pattern
+          shapesArray = [result];
+        } else if (result.mesh) {
+          // Handle single Shape object (duck typing check for .mesh or similar)
+          shapesArray = [result];
+        } else {
+          // Maybe it's a generic object but not a shape? 
+          // Try treating it as a shape, if it fails, we catch error below
+          shapesArray = [result];
+        }
+      } else if (result) {
+        shapesArray = [result];
+      }
+
+      const newObjects: CADObject[] = shapesArray.map((item, index) => {
+        const shape = item.shape || item;
+        const name = item.name || `Shape ${index + 1}`;
+        const id = `shape-${index}`;
+
+        let geometry = null;
+        try {
+          geometry = replicadToThreeGeometry(shape);
+        } catch (err) {
+          console.error(`Failed to convert shape ${index} to geometry:`, err);
+        }
+
+        return {
+          id,
+          name,
+          type: "sketch" as const,
+          position: [0, 0, 0] as [number, number, number],
+          rotation: [0, 0, 0] as [number, number, number],
+          scale: [1, 1, 1] as [number, number, number],
+          dimensions: {},
+          color: item.color || getNextColor(),
+          visible: true,
+          selected: false,
+          geometry: geometry || undefined
+        };
+      }).filter(obj => obj.geometry !== undefined);
+
+      set({ objects: newObjects });
+      console.log(`Code execution finished. Generated ${newObjects.length} objects.`);
+
+    } catch (e: any) {
+      console.error("Error executing code:", e);
+      toast.error(`Error: ${e.message}`);
+    }
   },
 }));
