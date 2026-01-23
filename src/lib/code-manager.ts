@@ -17,6 +17,7 @@ export interface FeatureOperation {
     name: string;
     args: any[];
     index?: number; // Index in the method chain
+    codeRange: CodeRange;
 }
 
 export interface FeatureNode {
@@ -65,46 +66,54 @@ export class CodeManager {
                     const varName = decl.id.name;
                     const operations: FeatureOperation[] = [];
                     let source = "";
-                    let current = decl.init;
-
-                    // Traverse the call chain
-                    const chainStack: any[] = [];
-                    let temp = current;
-
-                    while (temp) {
-                        if (t.isCallExpression(temp)) {
-                            chainStack.push(temp);
-                            temp = temp.callee;
-                        } else if (t.isMemberExpression(temp)) {
-                            temp = temp.object;
-                        } else {
-                            break;
-                        }
-                    }
 
                     // Re-evaluating the traversal strategy
                     let ptr = decl.init;
                     while (true) {
                         if (t.isCallExpression(ptr)) {
+                            // It's a method call: operationName(...args)
+                            // We need to grab the location of this specific call expression.
+                            // The location of the MemberExpression property is often what we want for highlighting "line", "arc", etc.
+                            // But usually, the CallExpression covers the `name(args)` part roughly.
+
+                            // Let's look at the callee.
+                            // chain.method(args)
                             if (t.isMemberExpression(ptr.callee)) {
                                 const propName = (ptr.callee.property as t.Identifier).name;
+                                const loc = ptr.loc ? { start: ptr.loc.start, end: ptr.loc.end } : { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } };
 
                                 // Check for replicad.draw case (base of chain)
                                 if (t.isIdentifier(ptr.callee.object) && ptr.callee.object.name === 'replicad') {
-                                    operations.unshift({ name: propName, args: ptr.arguments });
+                                    operations.unshift({
+                                        name: propName,
+                                        args: ptr.arguments,
+                                        codeRange: loc
+                                    });
                                     source = 'replicad';
                                     break; // Stop at replicad
                                 }
 
-                                operations.unshift({ name: propName, args: ptr.arguments });
+                                operations.unshift({
+                                    name: propName,
+                                    args: ptr.arguments,
+                                    codeRange: loc
+                                });
                                 ptr = ptr.callee.object;
                             } else if (t.isIdentifier(ptr.callee)) {
-                                operations.unshift({ name: ptr.callee.name, args: ptr.arguments });
+                                // Direct function call: func(args)
+                                const loc = ptr.loc ? { start: ptr.loc.start, end: ptr.loc.end } : { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } };
+                                operations.unshift({
+                                    name: ptr.callee.name,
+                                    args: ptr.arguments,
+                                    codeRange: loc
+                                });
                                 break; // Stop at base function
                             } else {
                                 break;
                             }
                         } else if (t.isMemberExpression(ptr)) {
+                            // Just a property access without call? e.g. obj.prop
+                            // usually we skip unless it's the end of a chain that isn't called
                             ptr = ptr.object;
                         } else if (t.isIdentifier(ptr)) {
                             source = ptr.name;
