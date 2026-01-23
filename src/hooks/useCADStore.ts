@@ -244,40 +244,27 @@ export const useCADStore = create<CADState>((set, get) => ({
     }
 
     const currentState = get();
-    // Generate Code Snippet
-    let snippet = "";
 
-    // We append to 'shapes' array assumed to exist in main
-    // Ideally we analyze AST to find where to insert.
-    // For now, strict assumption: inside main function.
+    const cm = new CodeManager(currentState.code);
+    let newCode = currentState.code;
 
     if (type === 'box') {
       const { width, height, depth } = options.dimensions || { width: 10, height: 10, depth: 10 };
-      snippet = `shapes.push(replicad.makeBox(${width}, ${height}, ${depth}));`;
+      cm.addFeature('makeBox', null, [width, height, depth]);
     } else if (type === 'cylinder') {
       const { radius, height } = options.dimensions || { radius: 5, height: 15 };
-      snippet = `shapes.push(replicad.makeCylinder(${radius}, ${height}));`;
+      cm.addFeature('makeCylinder', null, [radius, height]);
     } else if (type === 'sphere') {
       const { radius } = options.dimensions || { radius: 10 };
-      snippet = `shapes.push(replicad.makeSphere(${radius}));`;
+      cm.addFeature('makeSphere', null, [radius]);
     } else if (type === 'torus') {
       const { radius, tube } = options.dimensions || { radius: 10, tube: 2 };
-      snippet = `shapes.push(replicad.makeTorus(${radius}, ${tube}));`;
+      cm.addFeature('makeTorus', null, [radius, tube]);
     }
 
-    if (snippet) {
-      let newCode = currentState.code;
-      // Simple heuristic insertion
-      const returnIndex = newCode.lastIndexOf("return shapes;");
-      if (returnIndex !== -1) {
-        newCode = newCode.slice(0, returnIndex) + "  " + snippet + "\n  " + newCode.slice(returnIndex);
-      } else {
-        newCode = newCode.replace(/};$/, `  ${snippet}\n  return shapes;\n};`);
-      }
+    set({ code: cm.getCode() });
+    get().runCode();
 
-      set({ code: newCode });
-      get().runCode();
-    }
   },
 
   updateObject: (id, updates) => {
@@ -293,15 +280,24 @@ export const useCADStore = create<CADState>((set, get) => ({
 
       // Heuristic mapping of properties to arg indices
       // Ideally CodeManager or a Schema would handle this
+      // Note: We assume the MAIN creation operation is at the end of the operations list? 
+      // CodeManager logic maps innermost to 0. 
+      // A creation call like replicad.makeBox is innermost (and only). So index 0.
+
+      const opIndex = 0;
+
       if (obj.type === 'box') {
-        if (updates.dimensions.width !== undefined) cm.updateArgument(id, 0, updates.dimensions.width);
-        if (updates.dimensions.height !== undefined) cm.updateArgument(id, 1, updates.dimensions.height);
-        if (updates.dimensions.depth !== undefined) cm.updateArgument(id, 2, updates.dimensions.depth);
+        const d = obj.dimensions;
+        const newDims = { ...d, ...updates.dimensions };
+        cm.updateOperation(id, opIndex, [newDims.width, newDims.height, newDims.depth]);
       } else if (obj.type === 'cylinder') {
-        if (updates.dimensions.radius !== undefined) cm.updateArgument(id, 0, updates.dimensions.radius);
-        if (updates.dimensions.height !== undefined) cm.updateArgument(id, 1, updates.dimensions.height);
+        const d = obj.dimensions;
+        const newDims = { ...d, ...updates.dimensions };
+        cm.updateOperation(id, opIndex, [newDims.radius, newDims.height]);
       } else if (obj.type === 'sphere') {
-        if (updates.dimensions.radius !== undefined) cm.updateArgument(id, 0, updates.dimensions.radius);
+        const d = obj.dimensions;
+        const newDims = { ...d, ...updates.dimensions };
+        cm.updateOperation(id, opIndex, [newDims.radius]);
       }
 
       set({ code: cm.getCode() });
@@ -322,7 +318,7 @@ export const useCADStore = create<CADState>((set, get) => ({
     const state = get();
     // Code First Deletion
     const cm = new CodeManager(state.code);
-    cm.removeNode(id);
+    cm.removeFeature(id);
     const newCode = cm.getCode();
 
     if (newCode !== state.code) {
@@ -410,9 +406,60 @@ export const useCADStore = create<CADState>((set, get) => ({
   finishSketch: () => {
     const state = get();
     // Generate Code for Sketch
-    // ... Implementation to generate Replicad drawing commands ...
-    // For now clear state
+    const cm = new CodeManager(state.code);
+
+    // Create new sketch variable
+    // const sketch1 = replicad.draw();
+    const sketchName = cm.addFeature('draw', null, []);
+
+    // Iterate commands
+    // We assume primitives are: Line, Circle, etc.
+    // Replicad 'draw' is turtle-like.
+    // For now, let's just generate the primitives as a chain.
+
+    // WARNING: This assumes primitives are ordered and connected.
+    // In a real implementation we would need to walk the graph or just issue absolute moves.
+    // replicad.draw() starts at (0,0).
+
+    // Move to start point of first primitive?
+
+    state.activeSketchPrimitives.forEach(prim => {
+      if (prim.type === 'line') {
+        // Line is [start, end]
+        // We might need to 'move' to start if not there
+        // But for now, let's assume usage of .lineEdit() or similar if available, OR just .lineTo(x, y)
+        // Replicad typically has .line(dx, dy) or .lineTo(x, y)
+        const end = prim.points[1];
+        cm.addOperation(sketchName, 'lineTo', [end[0], end[1]]);
+      } else if (prim.type === 'circle') {
+        // Circle [center, edge] -> calculated radius
+        const center = prim.points[0];
+        const edge = prim.points[1];
+        const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
+
+        // Move to center? Or arc?
+        // Replicad simple 'circle' usually creates a full circle.
+        // If we are chaining inside 'draw', we usually do lines/arcs.
+        // If we want a separate circle, we might use replicad.makeCircle().
+        // But for now, let's assume we are drawing a profile.
+      }
+    });
+
+    // Handle common 'rectangle' case which is a closed loop
+    // If it's a rectangle tool, we might have a specific primitive.
+
+    if (state.activeSketchPrimitives.length > 0) {
+      // Naive: just close?
+      // cm.addOperation(sketchName, 'close', []);
+    }
+
+    // Sketch on Plane
+    if (state.sketchPlane) {
+      cm.addOperation(sketchName, 'sketchOnPlane', [state.sketchPlane]);
+    }
+
     set({
+      code: cm.getCode(),
       isSketchMode: false,
       sketchPoints: [],
       activeSketchPrimitives: [],
@@ -422,6 +469,8 @@ export const useCADStore = create<CADState>((set, get) => ({
       activeTool: 'select',
       lockedValues: {}
     });
+
+    get().runCode();
   },
 
   setSketchInputLock: (key, value) => {
@@ -549,12 +598,18 @@ export const useCADStore = create<CADState>((set, get) => ({
         }
 
         let type = existing?.type || 'sketch';
-        const nodeInfo = cm.nodeMap.get(astId);
-        if (nodeInfo) {
-          if (nodeInfo.type.toLowerCase().includes('box')) type = 'box';
-          else if (nodeInfo.type.toLowerCase().includes('cylinder')) type = 'cylinder';
-          else if (nodeInfo.type.toLowerCase().includes('sphere')) type = 'sphere';
-          else if (nodeInfo.type.toLowerCase().includes('torus')) type = 'torus';
+
+
+        // Find feature by ID (variable name)
+        const feature = cm.getFeatures().find(f => f.id === astId);
+
+        if (feature) {
+          // Heuristic: check last operation or creation op
+          const opName = feature.operations[0]?.name?.toLowerCase() || '';
+          if (opName.includes('box')) type = 'box';
+          else if (opName.includes('cylinder')) type = 'cylinder';
+          else if (opName.includes('sphere')) type = 'sphere';
+          else if (opName.includes('torus')) type = 'torus';
         }
 
         return {
