@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { 
-  ChevronDown, 
-  ChevronRight, 
-  Minus, 
-  Pencil, 
-  ArrowUpRight 
+import {
+  ChevronDown,
+  ChevronRight,
+  Minus,
+  Pencil,
+  ArrowUpRight
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useCADStore } from "@/hooks/useCADStore";
@@ -27,8 +27,8 @@ const OptionRow = ({ label, checked, onChange, icon }: OptionRowProps) => (
       {icon}
       {label}
     </span>
-    <Checkbox 
-      checked={checked} 
+    <Checkbox
+      checked={checked}
       onCheckedChange={onChange}
       className="w-3.5 h-3.5 border-muted-foreground data-[state=checked]:bg-primary data-[state=checked]:border-primary"
     />
@@ -36,8 +36,8 @@ const OptionRow = ({ label, checked, onChange, icon }: OptionRowProps) => (
 );
 
 const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
-  const { exitSketchMode, activeTool, setActiveTool, toggleGrid, gridVisible } = useCADStore();
-  
+  const { exitSketchMode, finishSketch, activeTool, setActiveTool, toggleGrid, gridVisible } = useCADStore();
+
   const [optionsExpanded, setOptionsExpanded] = useState(true);
   const [options, setOptions] = useState({
     lookAt: true,
@@ -57,14 +57,14 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
 
   const updateOption = (key: keyof typeof options) => (checked: boolean) => {
     setOptions(prev => ({ ...prev, [key]: checked }));
-    
+
     // Handle specific options
     if (key === 'sketchGrid') {
       if (checked !== gridVisible) {
         toggleGrid();
       }
     }
-    
+
     toast(`${key}: ${checked ? 'enabled' : 'disabled'}`);
   };
 
@@ -74,7 +74,7 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
   };
 
   const handleFinishSketch = () => {
-    exitSketchMode();
+    finishSketch();
     toast.success("Sketch completed");
   };
 
@@ -82,7 +82,7 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
     <div className="cad-sketch-palette flex flex-col">
       <div className="cad-panel-header">
         <span>Sketch Palette</span>
-        <button 
+        <button
           className="text-muted-foreground hover:text-foreground"
           onClick={handleFinishSketch}
           title="Close palette"
@@ -117,14 +117,14 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
               <div className="px-3 py-1 flex items-center gap-2 text-xs text-muted-foreground">
                 <span>Line Type</span>
                 <div className="flex gap-1 ml-auto">
-                  <button 
+                  <button
                     className={`p-1 rounded transition-colors ${activeTool === 'line' ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'}`}
                     onClick={() => handleLineType('normal')}
                     title="Normal line"
                   >
                     <Pencil className="w-3 h-3" />
                   </button>
-                  <button 
+                  <button
                     className="p-1 hover:bg-secondary rounded"
                     onClick={() => handleLineType('construction')}
                     title="Construction line"
@@ -134,59 +134,59 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
                 </div>
               </div>
 
-              <OptionRow 
-                label="Look At" 
-                checked={options.lookAt} 
+              <OptionRow
+                label="Look At"
+                checked={options.lookAt}
                 onChange={updateOption("lookAt")}
               />
-              <OptionRow 
-                label="Sketch Grid" 
-                checked={options.sketchGrid} 
+              <OptionRow
+                label="Sketch Grid"
+                checked={options.sketchGrid}
                 onChange={updateOption("sketchGrid")}
               />
-              <OptionRow 
-                label="Snap" 
-                checked={options.snap} 
+              <OptionRow
+                label="Snap"
+                checked={options.snap}
                 onChange={updateOption("snap")}
               />
-              <OptionRow 
-                label="Slice" 
-                checked={options.slice} 
+              <OptionRow
+                label="Slice"
+                checked={options.slice}
                 onChange={updateOption("slice")}
               />
-              <OptionRow 
-                label="Profile (Long)" 
-                checked={options.profileLong} 
+              <OptionRow
+                label="Profile (Long)"
+                checked={options.profileLong}
                 onChange={updateOption("profileLong")}
               />
-              <OptionRow 
-                label="Points" 
-                checked={options.points} 
+              <OptionRow
+                label="Points"
+                checked={options.points}
                 onChange={updateOption("points")}
               />
-              <OptionRow 
-                label="Dimensions" 
-                checked={options.dimensions} 
+              <OptionRow
+                label="Dimensions"
+                checked={options.dimensions}
                 onChange={updateOption("dimensions")}
               />
-              <OptionRow 
-                label="Constraints" 
-                checked={options.constraints} 
+              <OptionRow
+                label="Constraints"
+                checked={options.constraints}
                 onChange={updateOption("constraints")}
               />
-              <OptionRow 
-                label="Projected Geometry" 
-                checked={options.projectedGeometry} 
+              <OptionRow
+                label="Projected Geometry"
+                checked={options.projectedGeometry}
                 onChange={updateOption("projectedGeometry")}
               />
-              <OptionRow 
-                label="Construction Geometry" 
-                checked={options.constructionGeometry} 
+              <OptionRow
+                label="Construction Geometry"
+                checked={options.constructionGeometry}
                 onChange={updateOption("constructionGeometry")}
               />
-              <OptionRow 
-                label="3D Sketch" 
-                checked={options.sketch3D} 
+              <OptionRow
+                label="3D Sketch"
+                checked={options.sketch3D}
                 onChange={updateOption("sketch3D")}
               />
             </div>
@@ -195,7 +195,7 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
       </div>
 
       <div className="p-2 border-t border-border">
-        <button 
+        <button
           onClick={handleFinishSketch}
           className="w-full py-1.5 px-3 text-xs bg-primary hover:bg-primary/90 text-primary-foreground rounded transition-colors font-medium"
         >

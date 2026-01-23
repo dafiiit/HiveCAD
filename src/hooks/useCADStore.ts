@@ -1,8 +1,11 @@
 import { create } from 'zustand';
 import * as THREE from 'three';
+import { initCAD, makeBoxHelper, replicadToThreeGeometry, createSketchHelper } from '../lib/cad-kernel';
+
+const shapeRegistry = new Map<string, any>(); // Stores WASM objects
 
 // Types
-export type ToolType = 
+export type ToolType =
   | 'select' | 'pan' | 'orbit'
   | 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil'
   | 'sketch' | 'line' | 'arc' | 'circle' | 'rectangle' | 'polygon' | 'spline'
@@ -24,6 +27,7 @@ export interface CADObject {
   color: string;
   visible: boolean;
   selected: boolean;
+  geometry?: THREE.BufferGeometry;
 }
 
 export interface HistoryItem {
@@ -43,39 +47,55 @@ export interface Comment {
   position?: [number, number, number];
 }
 
+export interface SketchPrimitive {
+  id: string;
+  type: 'line' | 'rectangle' | 'circle' | 'arc';
+  points: [number, number][]; // Standardized points: Line [p1...pn], Rect [p1, p2], Circle [center, edge]
+}
+
 interface CADState {
   // Objects
   objects: CADObject[];
   selectedIds: Set<string>;
-  
+
   // Tools
   activeTool: ToolType;
   activeTab: 'SOLID' | 'SURFACE' | 'MESH' | 'SHEET' | 'PLASTIC' | 'MANAGE' | 'UTILITIES' | 'SKETCH';
   isSketchMode: boolean;
-  
+
+  // Sketch State
+  sketchPlane: 'XY' | 'XZ' | 'YZ' | null;
+  sketchStep: 'select-plane' | 'drawing';
+  activeSketchPrimitives: SketchPrimitive[];
+  // Used for the primitive actively being drawn (dragged/interacted with)
+  currentDrawingPrimitive: SketchPrimitive | null;
+
+  // Deprecated/Legacy
+  sketchPoints: [number, number][];
+
   // View
   currentView: ViewType;
   zoom: number;
   gridVisible: boolean;
-  
+
   // History
   history: HistoryItem[];
   historyIndex: number;
-  
+
   // File
   fileName: string;
   isSaved: boolean;
-  
+
   // Comments
   comments: Comment[];
   commentsExpanded: boolean;
-  
+
   // UI
   searchOpen: boolean;
   settingsOpen: boolean;
   helpOpen: boolean;
   notificationsOpen: boolean;
-  
+
   // Actions - Objects
   addObject: (type: CADObject['type'], options?: Partial<CADObject>) => void;
   updateObject: (id: string, updates: Partial<CADObject>) => void;
@@ -83,19 +103,19 @@ interface CADState {
   selectObject: (id: string, multiSelect?: boolean) => void;
   clearSelection: () => void;
   duplicateSelected: () => void;
-  
+
   // Actions - Tools
   setActiveTool: (tool: ToolType) => void;
   setActiveTab: (tab: CADState['activeTab']) => void;
   enterSketchMode: () => void;
   exitSketchMode: () => void;
-  
+
   // Actions - View
   setView: (view: ViewType) => void;
   setZoom: (zoom: number) => void;
   toggleGrid: () => void;
   fitToScreen: () => void;
-  
+
   // Actions - History
   undo: () => void;
   redo: () => void;
@@ -104,24 +124,32 @@ interface CADState {
   skipToEnd: () => void;
   stepBack: () => void;
   stepForward: () => void;
-  
+
   // Actions - File
   save: () => void;
   saveAs: (name: string) => void;
   open: () => void;
   reset: () => void;
   setFileName: (name: string) => void;
-  
+
   // Actions - Comments
   addComment: (text: string, position?: [number, number, number]) => void;
   deleteComment: (id: string) => void;
   toggleComments: () => void;
-  
+
   // Actions - UI
   toggleSearch: () => void;
   toggleSettings: () => void;
   toggleHelp: () => void;
   toggleNotifications: () => void;
+
+  // Actions - Sketch
+  addSketchPoint: (point: [number, number]) => void;
+  setSketchPlane: (plane: 'XY' | 'XZ' | 'YZ') => void;
+  addSketchPrimitive: (primitive: SketchPrimitive) => void;
+  updateCurrentDrawingPrimitive: (primitive: SketchPrimitive | null) => void;
+  clearSketch: () => void;
+  finishSketch: () => void;
 }
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -152,6 +180,11 @@ export const useCADStore = create<CADState>((set, get) => ({
   activeTool: 'select',
   activeTab: 'SOLID',
   isSketchMode: false,
+  sketchPlane: null,
+  sketchStep: 'select-plane',
+  activeSketchPrimitives: [],
+  currentDrawingPrimitive: null,
+  sketchPoints: [],
   currentView: 'home',
   zoom: 100,
   gridVisible: true,
@@ -167,11 +200,18 @@ export const useCADStore = create<CADState>((set, get) => ({
   notificationsOpen: false,
 
   // Object actions
-  addObject: (type, options = {}) => {
+  addObject: async (type, options = {}) => {
+    try {
+      await initCAD();
+    } catch (e) {
+      console.error("Failed to initialize CAD kernel:", e);
+      return;
+    }
+
     const state = get();
     const id = generateId();
     const count = state.objects.filter(o => o.type === type).length + 1;
-    
+
     const newObject: CADObject = {
       id,
       name: options.name || `${type.charAt(0).toUpperCase() + type.slice(1)}${count}`,
@@ -184,6 +224,27 @@ export const useCADStore = create<CADState>((set, get) => ({
       visible: true,
       selected: false,
     };
+
+    if (type === 'box') {
+      try {
+        console.log('Creating box with dimensions:', newObject.dimensions);
+        const { width, height, depth } = newObject.dimensions;
+        // Call the kernel
+        const shape = makeBoxHelper(width, height, depth);
+
+        // Store the raw B-Rep shape if needed
+        shapeRegistry.set(id, shape);
+
+        // Convert to mesh (Tesselation)
+        const geometry = replicadToThreeGeometry(shape);
+        newObject.geometry = geometry;
+
+        console.log('Box created successfully, geometry:', geometry);
+      } catch (e) {
+        console.error("Failed to create box via replicad kernel:", e);
+        // Fallback or alert user?
+      }
+    }
 
     const historyItem: HistoryItem = {
       id: generateId(),
@@ -254,7 +315,7 @@ export const useCADStore = create<CADState>((set, get) => ({
   selectObject: (id, multiSelect = false) => {
     const state = get();
     const newSelected = new Set(multiSelect ? state.selectedIds : []);
-    
+
     if (newSelected.has(id)) {
       newSelected.delete(id);
     } else {
@@ -278,7 +339,7 @@ export const useCADStore = create<CADState>((set, get) => ({
   duplicateSelected: () => {
     const state = get();
     const selectedObjects = state.objects.filter(o => state.selectedIds.has(o.id));
-    
+
     const newObjects: CADObject[] = selectedObjects.map(obj => ({
       ...obj,
       id: generateId(),
@@ -308,9 +369,23 @@ export const useCADStore = create<CADState>((set, get) => ({
   // Tool actions
   setActiveTool: (tool) => set({ activeTool: tool }),
   setActiveTab: (tab) => set({ activeTab: tab }),
-  
+
+  // Sketch Actions
+  setSketchPlane: (plane) => set({ sketchPlane: plane, sketchStep: 'drawing' }),
+
+  addSketchPoint: (point) => set(state => ({ sketchPoints: [...state.sketchPoints, point] })),
+
+  addSketchPrimitive: (primitive) => set(state => ({
+    activeSketchPrimitives: [...state.activeSketchPrimitives, primitive]
+  })),
+
+  updateCurrentDrawingPrimitive: (primitive) => set({ currentDrawingPrimitive: primitive }),
+
+  clearSketch: () => set({ sketchPoints: [], activeSketchPrimitives: [], currentDrawingPrimitive: null }),
+
   enterSketchMode: () => {
     const state = get();
+    // Start with plane selection
     const historyItem: HistoryItem = {
       id: generateId(),
       type: 'sketch',
@@ -321,119 +396,116 @@ export const useCADStore = create<CADState>((set, get) => ({
 
     set({
       isSketchMode: true,
+      sketchStep: 'select-plane',
+      sketchPlane: null,
       activeTab: 'SKETCH',
       activeTool: 'line',
+      activeSketchPrimitives: [],
+      currentDrawingPrimitive: null,
+      sketchPoints: [],
       history: [...state.history.slice(0, state.historyIndex + 1), historyItem],
       historyIndex: state.historyIndex + 1,
       isSaved: false,
     });
   },
-  
-  exitSketchMode: () => set({ isSketchMode: false, activeTab: 'SOLID', activeTool: 'select' }),
 
-  // View actions
-  setView: (view) => set({ currentView: view }),
-  setZoom: (zoom) => set({ zoom: Math.max(10, Math.min(500, zoom)) }),
-  toggleGrid: () => set(state => ({ gridVisible: !state.gridVisible })),
-  fitToScreen: () => set({ zoom: 100, currentView: 'home' }),
-
-  // History actions
-  undo: () => {
+  finishSketch: () => {
     const state = get();
-    if (state.historyIndex < 0) return;
+    // Support both legacy points and new primitives
+    const hasPoints = state.sketchPoints.length >= 2;
+    const hasPrimitives = state.activeSketchPrimitives.length > 0;
 
-    const historyItem = state.history[state.historyIndex];
-    let newObjects = [...state.objects];
-
-    if (historyItem.type === 'create') {
-      newObjects = newObjects.filter(o => !historyItem.objectIds.includes(o.id));
-    } else if (historyItem.type === 'delete' && historyItem.previousState) {
-      newObjects = [...newObjects, ...historyItem.previousState];
-    } else if (historyItem.type === 'modify' && historyItem.previousState) {
-      historyItem.previousState.forEach(prev => {
-        const idx = newObjects.findIndex(o => o.id === prev.id);
-        if (idx !== -1) newObjects[idx] = prev;
+    if (!hasPoints && !hasPrimitives) {
+      set({
+        isSketchMode: false,
+        sketchPoints: [],
+        activeSketchPrimitives: [],
+        currentDrawingPrimitive: null,
+        sketchPlane: null,
+        activeTab: 'SOLID',
+        activeTool: 'select'
       });
-    } else if (historyItem.type === 'sketch') {
-      set({ isSketchMode: false });
+      return;
     }
 
-    set({ objects: newObjects, historyIndex: state.historyIndex - 1, isSaved: false });
-  },
+    try {
+      const id = generateId();
+      let geometry: THREE.BufferGeometry | null = null;
+      let sketchObjectName = `Sketch${state.objects.length + 1}`;
 
-  redo: () => {
-    const state = get();
-    if (state.historyIndex >= state.history.length - 1) return;
-
-    const historyItem = state.history[state.historyIndex + 1];
-    let newObjects = [...state.objects];
-
-    if (historyItem.type === 'create') {
-      // Re-add deleted objects from future create operations
-      // For simplicity, we'll just update the index
-    } else if (historyItem.type === 'sketch') {
-      set({ isSketchMode: true });
-    }
-
-    set({ historyIndex: state.historyIndex + 1, isSaved: false });
-  },
-
-  goToHistoryIndex: (index) => set({ historyIndex: Math.max(-1, Math.min(get().history.length - 1, index)) }),
-  skipToStart: () => set({ historyIndex: -1 }),
-  skipToEnd: () => set(state => ({ historyIndex: state.history.length - 1 })),
-  stepBack: () => get().undo(),
-  stepForward: () => get().redo(),
-
-  // File actions
-  save: () => {
-    const state = get();
-    const data = {
-      objects: state.objects,
-      fileName: state.fileName,
-      savedAt: Date.now(),
-    };
-    localStorage.setItem(`cad_file_${state.fileName}`, JSON.stringify(data));
-    set({ isSaved: true });
-    console.log('Project saved:', state.fileName);
-  },
-
-  saveAs: (name) => {
-    set({ fileName: name });
-    get().save();
-  },
-
-  open: () => {
-    // In a real app, this would open a file dialog
-    const files = Object.keys(localStorage).filter(k => k.startsWith('cad_file_'));
-    if (files.length > 0) {
-      const data = JSON.parse(localStorage.getItem(files[0]) || '{}');
-      if (data.objects) {
-        set({
-          objects: data.objects,
-          fileName: data.fileName || 'Loaded File',
-          isSaved: true,
-          history: [],
-          historyIndex: -1,
-        });
+      // 1. Legacy Points Path
+      if (hasPoints && !hasPrimitives) {
+        const sketch = createSketchHelper(state.sketchPoints, true);
+        if (sketch) geometry = replicadToThreeGeometry(sketch);
       }
+      // 2. Primitives Path (TODO: Implement multi-primitive helper in kernel)
+      else if (hasPrimitives) {
+        // For now, join all primitives? Or just take the first one?
+        // This is a placeholder until we update the kernel
+        console.warn("Multi-primitive sketching not fully implemented in kernel yet, falling back to points or empty");
+
+        // Temporary: If the FIRST primitive is a loop, try to make it
+        const validPrim = state.activeSketchPrimitives.find(p => p.type === 'line' && p.points.length >= 2);
+        if (validPrim) {
+          const sketch = createSketchHelper(validPrim.points, true); // Assume closed for now
+          if (sketch) geometry = replicadToThreeGeometry(sketch);
+        }
+      }
+
+      if (!geometry) {
+        console.error("Failed to create geometry from sketch");
+        set({
+          isSketchMode: false,
+          sketchPoints: [],
+          activeSketchPrimitives: [],
+          currentDrawingPrimitive: null,
+          sketchPlane: null,
+          activeTab: 'SOLID',
+          activeTool: 'select'
+        });
+        return;
+      }
+
+      const newObject: CADObject = {
+        id,
+        name: sketchObjectName,
+        type: 'sketch',
+        position: [0, 0, 0], // In future, use sketchPlane transform
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+        dimensions: {},
+        color: getNextColor(),
+        visible: true,
+        selected: false,
+        geometry: geometry
+      };
+
+      const historyItem: HistoryItem = {
+        id: generateId(),
+        type: 'create',
+        name: `Create Sketch`,
+        timestamp: Date.now(),
+        objectIds: [id],
+      };
+
+      set({
+        objects: [...state.objects, newObject],
+        history: [...state.history.slice(0, state.historyIndex + 1), historyItem],
+        historyIndex: state.historyIndex + 1,
+        isSaved: false,
+        isSketchMode: false,
+        sketchPoints: [],
+        activeSketchPrimitives: [],
+        currentDrawingPrimitive: null,
+        sketchPlane: null,
+        activeTab: 'SOLID',
+        activeTool: 'select'
+      });
+
+    } catch (e) {
+      console.error("Error creating sketch object:", e);
     }
-    console.log('Open file dialog (simulated)');
   },
-
-  reset: () => {
-    set({
-      objects: [],
-      selectedIds: new Set(),
-      history: [],
-      historyIndex: -1,
-      isSaved: true,
-      isSketchMode: false,
-      activeTool: 'select',
-      activeTab: 'SOLID',
-    });
-  },
-
-  setFileName: (name) => set({ fileName: name, isSaved: false }),
 
   // Comment actions
   addComment: (text, position) => {

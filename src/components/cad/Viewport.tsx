@@ -1,7 +1,9 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Grid, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
+import { useCADStore, CADObject } from "../../hooks/useCADStore";
+import SketchCanvas from "./SketchCanvas";
 
 interface ViewportProps {
   isSketchMode: boolean;
@@ -87,29 +89,33 @@ const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
   );
 };
 
-// Sample 3D object for demo
-const SampleGeometry = () => {
-  const meshRef = useRef<THREE.Mesh>(null);
+const SceneObjects = () => {
+  const objects = useCADStore((state) => state.objects);
 
   return (
-    <group position={[0, 0, 0]}>
-      {/* A simple box as placeholder geometry */}
-      <mesh ref={meshRef} position={[0, 5, 0]}>
-        <boxGeometry args={[10, 10, 10]} />
-        <meshStandardMaterial 
-          color="#6090c0" 
-          metalness={0.3} 
-          roughness={0.7}
-          transparent
-          opacity={0.85}
-        />
-      </mesh>
+    <group>
+      {objects.map((obj) => (
+        <CADObjectRenderer key={obj.id} object={obj} />
+      ))}
+    </group>
+  );
+};
 
-      {/* Edges */}
-      <lineSegments position={[0, 5, 0]}>
-        <edgesGeometry args={[new THREE.BoxGeometry(10, 10, 10)]} />
-        <lineBasicMaterial color="#80b0e0" />
-      </lineSegments>
+const CADObjectRenderer = ({ object }: { object: CADObject }) => {
+  return (
+    <group position={object.position} rotation={object.rotation} scale={object.scale}>
+      {object.geometry && (
+        <mesh geometry={object.geometry}>
+          <meshStandardMaterial
+            color={object.color}
+            metalness={0.3}
+            roughness={0.7}
+            transparent
+            opacity={0.85}
+          />
+        </mesh>
+      )}
+      {/* Fallback or Edges logic could go here */}
     </group>
   );
 };
@@ -123,6 +129,90 @@ const CameraController = () => {
   });
 
   return null;
+};
+
+const PlaneSelector = () => {
+  const { sketchStep, setSketchPlane } = useCADStore();
+  const [hoveredPlane, setHoveredPlane] = useState<string | null>(null);
+  const { camera } = useThree();
+
+  if (sketchStep !== 'select-plane') return null;
+
+  const handlePlaneClick = (plane: 'XY' | 'XZ' | 'YZ') => {
+    setSketchPlane(plane);
+
+    // Animate camera to look at the plane
+    // This is a simple instantaneous move for now, animation can be added with useFrame
+    const dist = 100;
+    if (plane === 'XY') {
+      camera.position.set(0, 0, dist);
+      camera.up.set(0, 1, 0);
+    } else if (plane === 'XZ') {
+      camera.position.set(0, dist, 0);
+      camera.up.set(0, 0, -1); // Standard CAD View
+    } else if (plane === 'YZ') {
+      camera.position.set(dist, 0, 0);
+      camera.up.set(0, 1, 0);
+    }
+    camera.lookAt(0, 0, 0);
+  };
+
+  return (
+    <group>
+      {/* XY Plane (Front in standard Z-up, but usually XY is Top in math? 
+          Standard CAD: Z is up. XY is ground. XZ is Front. YZ is Right. 
+          Replicad/OCCT default: Z is up.
+      */}
+
+      {/* XY Plane - Blueish - Ground */}
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XY'); }}
+        onPointerOut={() => setHoveredPlane(null)}
+        onClick={(e) => { e.stopPropagation(); handlePlaneClick('XY'); }}
+      >
+        <planeGeometry args={[40, 40]} />
+        <meshBasicMaterial
+          color="#5577ee"
+          transparent
+          opacity={hoveredPlane === 'XY' ? 0.5 : 0.2}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      {/* XZ Plane - Redish - Front */}
+      <mesh
+        position={[0, 20, 0]} // Just to visualize center? No center is 0.
+        onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XZ'); }}
+        onPointerOut={() => setHoveredPlane(null)}
+        onClick={(e) => { e.stopPropagation(); handlePlaneClick('XZ'); }}
+      >
+        <planeGeometry args={[40, 40]} />
+        <meshBasicMaterial
+          color="#e05555"
+          transparent
+          opacity={hoveredPlane === 'XZ' ? 0.5 : 0.2}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      {/* YZ Plane - Greenish - Right */}
+      <mesh
+        rotation={[0, Math.PI / 2, 0]}
+        onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('YZ'); }}
+        onPointerOut={() => setHoveredPlane(null)}
+        onClick={(e) => { e.stopPropagation(); handlePlaneClick('YZ'); }}
+      >
+        <planeGeometry args={[40, 40]} />
+        <meshBasicMaterial
+          color="#55e055"
+          transparent
+          opacity={hoveredPlane === 'YZ' ? 0.5 : 0.2}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
+  );
 };
 
 const Viewport = ({ isSketchMode }: ViewportProps) => {
@@ -140,6 +230,8 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
           far={2000}
         />
 
+        <PlaneSelector />
+
         {/* Lighting */}
         <ambientLight intensity={0.4} />
         <directionalLight position={[50, 50, 25]} intensity={0.8} />
@@ -148,8 +240,8 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
         {/* Grid */}
         <CADGrid isSketchMode={isSketchMode} />
 
-        {/* Sample geometry - replace with actual CAD objects */}
-        <SampleGeometry />
+        {/* Real CAD objects */}
+        <SceneObjects />
 
         {/* Controls */}
         <OrbitControls
@@ -162,6 +254,8 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
           minDistance={5}
           maxDistance={500}
         />
+
+        <SketchCanvas />
 
         <CameraController />
       </Canvas>
