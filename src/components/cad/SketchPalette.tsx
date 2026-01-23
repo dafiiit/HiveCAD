@@ -7,6 +7,8 @@ import {
   ArrowUpRight 
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useCADStore } from "@/hooks/useCADStore";
+import { toast } from "sonner";
 
 interface SketchPaletteProps {
   isVisible: boolean;
@@ -34,9 +36,10 @@ const OptionRow = ({ label, checked, onChange, icon }: OptionRowProps) => (
 );
 
 const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
+  const { exitSketchMode, activeTool, setActiveTool, toggleGrid, gridVisible } = useCADStore();
+  
   const [optionsExpanded, setOptionsExpanded] = useState(true);
   const [options, setOptions] = useState({
-    lineType: true,
     lookAt: true,
     sketchGrid: true,
     snap: false,
@@ -54,18 +57,47 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
 
   const updateOption = (key: keyof typeof options) => (checked: boolean) => {
     setOptions(prev => ({ ...prev, [key]: checked }));
+    
+    // Handle specific options
+    if (key === 'sketchGrid') {
+      if (checked !== gridVisible) {
+        toggleGrid();
+      }
+    }
+    
+    toast(`${key}: ${checked ? 'enabled' : 'disabled'}`);
+  };
+
+  const handleLineType = (type: 'normal' | 'construction') => {
+    setActiveTool(type === 'normal' ? 'line' : 'line');
+    toast(`Line type: ${type}`);
+  };
+
+  const handleFinishSketch = () => {
+    exitSketchMode();
+    toast.success("Sketch completed");
   };
 
   return (
     <div className="cad-sketch-palette flex flex-col">
       <div className="cad-panel-header">
         <span>Sketch Palette</span>
-        <button className="text-muted-foreground hover:text-foreground">
+        <button 
+          className="text-muted-foreground hover:text-foreground"
+          onClick={handleFinishSketch}
+          title="Close palette"
+        >
           <Minus className="w-3 h-3" />
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto">
+        {/* Active Tool Display */}
+        <div className="px-3 py-2 border-b border-border">
+          <div className="text-2xs text-muted-foreground mb-1">Active Tool</div>
+          <div className="text-xs font-medium text-primary capitalize">{activeTool}</div>
+        </div>
+
         {/* Options Section */}
         <div>
           <button
@@ -85,10 +117,18 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
               <div className="px-3 py-1 flex items-center gap-2 text-xs text-muted-foreground">
                 <span>Line Type</span>
                 <div className="flex gap-1 ml-auto">
-                  <button className="p-1 hover:bg-secondary rounded">
+                  <button 
+                    className={`p-1 rounded transition-colors ${activeTool === 'line' ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'}`}
+                    onClick={() => handleLineType('normal')}
+                    title="Normal line"
+                  >
                     <Pencil className="w-3 h-3" />
                   </button>
-                  <button className="p-1 hover:bg-secondary rounded">
+                  <button 
+                    className="p-1 hover:bg-secondary rounded"
+                    onClick={() => handleLineType('construction')}
+                    title="Construction line"
+                  >
                     <ArrowUpRight className="w-3 h-3" />
                   </button>
                 </div>
@@ -155,7 +195,10 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
       </div>
 
       <div className="p-2 border-t border-border">
-        <button className="w-full py-1.5 px-3 text-xs bg-secondary hover:bg-secondary/80 rounded transition-colors">
+        <button 
+          onClick={handleFinishSketch}
+          className="w-full py-1.5 px-3 text-xs bg-primary hover:bg-primary/90 text-primary-foreground rounded transition-colors font-medium"
+        >
           Finish Sketch
         </button>
       </div>

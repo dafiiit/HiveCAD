@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect } from "react";
 import MenuBar from "./MenuBar";
 import RibbonToolbar from "./RibbonToolbar";
 import BrowserPanel from "./BrowserPanel";
@@ -8,24 +8,62 @@ import SketchPalette from "./SketchPalette";
 import Timeline from "./Timeline";
 import StatusBar from "./StatusBar";
 import CommentsPanel from "./CommentsPanel";
-
-type ToolTab = "SOLID" | "SURFACE" | "MESH" | "SHEET" | "PLASTIC" | "MANAGE" | "UTILITIES" | "SKETCH";
+import { useCADStore } from "@/hooks/useCADStore";
+import { toast } from "sonner";
 
 const CADLayout = () => {
-  const [activeTab, setActiveTab] = useState<ToolTab>("SOLID");
-  const [isSketchMode, setIsSketchMode] = useState(false);
-  const [commentsExpanded, setCommentsExpanded] = useState(false);
-  const [fileName] = useState("Untitled*");
-  const [isSaved] = useState(false);
+  const { 
+    activeTab, 
+    setActiveTab, 
+    isSketchMode, 
+    exitSketchMode,
+    fileName,
+    isSaved,
+    undo,
+    redo,
+    save,
+    duplicateSelected,
+    deleteObject,
+    selectedIds
+  } = useCADStore();
 
-  const handleFinishSketch = () => {
-    setIsSketchMode(false);
-  };
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key.toLowerCase()) {
+          case 's':
+            e.preventDefault();
+            save();
+            toast.success("Project saved");
+            break;
+          case 'z':
+            e.preventDefault();
+            undo();
+            break;
+          case 'y':
+            e.preventDefault();
+            redo();
+            break;
+          case 'd':
+            e.preventDefault();
+            duplicateSelected();
+            break;
+        }
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedIds.size > 0) {
+          [...selectedIds].forEach(id => deleteObject(id));
+          toast(`Deleted ${selectedIds.size} object(s)`);
+        }
+      } else if (e.key === 'Escape' && isSketchMode) {
+        exitSketchMode();
+        toast("Exited sketch mode");
+      }
+    };
 
-  const handleViewChange = (view: string) => {
-    console.log("View changed to:", view);
-    // Would update camera position based on view
-  };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo, save, duplicateSelected, deleteObject, selectedIds, isSketchMode, exitSketchMode]);
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
@@ -37,7 +75,7 @@ const CADLayout = () => {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         isSketchMode={isSketchMode}
-        onFinishSketch={handleFinishSketch}
+        onFinishSketch={exitSketchMode}
       />
 
       {/* Main content area */}
@@ -51,14 +89,11 @@ const CADLayout = () => {
             <Viewport isSketchMode={isSketchMode} />
             
             {/* View cube overlay */}
-            <ViewCube onViewChange={handleViewChange} />
+            <ViewCube />
           </div>
 
           {/* Comments panel */}
-          <CommentsPanel 
-            isExpanded={commentsExpanded}
-            onToggle={() => setCommentsExpanded(!commentsExpanded)}
-          />
+          <CommentsPanel />
         </div>
 
         {/* Right sketch palette (visible in sketch mode) */}
@@ -66,10 +101,10 @@ const CADLayout = () => {
       </div>
 
       {/* Timeline */}
-      <Timeline items={[]} />
+      <Timeline />
 
       {/* Status bar */}
-      <StatusBar zoom={100} gridVisible={true} />
+      <StatusBar />
     </div>
   );
 };

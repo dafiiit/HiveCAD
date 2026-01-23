@@ -10,6 +10,17 @@ import {
   Bell,
   Search
 } from "lucide-react";
+import { useCADStore } from "@/hooks/useCADStore";
+import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { useState } from "react";
 
 interface MenuBarProps {
   fileName: string;
@@ -17,72 +28,296 @@ interface MenuBarProps {
 }
 
 const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
+  const { 
+    save, 
+    open, 
+    undo, 
+    redo, 
+    reset, 
+    history, 
+    historyIndex,
+    searchOpen,
+    settingsOpen,
+    helpOpen,
+    notificationsOpen,
+    toggleSearch,
+    toggleSettings,
+    toggleHelp,
+    toggleNotifications,
+    objects
+  } = useCADStore();
+
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const handleSave = () => {
+    save();
+    toast.success("Project saved successfully");
+  };
+
+  const handleOpen = () => {
+    open();
+    toast("Opening file browser...");
+  };
+
+  const handleUndo = () => {
+    if (historyIndex < 0) {
+      toast.error("Nothing to undo");
+      return;
+    }
+    undo();
+    toast(`Undo: ${history[historyIndex]?.name || 'action'}`);
+  };
+
+  const handleRedo = () => {
+    if (historyIndex >= history.length - 1) {
+      toast.error("Nothing to redo");
+      return;
+    }
+    redo();
+    toast(`Redo: ${history[historyIndex + 1]?.name || 'action'}`);
+  };
+
+  const handleReset = () => {
+    if (objects.length > 0) {
+      if (confirm("Are you sure you want to reset? All unsaved changes will be lost.")) {
+        reset();
+        toast("Project reset");
+      }
+    } else {
+      toast("Nothing to reset");
+    }
+  };
+
+  const filteredObjects = objects.filter(obj => 
+    obj.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <div className="h-8 bg-background flex items-center justify-between px-2 border-b border-border text-xs">
-      {/* Left section - App controls */}
-      <div className="flex items-center gap-1">
-        <button className="p-1.5 hover:bg-secondary rounded transition-colors">
-          <div className="w-4 h-4 grid grid-cols-3 gap-0.5">
-            {[...Array(9)].map((_, i) => (
-              <div key={i} className="bg-foreground/60 rounded-sm" />
-            ))}
+    <>
+      <div className="h-8 bg-background flex items-center justify-between px-2 border-b border-border text-xs">
+        {/* Left section - App controls */}
+        <div className="flex items-center gap-1">
+          <button 
+            className="p-1.5 hover:bg-secondary rounded transition-colors"
+            onClick={() => toast("Application menu")}
+          >
+            <div className="w-4 h-4 grid grid-cols-3 gap-0.5">
+              {[...Array(9)].map((_, i) => (
+                <div key={i} className="bg-foreground/60 rounded-sm" />
+              ))}
+            </div>
+          </button>
+          
+          <button 
+            className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
+            onClick={handleSave}
+            title="Save (Ctrl+S)"
+          >
+            <Save className="w-4 h-4" />
+          </button>
+          
+          <button 
+            className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
+            onClick={handleOpen}
+            title="Open (Ctrl+O)"
+          >
+            <FolderOpen className="w-4 h-4" />
+          </button>
+          
+          <div className="w-px h-4 bg-border mx-1" />
+          
+          <button 
+            className={`p-1.5 hover:bg-secondary rounded transition-colors ${historyIndex >= 0 ? 'text-icon-default hover:text-icon-hover' : 'text-muted-foreground/50'}`}
+            onClick={handleUndo}
+            disabled={historyIndex < 0}
+            title="Undo (Ctrl+Z)"
+          >
+            <Undo2 className="w-4 h-4" />
+          </button>
+          
+          <button 
+            className={`p-1.5 hover:bg-secondary rounded transition-colors ${historyIndex < history.length - 1 ? 'text-icon-default hover:text-icon-hover' : 'text-muted-foreground/50'}`}
+            onClick={handleRedo}
+            disabled={historyIndex >= history.length - 1}
+            title="Redo (Ctrl+Y)"
+          >
+            <Redo2 className="w-4 h-4" />
+          </button>
+          
+          <button 
+            className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
+            onClick={handleReset}
+            title="Reset"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Center - File name */}
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${isSaved ? 'bg-green-500' : 'bg-yellow-500'}`} />
+          <span className="text-foreground font-medium">{fileName}{!isSaved && '*'}</span>
+        </div>
+
+        {/* Right section - User controls */}
+        <div className="flex items-center gap-1">
+          <button 
+            className={`p-1.5 hover:bg-secondary rounded transition-colors ${searchOpen ? 'bg-secondary text-foreground' : 'text-icon-default hover:text-icon-hover'}`}
+            onClick={toggleSearch}
+            title="Search (Ctrl+F)"
+          >
+            <Search className="w-4 h-4" />
+          </button>
+          
+          <button 
+            className={`p-1.5 hover:bg-secondary rounded transition-colors relative ${notificationsOpen ? 'bg-secondary text-foreground' : 'text-icon-default hover:text-icon-hover'}`}
+            onClick={toggleNotifications}
+            title="Notifications"
+          >
+            <Bell className="w-4 h-4" />
+            <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-primary rounded-full" />
+          </button>
+          
+          <button 
+            className={`p-1.5 hover:bg-secondary rounded transition-colors ${settingsOpen ? 'bg-secondary text-foreground' : 'text-icon-default hover:text-icon-hover'}`}
+            onClick={toggleSettings}
+            title="Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+          
+          <button 
+            className={`p-1.5 hover:bg-secondary rounded transition-colors ${helpOpen ? 'bg-secondary text-foreground' : 'text-icon-default hover:text-icon-hover'}`}
+            onClick={toggleHelp}
+            title="Help"
+          >
+            <HelpCircle className="w-4 h-4" />
+          </button>
+          
+          <div className="w-px h-4 bg-border mx-1" />
+          
+          <button 
+            className="w-7 h-7 rounded-full bg-primary flex items-center justify-center hover:opacity-90 transition-opacity"
+            onClick={() => toast("User profile")}
+          >
+            <User className="w-4 h-4 text-primary-foreground" />
+          </button>
+        </div>
+      </div>
+
+      {/* Search Dialog */}
+      <Dialog open={searchOpen} onOpenChange={toggleSearch}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Search Objects</DialogTitle>
+            <DialogDescription>
+              Search for objects in your scene
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              autoFocus
+            />
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {filteredObjects.length > 0 ? (
+                filteredObjects.map(obj => (
+                  <div 
+                    key={obj.id} 
+                    className="p-2 rounded hover:bg-secondary cursor-pointer text-sm flex items-center justify-between"
+                    onClick={() => {
+                      useCADStore.getState().selectObject(obj.id);
+                      toggleSearch();
+                      toast(`Selected: ${obj.name}`);
+                    }}
+                  >
+                    <span>{obj.name}</span>
+                    <span className="text-muted-foreground text-xs">{obj.type}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-muted-foreground p-2">
+                  {searchQuery ? "No objects found" : "Start typing to search"}
+                </div>
+              )}
+            </div>
           </div>
-        </button>
-        
-        <button className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover">
-          <Save className="w-4 h-4" />
-        </button>
-        
-        <button className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover">
-          <FolderOpen className="w-4 h-4" />
-        </button>
-        
-        <div className="w-px h-4 bg-border mx-1" />
-        
-        <button className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover">
-          <Undo2 className="w-4 h-4" />
-        </button>
-        
-        <button className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover">
-          <Redo2 className="w-4 h-4" />
-        </button>
-        
-        <button className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover">
-          <RotateCcw className="w-4 h-4" />
-        </button>
-      </div>
+        </DialogContent>
+      </Dialog>
 
-      {/* Center - File name */}
-      <div className="flex items-center gap-2">
-        <span className={`w-2 h-2 rounded-full ${isSaved ? 'bg-green-500' : 'bg-yellow-500'}`} />
-        <span className="text-foreground font-medium">{fileName}</span>
-      </div>
+      {/* Settings Dialog */}
+      <Dialog open={settingsOpen} onOpenChange={toggleSettings}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Settings</DialogTitle>
+            <DialogDescription>
+              Configure your CAD workspace
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Grid Snap</span>
+              <input type="checkbox" className="toggle" defaultChecked />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Auto-save</span>
+              <input type="checkbox" className="toggle" defaultChecked />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Dark Mode</span>
+              <input type="checkbox" className="toggle" defaultChecked />
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-      {/* Right section - User controls */}
-      <div className="flex items-center gap-1">
-        <button className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover">
-          <Search className="w-4 h-4" />
-        </button>
-        
-        <button className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover">
-          <Bell className="w-4 h-4" />
-        </button>
-        
-        <button className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover">
-          <Settings className="w-4 h-4" />
-        </button>
-        
-        <button className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover">
-          <HelpCircle className="w-4 h-4" />
-        </button>
-        
-        <div className="w-px h-4 bg-border mx-1" />
-        
-        <button className="w-7 h-7 rounded-full bg-primary flex items-center justify-center hover:opacity-90 transition-opacity">
-          <User className="w-4 h-4 text-primary-foreground" />
-        </button>
-      </div>
-    </div>
+      {/* Help Dialog */}
+      <Dialog open={helpOpen} onOpenChange={toggleHelp}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Keyboard Shortcuts</DialogTitle>
+            <DialogDescription>
+              Quick reference for common actions
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-4 text-sm">
+            <div className="flex justify-between"><span>Save</span><kbd className="px-2 py-1 bg-secondary rounded">Ctrl+S</kbd></div>
+            <div className="flex justify-between"><span>Undo</span><kbd className="px-2 py-1 bg-secondary rounded">Ctrl+Z</kbd></div>
+            <div className="flex justify-between"><span>Redo</span><kbd className="px-2 py-1 bg-secondary rounded">Ctrl+Y</kbd></div>
+            <div className="flex justify-between"><span>Delete</span><kbd className="px-2 py-1 bg-secondary rounded">Delete</kbd></div>
+            <div className="flex justify-between"><span>Duplicate</span><kbd className="px-2 py-1 bg-secondary rounded">Ctrl+D</kbd></div>
+            <div className="flex justify-between"><span>Select All</span><kbd className="px-2 py-1 bg-secondary rounded">Ctrl+A</kbd></div>
+            <div className="flex justify-between"><span>Orbit View</span><kbd className="px-2 py-1 bg-secondary rounded">Middle Mouse</kbd></div>
+            <div className="flex justify-between"><span>Pan View</span><kbd className="px-2 py-1 bg-secondary rounded">Shift+Middle Mouse</kbd></div>
+            <div className="flex justify-between"><span>Zoom</span><kbd className="px-2 py-1 bg-secondary rounded">Scroll Wheel</kbd></div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Notifications Dialog */}
+      <Dialog open={notificationsOpen} onOpenChange={toggleNotifications}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Notifications</DialogTitle>
+            <DialogDescription>
+              Recent activity and alerts
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-4">
+            <div className="p-3 bg-secondary rounded-lg">
+              <div className="text-sm font-medium">Welcome to CAD Editor</div>
+              <div className="text-xs text-muted-foreground">Start creating by clicking tools in the toolbar</div>
+            </div>
+            <div className="p-3 bg-secondary rounded-lg">
+              <div className="text-sm font-medium">Auto-save enabled</div>
+              <div className="text-xs text-muted-foreground">Your work will be saved automatically</div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 

@@ -13,8 +13,11 @@ import {
   Pencil,
   FolderClosed,
   FolderOpen,
-  Minus
+  Minus,
+  Trash2
 } from "lucide-react";
+import { useCADStore } from "@/hooks/useCADStore";
+import { toast } from "sonner";
 
 interface TreeItemProps {
   icon: React.ReactNode;
@@ -22,9 +25,12 @@ interface TreeItemProps {
   level?: number;
   isExpanded?: boolean;
   isVisible?: boolean;
+  isSelected?: boolean;
   hasChildren?: boolean;
   onToggleExpand?: () => void;
   onToggleVisibility?: () => void;
+  onClick?: () => void;
+  onDelete?: () => void;
   children?: React.ReactNode;
 }
 
@@ -34,19 +40,26 @@ const TreeItem = ({
   level = 0,
   isExpanded,
   isVisible = true,
+  isSelected = false,
   hasChildren,
   onToggleExpand,
   onToggleVisibility,
+  onClick,
+  onDelete,
   children
 }: TreeItemProps) => {
   return (
     <div>
       <div 
-        className="cad-tree-item group"
+        className={`cad-tree-item group ${isSelected ? 'bg-primary/20 text-primary' : ''}`}
         style={{ paddingLeft: `${8 + level * 16}px` }}
+        onClick={onClick}
       >
         {hasChildren ? (
-          <button onClick={onToggleExpand} className="p-0.5 hover:bg-secondary rounded">
+          <button 
+            onClick={(e) => { e.stopPropagation(); onToggleExpand?.(); }} 
+            className="p-0.5 hover:bg-secondary rounded"
+          >
             {isExpanded ? (
               <ChevronDown className="w-3 h-3 text-muted-foreground" />
             ) : (
@@ -59,7 +72,7 @@ const TreeItem = ({
         
         {onToggleVisibility && (
           <button 
-            onClick={onToggleVisibility}
+            onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}
             className="p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
           >
             {isVisible ? (
@@ -72,6 +85,15 @@ const TreeItem = ({
         
         <span className="text-icon-default">{icon}</span>
         <span className={`flex-1 truncate ${!isVisible ? 'opacity-50' : ''}`}>{label}</span>
+        
+        {onDelete && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="p-0.5 opacity-0 group-hover:opacity-100 hover:text-destructive transition-all"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
       </div>
       {isExpanded && children}
     </div>
@@ -79,12 +101,24 @@ const TreeItem = ({
 };
 
 const BrowserPanel = () => {
+  const { 
+    objects, 
+    selectedIds, 
+    selectObject, 
+    updateObject, 
+    deleteObject,
+    fileName,
+    isSaved,
+    enterSketchMode
+  } = useCADStore();
+
   const [expandedItems, setExpandedItems] = useState<Set<string>>(
-    new Set(["document", "doc-settings", "origin", "sketches"])
+    new Set(["document", "doc-settings", "origin", "sketches", "bodies"])
   );
   const [visibleItems, setVisibleItems] = useState<Set<string>>(
-    new Set(["origin", "sketches", "sketch1"])
+    new Set(["origin", "sketches", "bodies"])
   );
+  const [collapsed, setCollapsed] = useState(false);
 
   const toggleExpand = (id: string) => {
     const newExpanded = new Set(expandedItems);
@@ -104,13 +138,63 @@ const BrowserPanel = () => {
       newVisible.add(id);
     }
     setVisibleItems(newVisible);
+    
+    // Also toggle object visibility if it's a CAD object
+    const obj = objects.find(o => o.id === id);
+    if (obj) {
+      updateObject(id, { visible: !obj.visible });
+      toast(`${obj.name}: ${obj.visible ? 'hidden' : 'visible'}`);
+    }
   };
+
+  const handleObjectClick = (id: string) => {
+    selectObject(id);
+    const obj = objects.find(o => o.id === id);
+    if (obj) {
+      toast(`Selected: ${obj.name}`);
+    }
+  };
+
+  const handleObjectDelete = (id: string) => {
+    const obj = objects.find(o => o.id === id);
+    if (obj) {
+      deleteObject(id);
+      toast(`Deleted: ${obj.name}`);
+    }
+  };
+
+  const handleStartSketch = () => {
+    enterSketchMode();
+    toast.success("Sketch mode activated");
+  };
+
+  const handleCollapse = () => {
+    setCollapsed(!collapsed);
+  };
+
+  if (collapsed) {
+    return (
+      <div className="w-8 bg-panel border-r border-border flex flex-col items-center py-2">
+        <button 
+          onClick={handleCollapse}
+          className="p-1.5 hover:bg-secondary rounded"
+          title="Expand Browser"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="cad-panel w-56 flex flex-col h-full">
       <div className="cad-panel-header">
         <span>Browser</span>
-        <button className="text-muted-foreground hover:text-foreground">
+        <button 
+          className="text-muted-foreground hover:text-foreground"
+          onClick={handleCollapse}
+          title="Collapse panel"
+        >
           <Minus className="w-3 h-3" />
         </button>
       </div>
@@ -119,7 +203,7 @@ const BrowserPanel = () => {
         {/* Document */}
         <TreeItem
           icon={<File className="w-3.5 h-3.5" />}
-          label="(Unsaved)"
+          label={`${fileName}${!isSaved ? '*' : ''}`}
           isExpanded={expandedItems.has("document")}
           hasChildren
           onToggleExpand={() => toggleExpand("document")}
@@ -137,21 +221,23 @@ const BrowserPanel = () => {
               icon={<Ruler className="w-3.5 h-3.5" />}
               label="Units: mm, g"
               level={2}
+              onClick={() => toast("Units configuration")}
             />
             <TreeItem
               icon={<Layers className="w-3.5 h-3.5" />}
               label="Hybrid Construction"
               level={2}
+              onClick={() => toast("Construction settings")}
             />
           </TreeItem>
 
           {/* Named Views */}
           <TreeItem
-            icon={<FolderClosed className="w-3.5 h-3.5" />}
+            icon={expandedItems.has("views") ? <FolderOpen className="w-3.5 h-3.5" /> : <FolderClosed className="w-3.5 h-3.5" />}
             label="Named Views"
             level={1}
             hasChildren
-            isExpanded={false}
+            isExpanded={expandedItems.has("views")}
             onToggleExpand={() => toggleExpand("views")}
           />
 
@@ -170,22 +256,25 @@ const BrowserPanel = () => {
               icon={<Box className="w-3.5 h-3.5" />}
               label="XY Plane"
               level={2}
+              onClick={() => toast("XY Plane selected")}
             />
             <TreeItem
               icon={<Box className="w-3.5 h-3.5" />}
               label="XZ Plane"
               level={2}
+              onClick={() => toast("XZ Plane selected")}
             />
             <TreeItem
               icon={<Box className="w-3.5 h-3.5" />}
               label="YZ Plane"
               level={2}
+              onClick={() => toast("YZ Plane selected")}
             />
           </TreeItem>
 
           {/* Sketches */}
           <TreeItem
-            icon={<FolderOpen className="w-3.5 h-3.5" />}
+            icon={expandedItems.has("sketches") ? <FolderOpen className="w-3.5 h-3.5" /> : <FolderClosed className="w-3.5 h-3.5" />}
             label="Sketches"
             level={1}
             isExpanded={expandedItems.has("sketches")}
@@ -196,22 +285,37 @@ const BrowserPanel = () => {
           >
             <TreeItem
               icon={<Pencil className="w-3.5 h-3.5" />}
-              label="Sketch1"
+              label="New Sketch..."
               level={2}
-              isVisible={visibleItems.has("sketch1")}
-              onToggleVisibility={() => toggleVisibility("sketch1")}
+              onClick={handleStartSketch}
             />
           </TreeItem>
 
-          {/* Bodies */}
+          {/* Bodies - dynamically populated */}
           <TreeItem
-            icon={<FolderClosed className="w-3.5 h-3.5" />}
-            label="Bodies"
+            icon={expandedItems.has("bodies") ? <FolderOpen className="w-3.5 h-3.5" /> : <FolderClosed className="w-3.5 h-3.5" />}
+            label={`Bodies (${objects.length})`}
             level={1}
-            hasChildren
-            isExpanded={false}
+            hasChildren={objects.length > 0}
+            isExpanded={expandedItems.has("bodies")}
+            isVisible={visibleItems.has("bodies")}
             onToggleExpand={() => toggleExpand("bodies")}
-          />
+            onToggleVisibility={() => toggleVisibility("bodies")}
+          >
+            {objects.map(obj => (
+              <TreeItem
+                key={obj.id}
+                icon={<Box className="w-3.5 h-3.5" />}
+                label={obj.name}
+                level={2}
+                isVisible={obj.visible}
+                isSelected={selectedIds.has(obj.id)}
+                onClick={() => handleObjectClick(obj.id)}
+                onToggleVisibility={() => toggleVisibility(obj.id)}
+                onDelete={() => handleObjectDelete(obj.id)}
+              />
+            ))}
+          </TreeItem>
         </TreeItem>
       </div>
     </div>
