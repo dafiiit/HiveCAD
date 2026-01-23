@@ -83,13 +83,13 @@ const SketchCanvas = () => {
 
         if (!currentDrawingPrimitive) {
             // Start simple primitives
-            if (activeTool === 'line') {
+            if (activeTool === 'line' || activeTool === 'spline') {
                 updateCurrentDrawingPrimitive({
                     id: Math.random().toString(),
-                    type: 'line',
+                    type: activeTool,
                     points: [p2d, p2d] // Start with 2 points (start, current)
                 });
-            } else if (activeTool === 'rectangle' || activeTool === 'box') { // 'box' mapped to rect for sketch
+            } else if (activeTool === 'rectangle' || activeTool === 'box') {
                 updateCurrentDrawingPrimitive({
                     id: Math.random().toString(),
                     type: 'rectangle',
@@ -99,21 +99,47 @@ const SketchCanvas = () => {
                 updateCurrentDrawingPrimitive({
                     id: Math.random().toString(),
                     type: 'circle',
-                    points: [p2d, p2d] // Center, Edge
+                    points: [p2d, p2d]
+                });
+            } else if (activeTool === 'polygon') {
+                updateCurrentDrawingPrimitive({
+                    id: Math.random().toString(),
+                    type: 'polygon',
+                    points: [p2d, p2d],
+                    properties: { sides: 6 }
+                });
+            } else if (activeTool === 'arc') {
+                updateCurrentDrawingPrimitive({
+                    id: Math.random().toString(),
+                    type: 'arc',
+                    points: [p2d, p2d] // Start, End... then Mid
                 });
             }
         } else {
             // Continue or Finish primitive
-            if (currentDrawingPrimitive.type === 'line') {
+            if (currentDrawingPrimitive.type === 'line' || currentDrawingPrimitive.type === 'spline') {
                 // Add new point segment
                 updateCurrentDrawingPrimitive({
                     ...currentDrawingPrimitive,
                     points: [...currentDrawingPrimitive.points, p2d]
                 });
-                // Double click logic handled elsewhere? Or just click limit?
-                // For now, let's keep drawing lines until "Finish" or Escape (global key)
+            } else if (currentDrawingPrimitive.type === 'arc') {
+                if (currentDrawingPrimitive.points.length === 2) {
+                    // We just defined End point. Now adding Mid point placeholder
+                    updateCurrentDrawingPrimitive({
+                        ...currentDrawingPrimitive,
+                        points: [...currentDrawingPrimitive.points, p2d] // [Start, End, Mid(current)]
+                    });
+                } else {
+                    // We defined Mid point. Finish.
+                    addSketchPrimitive({
+                        ...currentDrawingPrimitive,
+                        points: currentDrawingPrimitive.points
+                    });
+                    updateCurrentDrawingPrimitive(null);
+                }
             } else {
-                // Rect/Circle finish on 2nd click
+                // Rect/Circle/Polygon finish on 2nd click
                 addSketchPrimitive({
                     ...currentDrawingPrimitive,
                     points: currentDrawingPrimitive.points // Finalize
@@ -209,6 +235,134 @@ const SketchCanvas = () => {
                             attach="attributes-position"
                             count={circlePoints.length}
                             array={new Float32Array(circlePoints.flatMap(v => [v.x, v.y, v.z]))}
+                            itemSize={3}
+                        />
+                    </bufferGeometry>
+                    <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
+                </line>
+            );
+        } else if (prim.type === 'polygon') {
+            if (points.length < 2) return null;
+            const center = points[0];
+            const edge = points[1];
+            const radius = center.distanceTo(edge);
+            const sides = prim.properties?.sides || 6;
+
+            const polyPoints: THREE.Vector3[] = [];
+
+            // Calculate starting angle based on mouse position to allow rotation
+            // Vector from center to edge
+            const dx = prim.points[1][0] - prim.points[0][0];
+            const dy = prim.points[1][1] - prim.points[0][1];
+            const startAngle = Math.atan2(dy, dx);
+
+            for (let i = 0; i <= sides; i++) {
+                const theta = startAngle + (i / sides) * Math.PI * 2;
+                // Polygon vertices usually start at angle 0 if not rotated.
+                // But here we want one vertex to be at 'edge'.
+                // If we use startAngle as offset, vertex 0 is at edge.
+
+                const x = prim.points[0][0] + Math.cos(theta) * radius;
+                const y = prim.points[0][1] + Math.sin(theta) * radius;
+                polyPoints.push(to3D(x, y));
+            }
+
+            return (
+                <line key={prim.id}>
+                    <bufferGeometry>
+                        <bufferAttribute
+                            attach="attributes-position"
+                            count={polyPoints.length}
+                            array={new Float32Array(polyPoints.flatMap(v => [v.x, v.y, v.z]))}
+                            itemSize={3}
+                        />
+                    </bufferGeometry>
+                    <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
+                </line>
+            );
+        } else if (prim.type === 'spline') {
+            if (points.length < 2) return null;
+            // Draw lines between control points for visual feedback
+            // Ideally we should draw a CatmullRomCurve3 or similar for preview
+
+            const curve = new THREE.CatmullRomCurve3(points);
+            const splinePoints = curve.getPoints(50); // Resolution
+
+            return (
+                <line key={prim.id}>
+                    <bufferGeometry>
+                        <bufferAttribute
+                            attach="attributes-position"
+                            count={splinePoints.length}
+                            array={new Float32Array(splinePoints.flatMap(v => [v.x, v.y, v.z]))}
+                            itemSize={3}
+                        />
+                    </bufferGeometry>
+                    <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
+                    {/* Show control points */}
+                    {isGhost && points.map((p, i) => (
+                        <mesh key={i} position={p}>
+                            <boxGeometry args={[0.2, 0.2, 0.2]} />
+                            <meshBasicMaterial color="#ff00ff" depthTest={false} />
+                        </mesh>
+                    ))}
+                </line>
+            );
+        } else if (prim.type === 'arc') {
+            if (points.length < 2) return null; // Need at least start and end
+            // 3-point arc: Start, End, Mid
+            // If we only have 2 points (Start, End), draw line?
+            if (points.length === 2) {
+                return (
+                    <line key={prim.id}>
+                        <bufferGeometry>
+                            <bufferAttribute
+                                attach="attributes-position"
+                                count={2}
+                                array={new Float32Array([...points[0].toArray(), ...points[1].toArray()])}
+                                itemSize={3}
+                            />
+                        </bufferGeometry>
+                        <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
+                    </line>
+                );
+            }
+
+            // 3 points: Calculate Arc
+            const p1 = prim.points[0]; // Start
+            const p2 = prim.points[1]; // End
+            const p3 = prim.points[2]; // Mid (visual only)
+
+            // For visualization in Three.js, create a QuadraticBezierCurve3 or similar?
+            // Or actually calculate the circle center and radius from 3 points.
+
+            // Simplified: Draw curved line through points using Spline for preview?
+            // Or better: QuadraticBezier
+
+            const curve = new THREE.QuadraticBezierCurve3(
+                to3D(p1[0], p1[1]),
+                to3D(p3[0], p3[1]), // Using 3rd point as control point for Quadratic is wrong for a circular arc passing through it.
+                to3D(p2[0], p2[1])
+            );
+            // But 'arc' in replicad `threePointsArc` passes THROUGH the mid point.
+            // A CatmullRom with 3 points passes through them.
+
+            const splineCurve = new THREE.CatmullRomCurve3([
+                to3D(p1[0], p1[1]),
+                to3D(p3[0], p3[1]),
+                to3D(p2[0], p2[1])
+            ]);
+            // Force it to be an "arc" is hard in preview without circle math.
+            // Let's use CatmullRom for smooth preview.
+
+            const arcPoints = splineCurve.getPoints(20);
+            return (
+                <line key={prim.id}>
+                    <bufferGeometry>
+                        <bufferAttribute
+                            attach="attributes-position"
+                            count={arcPoints.length}
+                            array={new Float32Array(arcPoints.flatMap(v => [v.x, v.y, v.z]))}
                             itemSize={3}
                         />
                     </bufferGeometry>

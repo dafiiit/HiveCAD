@@ -1,4 +1,4 @@
-import { setOC, makeBox, draw, sketchRectangle, sketchCircle, sketchRoundedRectangle, sketchPolysides, Sketcher, makePlane } from 'replicad';
+import { setOC, makeBox, draw, sketchRectangle, sketchCircle, sketchRoundedRectangle, sketchPolysides, drawCircle, drawRectangle, drawRoundedRectangle, drawPolysides, Sketcher, makePlane } from 'replicad';
 import opencascade from 'replicad-opencascadejs/src/replicad_single.js';
 import * as THREE from 'three';
 
@@ -44,6 +44,80 @@ export const createSketchHelper = (points: [number, number][], close: boolean = 
 
     // Default to XY plane for now
     return drawing.sketchOnPlane("XY");
+};
+
+export const createSketchFromPrimitives = (primitives: { type: string, points: [number, number][], properties?: any }[]) => {
+    if (!initialized || primitives.length === 0) return null;
+
+    const drawings: any[] = [];
+
+    primitives.forEach(prim => {
+        try {
+            if (prim.type === 'line') {
+                if (prim.points.length < 2) return;
+                let pen = draw(prim.points[0]);
+                for (let i = 1; i < prim.points.length; i++) {
+                    pen = pen.lineTo(prim.points[i]);
+                }
+                drawings.push(pen.done());
+            } else if (prim.type === 'rectangle') {
+                if (prim.points.length < 2) return;
+                const [p1, p2] = prim.points;
+                const width = Math.abs(p2[0] - p1[0]);
+                const height = Math.abs(p2[1] - p1[1]);
+                const centerX = (p1[0] + p2[0]) / 2;
+                const centerY = (p1[1] + p2[1]) / 2;
+
+                let rect = drawRoundedRectangle(width, height, 0);
+                rect = rect.translate(centerX, centerY);
+                drawings.push(rect);
+            } else if (prim.type === 'circle') {
+                if (prim.points.length < 2) return;
+                const [center, edge] = prim.points;
+                const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
+
+                let circ = drawCircle(radius);
+                circ = circ.translate(center[0], center[1]);
+                drawings.push(circ);
+            } else if (prim.type === 'polygon') {
+                if (prim.points.length < 2) return;
+                const [center, edge] = prim.points;
+                const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
+                const sides = prim.properties?.sides || 6;
+
+                let poly = drawPolysides(radius, sides);
+                poly = poly.translate(center[0], center[1]);
+                drawings.push(poly);
+            } else if (prim.type === 'spline') {
+                if (prim.points.length < 2) return;
+                let pen = draw(prim.points[0]);
+                for (let i = 1; i < prim.points.length; i++) {
+                    pen = pen.smoothSplineTo(prim.points[i]);
+                }
+                drawings.push(pen.done());
+            } else if (prim.type === 'arc') {
+                if (prim.points.length < 3) return;
+                const [start, end, mid] = prim.points;
+                let arc = draw(start).threePointsArcTo(end, mid);
+                drawings.push(arc.done());
+            }
+        } catch (e) {
+            console.error(`Failed to create primitive ${prim.type}`, e);
+        }
+    });
+
+    if (drawings.length === 0) return null;
+
+    let compound = drawings[0];
+    for (let i = 1; i < drawings.length; i++) {
+        try {
+            compound = compound.fuse(drawings[i]);
+        } catch (e) {
+            console.warn("Fuse failed, maybe disjoint? Keeping separate (not fully supported)", e);
+        }
+    }
+
+    return compound.sketchOnPlane("XY");
 };
 
 export const replicadToThreeGeometry = (shape: any): THREE.BufferGeometry => {

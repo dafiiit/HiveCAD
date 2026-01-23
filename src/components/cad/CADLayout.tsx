@@ -12,11 +12,12 @@ import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
 
 const CADLayout = () => {
-  const { 
-    activeTab, 
-    setActiveTab, 
-    isSketchMode, 
+  const {
+    activeTab,
+    setActiveTab,
+    isSketchMode,
     exitSketchMode,
+    finishSketch,
     fileName,
     isSaved,
     undo,
@@ -75,7 +76,7 @@ const CADLayout = () => {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         isSketchMode={isSketchMode}
-        onFinishSketch={exitSketchMode}
+        onFinishSketch={finishSketch}
       />
 
       {/* Main content area */}
@@ -87,7 +88,7 @@ const CADLayout = () => {
         <div className="flex-1 flex flex-col relative">
           <div className="flex-1 relative">
             <Viewport isSketchMode={isSketchMode} />
-            
+
             {/* View cube overlay */}
             <ViewCube />
           </div>

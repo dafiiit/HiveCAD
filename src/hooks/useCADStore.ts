@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import * as THREE from 'three';
-import { initCAD, makeBoxHelper, replicadToThreeGeometry, createSketchHelper } from '../lib/cad-kernel';
+import { initCAD, makeBoxHelper, replicadToThreeGeometry, createSketchHelper, createSketchFromPrimitives } from '../lib/cad-kernel';
 
 const shapeRegistry = new Map<string, any>(); // Stores WASM objects
 
@@ -49,8 +49,11 @@ export interface Comment {
 
 export interface SketchPrimitive {
   id: string;
-  type: 'line' | 'rectangle' | 'circle' | 'arc';
+  type: 'line' | 'rectangle' | 'circle' | 'arc' | 'polygon' | 'spline';
   points: [number, number][]; // Standardized points: Line [p1...pn], Rect [p1, p2], Circle [center, edge]
+  properties?: {
+    sides?: number; // For polygon
+  };
 }
 
 interface CADState {
@@ -108,7 +111,6 @@ interface CADState {
   setActiveTool: (tool: ToolType) => void;
   setActiveTab: (tab: CADState['activeTab']) => void;
   enterSketchMode: () => void;
-  exitSketchMode: () => void;
 
   // Actions - View
   setView: (view: ViewType) => void;
@@ -148,11 +150,12 @@ interface CADState {
   setSketchPlane: (plane: 'XY' | 'XZ' | 'YZ') => void;
   addSketchPrimitive: (primitive: SketchPrimitive) => void;
   updateCurrentDrawingPrimitive: (primitive: SketchPrimitive | null) => void;
-  clearSketch: () => void;
+  exitSketchMode: () => void;
   finishSketch: () => void;
 }
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
+
 
 const DEFAULT_COLORS = ['#6090c0', '#c06060', '#60c060', '#c0c060', '#c060c0', '#60c0c0'];
 let colorIndex = 0;
@@ -409,6 +412,18 @@ export const useCADStore = create<CADState>((set, get) => ({
     });
   },
 
+  exitSketchMode: () => {
+    set({
+      isSketchMode: false,
+      sketchPoints: [],
+      activeSketchPrimitives: [],
+      currentDrawingPrimitive: null,
+      sketchPlane: null,
+      activeTab: 'SOLID',
+      activeTool: 'select'
+    });
+  },
+
   finishSketch: () => {
     const state = get();
     // Support both legacy points and new primitives
@@ -438,32 +453,10 @@ export const useCADStore = create<CADState>((set, get) => ({
         const sketch = createSketchHelper(state.sketchPoints, true);
         if (sketch) geometry = replicadToThreeGeometry(sketch);
       }
-      // 2. Primitives Path (TODO: Implement multi-primitive helper in kernel)
+      // 2. Primitives Path
       else if (hasPrimitives) {
-        // For now, join all primitives? Or just take the first one?
-        // This is a placeholder until we update the kernel
-        console.warn("Multi-primitive sketching not fully implemented in kernel yet, falling back to points or empty");
-
-        // Temporary: If the FIRST primitive is a loop, try to make it
-        const validPrim = state.activeSketchPrimitives.find(p => p.type === 'line' && p.points.length >= 2);
-        if (validPrim) {
-          const sketch = createSketchHelper(validPrim.points, true); // Assume closed for now
-          if (sketch) geometry = replicadToThreeGeometry(sketch);
-        }
-      }
-
-      if (!geometry) {
-        console.error("Failed to create geometry from sketch");
-        set({
-          isSketchMode: false,
-          sketchPoints: [],
-          activeSketchPrimitives: [],
-          currentDrawingPrimitive: null,
-          sketchPlane: null,
-          activeTab: 'SOLID',
-          activeTool: 'select'
-        });
-        return;
+        const shape = createSketchFromPrimitives(state.activeSketchPrimitives);
+        if (shape) geometry = replicadToThreeGeometry(shape);
       }
 
       const newObject: CADObject = {
