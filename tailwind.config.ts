@@ -57,33 +57,57 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        // CAD-specific colors
+        toolbar: {
+          DEFAULT: "hsl(var(--toolbar-bg))",
+          border: "hsl(var(--toolbar-border))",
+        },
+        panel: {
+          DEFAULT: "hsl(var(--panel-bg))",
+          header: "hsl(var(--panel-header))",
+        },
+        viewport: "hsl(var(--viewport-bg))",
+        timeline: "hsl(var(--timeline-bg))",
+        "tab-active": "hsl(var(--tab-active))",
+        "icon-default": "hsl(var(--icon-default))",
+        "icon-hover": "hsl(var(--icon-hover))",
+        viewcube: {
+          DEFAULT: "hsl(var(--viewcube-bg))",
+          face: "hsl(var(--viewcube-face))",
+          edge: "hsl(var(--viewcube-edge))",
+        },
+        sketch: {
+          grid: "hsl(var(--sketch-grid))",
+          origin: "hsl(var(--sketch-origin))",
+        },
+        selection: "hsl(var(--selection-blue))",
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      fontSize: {
+        "2xs": ["0.625rem", { lineHeight: "0.75rem" }],
+      },
       keyframes: {
         "accordion-down": {
-          from: {
-            height: "0",
-          },
-          to: {
-            height: "var(--radix-accordion-content-height)",
-          },
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
         },
         "accordion-up": {
-          from: {
-            height: "var(--radix-accordion-content-height)",
-          },
-          to: {
-            height: "0",
-          },
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
+        },
+        "pulse-glow": {
+          "0%, 100%": { boxShadow: "0 0 0 0 hsl(var(--primary) / 0.4)" },
+          "50%": { boxShadow: "0 0 8px 2px hsl(var(--primary) / 0.6)" },
         },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "pulse-glow": "pulse-glow 2s ease-in-out infinite",
       },
     },
   },
