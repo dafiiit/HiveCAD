@@ -2,95 +2,83 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* Fusion 360 CAD Design System - Professional Dark Industrial Theme */
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Core backgrounds - dark slate tones */
+    --background: 210 25% 12%;
+    --foreground: 210 20% 92%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    /* Panel backgrounds */
+    --card: 210 25% 15%;
+    --card-foreground: 210 20% 92%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover: 210 25% 18%;
+    --popover-foreground: 210 20% 92%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Primary - CAD accent blue */
+    --primary: 207 85% 55%;
+    --primary-foreground: 210 25% 8%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Secondary - toolbar background */
+    --secondary: 210 20% 22%;
+    --secondary-foreground: 210 20% 88%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Muted - subtle backgrounds */
+    --muted: 210 18% 18%;
+    --muted-foreground: 210 15% 55%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Accent - highlights and selections */
+    --accent: 207 75% 45%;
+    --accent-foreground: 210 25% 98%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    /* Destructive */
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    /* Borders and inputs */
+    --border: 210 20% 25%;
+    --input: 210 20% 20%;
+    --ring: 207 85% 55%;
 
-    --radius: 0.5rem;
+    /* Radius */
+    --radius: 0.25rem;
 
-    --sidebar-background: 0 0% 98%;
+    /* CAD-specific tokens */
+    --toolbar-bg: 210 22% 20%;
+    --toolbar-border: 210 20% 28%;
+    --panel-bg: 210 25% 14%;
+    --panel-header: 210 22% 18%;
+    --viewport-bg: 210 30% 16%;
+    --grid-line: 210 20% 25%;
+    --grid-axis: 207 70% 50%;
+    --selection-blue: 207 85% 55%;
+    --icon-default: 210 15% 70%;
+    --icon-hover: 210 20% 90%;
+    --tab-active: 207 80% 50%;
+    --timeline-bg: 210 25% 11%;
+    --viewcube-bg: 210 20% 30%;
+    --viewcube-face: 210 18% 40%;
+    --viewcube-edge: 210 15% 50%;
+    --sketch-grid: 210 25% 28%;
+    --sketch-origin: 0 65% 55%;
 
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    /* Sidebar */
+    --sidebar-background: 210 25% 13%;
+    --sidebar-foreground: 210 20% 85%;
+    --sidebar-primary: 207 85% 55%;
+    --sidebar-primary-foreground: 210 25% 8%;
+    --sidebar-accent: 210 22% 20%;
+    --sidebar-accent-foreground: 210 20% 90%;
+    --sidebar-border: 210 20% 22%;
+    --sidebar-ring: 207 85% 55%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    /* Same as root - this is a dark-first theme */
+    --background: 210 25% 12%;
+    --foreground: 210 20% 92%;
   }
 }
 
@@ -101,5 +89,132 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 12px;
+    overflow: hidden;
+  }
+}
+
+@layer components {
+  /* CAD Toolbar Styles */
+  .cad-toolbar {
+    @apply bg-toolbar border-b border-toolbar-border;
+  }
+
+  .cad-toolbar-tab {
+    @apply px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground;
+    @apply hover:text-foreground hover:bg-secondary/50 transition-colors cursor-pointer;
+  }
+
+  .cad-toolbar-tab-active {
+    @apply text-foreground bg-secondary border-b-2 border-tab-active;
+  }
+
+  .cad-tool-button {
+    @apply flex flex-col items-center justify-center gap-0.5 p-2 rounded-sm;
+    @apply text-icon-default hover:text-icon-hover hover:bg-secondary/60 transition-all;
+    @apply cursor-pointer min-w-[48px];
+  }
+
+  .cad-tool-button-active {
+    @apply bg-accent/20 text-accent border border-accent/40;
+  }
+
+  .cad-tool-group {
+    @apply flex items-end gap-0.5 px-2 border-r border-toolbar-border;
+  }
+
+  .cad-tool-group-label {
+    @apply text-[9px] uppercase tracking-wider text-muted-foreground mt-1 text-center;
+  }
+
+  /* Panel Styles */
+  .cad-panel {
+    @apply bg-panel border-r border-border;
+  }
+
+  .cad-panel-header {
+    @apply flex items-center justify-between px-3 py-1.5 bg-panel-header text-xs font-medium;
+    @apply border-b border-border uppercase tracking-wide;
+  }
+
+  /* Tree View Styles */
+  .cad-tree-item {
+    @apply flex items-center gap-2 px-2 py-1 text-xs cursor-pointer;
+    @apply hover:bg-secondary/40 transition-colors;
+  }
+
+  .cad-tree-item-selected {
+    @apply bg-accent/20 text-accent;
+  }
+
+  /* Viewport Styles */
+  .cad-viewport {
+    @apply bg-viewport relative overflow-hidden;
+  }
+
+  /* View Cube */
+  .cad-viewcube {
+    @apply absolute top-4 right-4 w-20 h-20 cursor-pointer;
+  }
+
+  /* Timeline */
+  .cad-timeline {
+    @apply bg-timeline border-t border-border h-8 flex items-center px-2;
+  }
+
+  /* Sketch Palette */
+  .cad-sketch-palette {
+    @apply bg-panel border-l border-border w-56;
+  }
+
+  .cad-checkbox-row {
+    @apply flex items-center justify-between px-3 py-1 text-xs hover:bg-secondary/30;
+  }
+}
+
+@layer utilities {
+  .text-icon-default {
+    color: hsl(var(--icon-default));
+  }
+
+  .text-icon-hover {
+    color: hsl(var(--icon-hover));
+  }
+
+  .bg-toolbar {
+    background-color: hsl(var(--toolbar-bg));
+  }
+
+  .border-toolbar-border {
+    border-color: hsl(var(--toolbar-border));
+  }
+
+  .bg-panel {
+    background-color: hsl(var(--panel-bg));
+  }
+
+  .bg-panel-header {
+    background-color: hsl(var(--panel-header));
+  }
+
+  .bg-viewport {
+    background-color: hsl(var(--viewport-bg));
+  }
+
+  .bg-timeline {
+    background-color: hsl(var(--timeline-bg));
+  }
+
+  .border-tab-active {
+    border-color: hsl(var(--tab-active));
+  }
+
+  .bg-viewcube {
+    background-color: hsl(var(--viewcube-bg));
+  }
+
+  .bg-viewcube-face {
+    background-color: hsl(var(--viewcube-face));
   }
 }
