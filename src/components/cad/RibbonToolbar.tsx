@@ -30,8 +30,11 @@ import {
   Ruler,
   Crosshair,
   ChevronDown,
-  CheckCircle2
+  CheckCircle2,
+  Trash2
 } from "lucide-react";
+import { useCADStore, ToolType } from "@/hooks/useCADStore";
+import { toast } from "sonner";
 
 type ToolTab = "SOLID" | "SURFACE" | "MESH" | "SHEET" | "PLASTIC" | "MANAGE" | "UTILITIES" | "SKETCH";
 
@@ -41,12 +44,14 @@ interface ToolButtonProps {
   isActive?: boolean;
   hasDropdown?: boolean;
   onClick?: () => void;
+  disabled?: boolean;
 }
 
-const ToolButton = ({ icon, label, isActive, hasDropdown, onClick }: ToolButtonProps) => (
+const ToolButton = ({ icon, label, isActive, hasDropdown, onClick, disabled }: ToolButtonProps) => (
   <button
     onClick={onClick}
-    className={`cad-tool-button ${isActive ? 'cad-tool-button-active' : ''}`}
+    disabled={disabled}
+    className={`cad-tool-button ${isActive ? 'cad-tool-button-active' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
   >
     {icon}
     <span className="text-2xs whitespace-nowrap flex items-center gap-0.5">
@@ -80,7 +85,106 @@ interface RibbonToolbarProps {
 }
 
 const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }: RibbonToolbarProps) => {
+  const { 
+    addObject, 
+    activeTool, 
+    setActiveTool, 
+    enterSketchMode,
+    duplicateSelected,
+    deleteObject,
+    selectedIds,
+    objects
+  } = useCADStore();
+
   const tabs: ToolTab[] = ["SOLID", "SURFACE", "MESH", "SHEET", "PLASTIC", "MANAGE", "UTILITIES"];
+
+  const handleCreatePrimitive = (type: 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil') => {
+    addObject(type);
+    toast.success(`Created new ${type}`);
+  };
+
+  const handleToolSelect = (tool: ToolType) => {
+    setActiveTool(tool);
+    toast(`Tool: ${tool.charAt(0).toUpperCase() + tool.slice(1)}`);
+  };
+
+  const handleStartSketch = () => {
+    enterSketchMode();
+    toast.success("Sketch mode activated");
+  };
+
+  const handleDuplicate = () => {
+    if (selectedIds.size === 0) {
+      toast.error("Select objects to duplicate");
+      return;
+    }
+    duplicateSelected();
+    toast.success(`Duplicated ${selectedIds.size} object(s)`);
+  };
+
+  const handleDelete = () => {
+    if (selectedIds.size === 0) {
+      toast.error("Select objects to delete");
+      return;
+    }
+    const ids = [...selectedIds];
+    ids.forEach(id => deleteObject(id));
+    toast.success(`Deleted ${ids.length} object(s)`);
+  };
+
+  const handleJoin = () => {
+    if (selectedIds.size < 2) {
+      toast.error("Select at least 2 objects to join");
+      return;
+    }
+    toast("Join operation (simulated)");
+  };
+
+  const handleCut = () => {
+    if (selectedIds.size < 2) {
+      toast.error("Select at least 2 objects to cut");
+      return;
+    }
+    toast("Cut operation (simulated)");
+  };
+
+  const handleIntersect = () => {
+    if (selectedIds.size < 2) {
+      toast.error("Select at least 2 objects to intersect");
+      return;
+    }
+    toast("Intersect operation (simulated)");
+  };
+
+  const handleMeasure = () => {
+    toast("Click two points to measure distance");
+    setActiveTool('measure');
+  };
+
+  const handleExport = () => {
+    const data = JSON.stringify(objects, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'cad-export.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Project exported");
+  };
+
+  const handleImport = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        toast.success(`Importing ${file.name}...`);
+      }
+    };
+    input.click();
+  };
   
   if (isSketchMode) {
     return (
@@ -104,34 +208,106 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
         {/* Sketch Tools */}
         <div className="flex items-center py-1 px-1">
           <ToolGroup label="CREATE">
-            <ToolButton icon={<Minus className="w-5 h-5" />} label="Line" />
-            <ToolButton icon={<ArrowUpRight className="w-5 h-5" />} label="Arc" />
-            <ToolButton icon={<Circle className="w-5 h-5" />} label="Circle" />
-            <ToolButton icon={<RectangleHorizontal className="w-5 h-5" />} label="Rect" />
-            <ToolButton icon={<Pentagon className="w-5 h-5" />} label="Polygon" />
-            <ToolButton icon={<Spline className="w-5 h-5" />} label="Spline" />
+            <ToolButton 
+              icon={<Minus className="w-5 h-5" />} 
+              label="Line" 
+              isActive={activeTool === 'line'}
+              onClick={() => handleToolSelect('line')}
+            />
+            <ToolButton 
+              icon={<ArrowUpRight className="w-5 h-5" />} 
+              label="Arc" 
+              isActive={activeTool === 'arc'}
+              onClick={() => handleToolSelect('arc')}
+            />
+            <ToolButton 
+              icon={<Circle className="w-5 h-5" />} 
+              label="Circle" 
+              isActive={activeTool === 'circle'}
+              onClick={() => handleToolSelect('circle')}
+            />
+            <ToolButton 
+              icon={<RectangleHorizontal className="w-5 h-5" />} 
+              label="Rect" 
+              isActive={activeTool === 'rectangle'}
+              onClick={() => handleToolSelect('rectangle')}
+            />
+            <ToolButton 
+              icon={<Pentagon className="w-5 h-5" />} 
+              label="Polygon" 
+              isActive={activeTool === 'polygon'}
+              onClick={() => handleToolSelect('polygon')}
+            />
+            <ToolButton 
+              icon={<Spline className="w-5 h-5" />} 
+              label="Spline" 
+              isActive={activeTool === 'spline'}
+              onClick={() => handleToolSelect('spline')}
+            />
           </ToolGroup>
 
           <ToolGroup label="MODIFY">
-            <ToolButton icon={<Scissors className="w-5 h-5" />} label="Trim" />
-            <ToolButton icon={<Move className="w-5 h-5" />} label="Move" />
-            <ToolButton icon={<Copy className="w-5 h-5" />} label="Copy" />
-            <ToolButton icon={<Scale className="w-5 h-5" />} label="Scale" />
-            <ToolButton icon={<RotateCw className="w-5 h-5" />} label="Rotate" />
+            <ToolButton 
+              icon={<Scissors className="w-5 h-5" />} 
+              label="Trim" 
+              isActive={activeTool === 'trim'}
+              onClick={() => handleToolSelect('trim')}
+            />
+            <ToolButton 
+              icon={<Move className="w-5 h-5" />} 
+              label="Move" 
+              isActive={activeTool === 'move'}
+              onClick={() => handleToolSelect('move')}
+            />
+            <ToolButton 
+              icon={<Copy className="w-5 h-5" />} 
+              label="Copy" 
+              isActive={activeTool === 'copy'}
+              onClick={() => handleToolSelect('copy')}
+            />
+            <ToolButton 
+              icon={<Scale className="w-5 h-5" />} 
+              label="Scale" 
+              isActive={activeTool === 'scale'}
+              onClick={() => handleToolSelect('scale')}
+            />
+            <ToolButton 
+              icon={<RotateCw className="w-5 h-5" />} 
+              label="Rotate" 
+              isActive={activeTool === 'rotate'}
+              onClick={() => handleToolSelect('rotate')}
+            />
           </ToolGroup>
 
           <ToolGroup label="CONSTRAINTS">
-            <ToolButton icon={<Ruler className="w-5 h-5" />} label="Dimension" />
-            <ToolButton icon={<Crosshair className="w-5 h-5" />} label="Constrain" hasDropdown />
+            <ToolButton 
+              icon={<Ruler className="w-5 h-5" />} 
+              label="Dimension" 
+              isActive={activeTool === 'dimension'}
+              onClick={() => handleToolSelect('dimension')}
+            />
+            <ToolButton 
+              icon={<Crosshair className="w-5 h-5" />} 
+              label="Constrain" 
+              hasDropdown 
+              isActive={activeTool === 'constrain'}
+              onClick={() => handleToolSelect('constrain')}
+            />
           </ToolGroup>
 
           <ToolGroup label="INSERT">
-            <ToolButton icon={<Download className="w-5 h-5" />} label="Insert" hasDropdown />
-            <ToolButton icon={<Grid3X3 className="w-5 h-5" />} label="Pattern" hasDropdown />
+            <ToolButton icon={<Download className="w-5 h-5" />} label="Insert" hasDropdown onClick={handleImport} />
+            <ToolButton icon={<Grid3X3 className="w-5 h-5" />} label="Pattern" hasDropdown onClick={() => toast("Pattern tool")} />
           </ToolGroup>
 
           <ToolGroup label="SELECT">
-            <ToolButton icon={<MousePointer2 className="w-5 h-5" />} label="Select" hasDropdown />
+            <ToolButton 
+              icon={<MousePointer2 className="w-5 h-5" />} 
+              label="Select" 
+              hasDropdown 
+              isActive={activeTool === 'select'}
+              onClick={() => handleToolSelect('select')}
+            />
           </ToolGroup>
 
           <div className="ml-auto flex items-center gap-2 pr-2">
@@ -169,50 +345,163 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
       {/* Tool ribbon */}
       <div className="flex items-center py-1 px-1 overflow-x-auto">
         <ToolGroup label="CREATE">
-          <ToolButton icon={<Box className="w-5 h-5" />} label="Box" hasDropdown />
-          <ToolButton icon={<Cylinder className="w-5 h-5" />} label="Cylinder" />
-          <ToolButton icon={<Circle className="w-5 h-5" />} label="Sphere" />
-          <ToolButton icon={<Hexagon className="w-5 h-5" />} label="Torus" />
-          <ToolButton icon={<Triangle className="w-5 h-5" />} label="Coil" />
-          <ToolButton icon={<Pencil className="w-5 h-5" />} label="Sketch" isActive={false} />
+          <ToolButton 
+            icon={<Box className="w-5 h-5" />} 
+            label="Box" 
+            hasDropdown 
+            onClick={() => handleCreatePrimitive('box')}
+          />
+          <ToolButton 
+            icon={<Cylinder className="w-5 h-5" />} 
+            label="Cylinder" 
+            onClick={() => handleCreatePrimitive('cylinder')}
+          />
+          <ToolButton 
+            icon={<Circle className="w-5 h-5" />} 
+            label="Sphere" 
+            onClick={() => handleCreatePrimitive('sphere')}
+          />
+          <ToolButton 
+            icon={<Hexagon className="w-5 h-5" />} 
+            label="Torus" 
+            onClick={() => handleCreatePrimitive('torus')}
+          />
+          <ToolButton 
+            icon={<Triangle className="w-5 h-5" />} 
+            label="Coil" 
+            onClick={() => handleCreatePrimitive('coil')}
+          />
+          <ToolButton 
+            icon={<Pencil className="w-5 h-5" />} 
+            label="Sketch" 
+            isActive={isSketchMode} 
+            onClick={handleStartSketch}
+          />
         </ToolGroup>
 
         <ToolGroup label="MODIFY">
-          <ToolButton icon={<Move className="w-5 h-5" />} label="Move" />
-          <ToolButton icon={<RotateCw className="w-5 h-5" />} label="Rotate" />
-          <ToolButton icon={<Scale className="w-5 h-5" />} label="Scale" />
-          <ToolButton icon={<Copy className="w-5 h-5" />} label="Copy" />
+          <ToolButton 
+            icon={<Move className="w-5 h-5" />} 
+            label="Move" 
+            isActive={activeTool === 'move'}
+            onClick={() => handleToolSelect('move')}
+          />
+          <ToolButton 
+            icon={<RotateCw className="w-5 h-5" />} 
+            label="Rotate" 
+            isActive={activeTool === 'rotate'}
+            onClick={() => handleToolSelect('rotate')}
+          />
+          <ToolButton 
+            icon={<Scale className="w-5 h-5" />} 
+            label="Scale" 
+            isActive={activeTool === 'scale'}
+            onClick={() => handleToolSelect('scale')}
+          />
+          <ToolButton 
+            icon={<Copy className="w-5 h-5" />} 
+            label="Copy" 
+            onClick={handleDuplicate}
+          />
+          <ToolButton 
+            icon={<Trash2 className="w-5 h-5" />} 
+            label="Delete" 
+            onClick={handleDelete}
+          />
         </ToolGroup>
 
         <ToolGroup label="COMBINE">
-          <ToolButton icon={<Combine className="w-5 h-5" />} label="Join" />
-          <ToolButton icon={<SplitSquareVertical className="w-5 h-5" />} label="Cut" />
-          <ToolButton icon={<Layers className="w-5 h-5" />} label="Intersect" />
+          <ToolButton 
+            icon={<Combine className="w-5 h-5" />} 
+            label="Join" 
+            onClick={handleJoin}
+          />
+          <ToolButton 
+            icon={<SplitSquareVertical className="w-5 h-5" />} 
+            label="Cut" 
+            onClick={handleCut}
+          />
+          <ToolButton 
+            icon={<Layers className="w-5 h-5" />} 
+            label="Intersect" 
+            onClick={handleIntersect}
+          />
         </ToolGroup>
 
         <ToolGroup label="CONFIGURE">
-          <ToolButton icon={<Settings2 className="w-5 h-5" />} label="Parameters" hasDropdown />
-          <ToolButton icon={<Grid3X3 className="w-5 h-5" />} label="Pattern" hasDropdown />
+          <ToolButton 
+            icon={<Settings2 className="w-5 h-5" />} 
+            label="Parameters" 
+            hasDropdown 
+            onClick={() => toast("Parameters panel")}
+          />
+          <ToolButton 
+            icon={<Grid3X3 className="w-5 h-5" />} 
+            label="Pattern" 
+            hasDropdown 
+            onClick={() => toast("Pattern tool")}
+          />
         </ToolGroup>
 
         <ToolGroup label="CONSTRUCT">
-          <ToolButton icon={<Square className="w-5 h-5" />} label="Plane" hasDropdown />
-          <ToolButton icon={<Minus className="w-5 h-5" />} label="Axis" />
-          <ToolButton icon={<CircleDot className="w-5 h-5" />} label="Point" />
+          <ToolButton 
+            icon={<Square className="w-5 h-5" />} 
+            label="Plane" 
+            hasDropdown 
+            isActive={activeTool === 'plane'}
+            onClick={() => handleToolSelect('plane')}
+          />
+          <ToolButton 
+            icon={<Minus className="w-5 h-5" />} 
+            label="Axis" 
+            isActive={activeTool === 'axis'}
+            onClick={() => handleToolSelect('axis')}
+          />
+          <ToolButton 
+            icon={<CircleDot className="w-5 h-5" />} 
+            label="Point" 
+            isActive={activeTool === 'point'}
+            onClick={() => handleToolSelect('point')}
+          />
         </ToolGroup>
 
         <ToolGroup label="INSPECT">
-          <ToolButton icon={<Ruler className="w-5 h-5" />} label="Measure" />
-          <ToolButton icon={<Eye className="w-5 h-5" />} label="Analyze" hasDropdown />
+          <ToolButton 
+            icon={<Ruler className="w-5 h-5" />} 
+            label="Measure" 
+            isActive={activeTool === 'measure'}
+            onClick={handleMeasure}
+          />
+          <ToolButton 
+            icon={<Eye className="w-5 h-5" />} 
+            label="Analyze" 
+            hasDropdown 
+            onClick={() => toast("Analyze tools")}
+          />
         </ToolGroup>
 
         <ToolGroup label="INSERT">
-          <ToolButton icon={<Download className="w-5 h-5" />} label="Insert" hasDropdown />
-          <ToolButton icon={<Upload className="w-5 h-5" />} label="Export" />
+          <ToolButton 
+            icon={<Download className="w-5 h-5" />} 
+            label="Insert" 
+            hasDropdown 
+            onClick={handleImport}
+          />
+          <ToolButton 
+            icon={<Upload className="w-5 h-5" />} 
+            label="Export" 
+            onClick={handleExport}
+          />
         </ToolGroup>
 
         <ToolGroup label="SELECT">
-          <ToolButton icon={<MousePointer2 className="w-5 h-5" />} label="Select" hasDropdown />
+          <ToolButton 
+            icon={<MousePointer2 className="w-5 h-5" />} 
+            label="Select" 
+            hasDropdown 
+            isActive={activeTool === 'select'}
+            onClick={() => handleToolSelect('select')}
+          />
         </ToolGroup>
       </div>
     </div>
