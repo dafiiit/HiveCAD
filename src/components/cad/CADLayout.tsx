@@ -8,6 +8,7 @@ import SketchPalette from "./SketchPalette";
 import Timeline from "./Timeline";
 import StatusBar from "./StatusBar";
 import CommentsPanel from "./CommentsPanel";
+import OperationProperties from "./OperationProperties";
 import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
 
@@ -99,6 +100,9 @@ const CADLayout = () => {
 
         {/* Right sketch palette (visible in sketch mode) */}
         <SketchPalette isVisible={isSketchMode} />
+
+        {/* Operation Properties (Floating) */}
+        <OperationProperties />
       </div>
 
       {/* Timeline */}

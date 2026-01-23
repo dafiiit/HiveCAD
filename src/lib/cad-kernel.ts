@@ -1,4 +1,4 @@
-import { setOC, makeBox, draw, sketchRectangle, sketchCircle, sketchRoundedRectangle, sketchPolysides, drawCircle, drawRectangle, drawRoundedRectangle, drawPolysides, Sketcher, makePlane } from 'replicad';
+import { setOC, makeBox, makeCylinder, makeSphere, draw, sketchRectangle, sketchCircle, sketchRoundedRectangle, sketchPolysides, drawCircle, drawRectangle, drawRoundedRectangle, drawPolysides, Sketcher, makePlane } from 'replicad';
 import opencascade from 'replicad-opencascadejs/src/replicad_single.js';
 import * as THREE from 'three';
 
@@ -25,6 +25,16 @@ export const initCAD = async () => {
 export const makeBoxHelper = (width: number, height: number, depth: number) => {
     if (!initialized) throw new Error('CAD Kernel not initialized');
     return makeBox([0, 0, 0], [width, height, depth]);
+};
+
+export const makeCylinderHelper = (radius: number, height: number) => {
+    if (!initialized) throw new Error('CAD Kernel not initialized');
+    return makeCylinder(radius, height);
+};
+
+export const makeSphereHelper = (radius: number) => {
+    if (!initialized) throw new Error('CAD Kernel not initialized');
+    return makeSphere(radius);
 };
 
 export const createSketchHelper = (points: [number, number][], close: boolean = false) => {

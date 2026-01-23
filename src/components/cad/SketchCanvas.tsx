@@ -4,12 +4,52 @@ import { Html } from "@react-three/drei";
 import * as THREE from "three";
 import { useCADStore, SketchPrimitive } from "../../hooks/useCADStore";
 
+// Type needed for dynamic inputs
+interface DynamicInputProps {
+    position: [number, number, number];
+    value: number;
+    label?: string;
+    showLabel?: boolean;
+    onChange: (val: number) => void;
+    onLock: () => void;
+    autoFocus?: boolean;
+}
+
+const DynamicInputOverlay = ({ position, value, label, showLabel, onChange, onLock, autoFocus }: DynamicInputProps) => {
+    return (
+        <Html position={position} center className="pointer-events-none">
+            <div className="flex flex-col items-center pointer-events-auto">
+                <input
+                    type="number"
+                    value={value}
+                    onChange={(e) => onChange(parseFloat(e.target.value))}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') onLock();
+                        if (e.key === 'Tab') {
+                            e.preventDefault();
+                            onLock(); // Lock current and move focus logic handles next
+                        }
+                    }}
+                    autoFocus={autoFocus}
+                    className="w-20 bg-slate-800/90 text-white text-xs px-1.5 py-0.5 rounded border border-slate-600 focus:border-blue-500 focus:outline-none text-center shadow-lg"
+                />
+                {showLabel && <div className="text-[10px] text-slate-300 bg-slate-900/50 px-1 rounded mt-0.5 backdrop-blur-sm">{label}</div>}
+            </div>
+        </Html>
+    );
+};
+
 const SketchCanvas = () => {
     const {
         isSketchMode, sketchStep, sketchPlane, activeTool,
         activeSketchPrimitives, currentDrawingPrimitive,
-        addSketchPrimitive, updateCurrentDrawingPrimitive
+        addSketchPrimitive, updateCurrentDrawingPrimitive,
+        lockedValues, setSketchInputLock, clearSketchInputLocks, finishSketch
     } = useCADStore();
+
+    // Input Refs for tab navigation
+    const widthInputRef = useRef<HTMLInputElement>(null);
+    const heightInputRef = useRef<HTMLInputElement>(null);
 
     // Use local state effectively for high frequency updates before committing to store
     const [hoverPoint, setHoverPoint] = useState<[number, number] | null>(null);
@@ -59,13 +99,33 @@ const SketchCanvas = () => {
             if (sketchPlane === 'YZ') worldPoint.x = 0;
 
             const p2d = to2D(worldPoint);
-            setHoverPoint(p2d);
+
+            // Logic to respect Locked Values for Rectangle
+            let finalP2d = [...p2d] as [number, number];
+
+            if (currentDrawingPrimitive && currentDrawingPrimitive.type === 'rectangle' && currentDrawingPrimitive.points.length > 0) {
+                const start = currentDrawingPrimitive.points[0];
+
+                // If width is locked (x-diff)
+                if (lockedValues['width'] !== undefined && lockedValues['width'] !== null) {
+                    const directionX = p2d[0] >= start[0] ? 1 : -1;
+                    finalP2d[0] = start[0] + (lockedValues['width']! * directionX);
+                }
+
+                // If height is locked (y-diff)
+                if (lockedValues['height'] !== undefined && lockedValues['height'] !== null) {
+                    const directionY = p2d[1] >= start[1] ? 1 : -1;
+                    finalP2d[1] = start[1] + (lockedValues['height']! * directionY);
+                }
+            }
+
+            setHoverPoint(finalP2d);
 
             if (currentDrawingPrimitive) {
                 // Update the primitive being drawn
                 const newPoints = [...currentDrawingPrimitive.points];
                 // Update last point (the cursor point)
-                newPoints[newPoints.length - 1] = p2d;
+                newPoints[newPoints.length - 1] = finalP2d;
 
                 updateCurrentDrawingPrimitive({
                     ...currentDrawingPrimitive,
@@ -80,6 +140,11 @@ const SketchCanvas = () => {
         e.stopPropagation();
 
         const p2d = hoverPoint;
+
+        // Reset locks when starting new primitive
+        if (!currentDrawingPrimitive) {
+            clearSketchInputLocks();
+        }
 
         if (!currentDrawingPrimitive) {
             // Start simple primitives
@@ -195,18 +260,127 @@ const SketchCanvas = () => {
             ];
             const displayPoints = rectPoints2D.map(p => to3D(p[0], p[1]));
 
+
+            // Dimensions for display
+            const width = Math.abs(u2[0] - u1[0]);
+            const height = Math.abs(u2[1] - u1[1]);
+            const cx = (u1[0] + u2[0]) / 2;
+            const cy = (u1[1] + u2[1]) / 2;
+
+            // Determine if we are actively drawing this primitive to show inputs
+            const isDrawing = currentDrawingPrimitive?.id === prim.id;
+
             return (
-                <line key={prim.id}>
-                    <bufferGeometry>
-                        <bufferAttribute
-                            attach="attributes-position"
-                            count={displayPoints.length}
-                            array={new Float32Array(displayPoints.flatMap(v => [v.x, v.y, v.z]))}
-                            itemSize={3}
-                        />
-                    </bufferGeometry>
-                    <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
-                </line>
+                <group key={prim.id}>
+                    {/* Main Rectangle Line */}
+                    <line>
+                        <bufferGeometry>
+                            <bufferAttribute
+                                attach="attributes-position"
+                                count={displayPoints.length}
+                                array={new Float32Array(displayPoints.flatMap(v => [v.x, v.y, v.z]))}
+                                itemSize={3}
+                            />
+                        </bufferGeometry>
+                        <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
+                    </line>
+
+                    {/* Visual Guides (Only when drawing) */}
+                    {isDrawing && (
+                        <>
+                            {/* Dashed Center Lines (Diagonals) */}
+                            <line>
+                                <bufferGeometry>
+                                    <bufferAttribute
+                                        attach="attributes-position"
+                                        count={2}
+                                        array={new Float32Array([...to3D(u1[0], u1[1]).toArray(), ...to3D(u2[0], u2[1]).toArray()])}
+                                        itemSize={3}
+                                    />
+                                </bufferGeometry>
+                                <lineDashedMaterial color="#666" dashSize={2} gapSize={2} depthTest={false} />
+                            </line>
+                            <line>
+                                <bufferGeometry>
+                                    <bufferAttribute
+                                        attach="attributes-position"
+                                        count={2}
+                                        array={new Float32Array([...to3D(u1[0], u2[1]).toArray(), ...to3D(u2[0], u1[1]).toArray()])}
+                                        itemSize={3}
+                                    />
+                                </bufferGeometry>
+                                <lineDashedMaterial color="#666" dashSize={2} gapSize={2} depthTest={false} />
+                            </line>
+
+                            {/* Dimension Lines (Green) */}
+                            {/* Width Dimension (Top) */}
+                            <line>
+                                <bufferGeometry>
+                                    <bufferAttribute
+                                        attach="attributes-position"
+                                        count={2}
+                                        array={new Float32Array([
+                                            ...to3D(u1[0], Math.max(u1[1], u2[1]) + 2).toArray(),
+                                            ...to3D(u2[0], Math.max(u1[1], u2[1]) + 2).toArray()
+                                        ])}
+                                        itemSize={3}
+                                    />
+                                </bufferGeometry>
+                                <lineBasicMaterial color="#4ade80" linewidth={1} depthTest={false} />
+                            </line>
+                            {/* Height Dimension (Left) */}
+                            <line>
+                                <bufferGeometry>
+                                    <bufferAttribute
+                                        attach="attributes-position"
+                                        count={2}
+                                        array={new Float32Array([
+                                            ...to3D(Math.min(u1[0], u2[0]) - 2, u1[1]).toArray(),
+                                            ...to3D(Math.min(u1[0], u2[0]) - 2, u2[1]).toArray()
+                                        ])}
+                                        itemSize={3}
+                                    />
+                                </bufferGeometry>
+                                <lineBasicMaterial color="#4ade80" linewidth={1} depthTest={false} />
+                            </line>
+
+                            {/* Dynamic Inputs */}
+                            <DynamicInputOverlay
+                                position={to3D(cx, Math.max(u1[1], u2[1]) + 4).toArray()}
+                                value={lockedValues['width'] ?? parseFloat(width.toFixed(2))}
+                                label="Width"
+                                showLabel
+                                autoFocus={!lockedValues['width']}
+                                onChange={(val) => {
+                                    setSketchInputLock('width', val);
+                                    // If both locked, finish? Or wait for enter?
+                                }}
+                                onLock={() => {
+                                    // If we lock width, focus height next?
+                                    // Actually just setting the value locks it based on my logic above
+                                    // We might want to auto-focus the next field
+                                }}
+                            />
+
+                            <DynamicInputOverlay
+                                position={to3D(Math.min(u1[0], u2[0]) - 4, cy).toArray()}
+                                value={lockedValues['height'] ?? parseFloat(height.toFixed(2))}
+                                label="Height"
+                                showLabel
+                                onChange={(val) => setSketchInputLock('height', val)}
+                                onLock={() => {
+                                    // Finish if confirmed?
+                                    if (lockedValues['width']) {
+                                        // Both locked, user pressed enter on height -> Finish
+                                        finishSketch(); // This finishes the whole sketch mode though. 
+                                        // We want to finish just the RECTANGLE.
+                                        // Trigger a fake click event? Or call primitive add logic directly?
+                                    }
+                                }}
+                            />
+                        </>
+                    )}
+                </group>
             );
         } else if (prim.type === 'circle') {
             if (points.length < 2) return null;
