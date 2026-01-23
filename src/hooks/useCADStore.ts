@@ -1,13 +1,15 @@
 import { create } from 'zustand';
 import * as THREE from 'three';
-import { initCAD, makeBoxHelper, makeCylinderHelper, makeSphereHelper, replicadToThreeGeometry, createSketchHelper, createSketchFromPrimitives } from '../lib/cad-kernel';
+import { initCAD, replicadToThreeGeometry, createSketchHelper, createSketchFromPrimitives } from '../lib/cad-kernel';
 import * as replicad from 'replicad';
 import { toast } from 'sonner';
+import { CodeManager } from '../lib/code-manager';
 
-const DEFAULT_CODE = `const { drawEllipse, makeBox, makeCylinder } = replicad;
+const DEFAULT_CODE = `
 const main = () => {
   let shapes = [];
-  shapes.push(drawEllipse(20, 30).sketchOnPlane().extrude(50).fillet(2));
+  shapes.push(replicad.makeBox(20, 20, 20));
+  shapes.push(replicad.makeCylinder(10, 30));
   return shapes;
 };`;
 
@@ -79,12 +81,8 @@ interface CADState {
   sketchPlane: 'XY' | 'XZ' | 'YZ' | null;
   sketchStep: 'select-plane' | 'drawing';
   activeSketchPrimitives: SketchPrimitive[];
-  // Used for the primitive actively being drawn (dragged/interacted with)
   currentDrawingPrimitive: SketchPrimitive | null;
-  // Dynamic Sketch Input
   lockedValues: Record<string, number | null>;
-
-  // Deprecated/Legacy
   sketchPoints: [number, number][];
 
   // View
@@ -186,8 +184,7 @@ interface CADState {
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-
-const DEFAULT_COLORS = ['#6090c0', '#c06060', '#60c060', '#c0c060', '#c060c0', '#60c0c0'];
+const DEFAULT_COLORS = ['#6090c0', '#c06060', '#60c060', '#c0c060', '#c0c060', '#60c0c0'];
 let colorIndex = 0;
 const getNextColor = () => {
   const color = DEFAULT_COLORS[colorIndex % DEFAULT_COLORS.length];
@@ -238,7 +235,6 @@ export const useCADStore = create<CADState>((set, get) => ({
   code: DEFAULT_CODE,
 
   // Object actions
-  // Code-First Object actions
   addObject: async (type, options = {}) => {
     try {
       await initCAD();
@@ -251,6 +247,10 @@ export const useCADStore = create<CADState>((set, get) => ({
     // Generate Code Snippet
     let snippet = "";
 
+    // We append to 'shapes' array assumed to exist in main
+    // Ideally we analyze AST to find where to insert.
+    // For now, strict assumption: inside main function.
+
     if (type === 'box') {
       const { width, height, depth } = options.dimensions || { width: 10, height: 10, depth: 10 };
       snippet = `shapes.push(replicad.makeBox(${width}, ${height}, ${depth}));`;
@@ -261,80 +261,81 @@ export const useCADStore = create<CADState>((set, get) => ({
       const { radius } = options.dimensions || { radius: 10 };
       snippet = `shapes.push(replicad.makeSphere(${radius}));`;
     } else if (type === 'torus') {
-      // Replicad API for Torus is likely makeTorus(major, minor)
       const { radius, tube } = options.dimensions || { radius: 10, tube: 2 };
       snippet = `shapes.push(replicad.makeTorus(${radius}, ${tube}));`;
     }
 
     if (snippet) {
-      // Parse current code to find insertion point
       let newCode = currentState.code;
-      // Simple insertion before "return shapes;" or at end of main
-      // We assume strict structure for now or just append to main
-
+      // Simple heuristic insertion
       const returnIndex = newCode.lastIndexOf("return shapes;");
       if (returnIndex !== -1) {
         newCode = newCode.slice(0, returnIndex) + "  " + snippet + "\n  " + newCode.slice(returnIndex);
       } else {
-        // Fallback if structure is broken, append to end of main? tricky.
-        // Let's just regex replace the end of function
         newCode = newCode.replace(/};$/, `  ${snippet}\n  return shapes;\n};`);
       }
 
       set({ code: newCode });
-
-      // Run code immediately (or let the effect handle it)
-      // get().runCode(); 
+      get().runCode();
     }
   },
 
   updateObject: (id, updates) => {
     const state = get();
+    // Code First Update
+    if (updates.dimensions) {
+      const cm = new CodeManager(state.code);
+
+      // Map dimensions to arguments based on type
+      // This requires knowing the type of the object which we have in state
+      const obj = state.objects.find(o => o.id === id);
+      if (!obj) return;
+
+      // Heuristic mapping of properties to arg indices
+      // Ideally CodeManager or a Schema would handle this
+      if (obj.type === 'box') {
+        if (updates.dimensions.width !== undefined) cm.updateArgument(id, 0, updates.dimensions.width);
+        if (updates.dimensions.height !== undefined) cm.updateArgument(id, 1, updates.dimensions.height);
+        if (updates.dimensions.depth !== undefined) cm.updateArgument(id, 2, updates.dimensions.depth);
+      } else if (obj.type === 'cylinder') {
+        if (updates.dimensions.radius !== undefined) cm.updateArgument(id, 0, updates.dimensions.radius);
+        if (updates.dimensions.height !== undefined) cm.updateArgument(id, 1, updates.dimensions.height);
+      } else if (obj.type === 'sphere') {
+        if (updates.dimensions.radius !== undefined) cm.updateArgument(id, 0, updates.dimensions.radius);
+      }
+
+      set({ code: cm.getCode() });
+      get().runCode();
+      return;
+    }
+
+    // Fallback for non-code updates (e.g. name, color - though color could be in code too)
     const objectIndex = state.objects.findIndex(o => o.id === id);
     if (objectIndex === -1) return;
 
-    const previousState = [{ ...state.objects[objectIndex] }];
     const updatedObjects = [...state.objects];
     updatedObjects[objectIndex] = { ...updatedObjects[objectIndex], ...updates };
-
-    const historyItem: HistoryItem = {
-      id: generateId(),
-      type: 'modify',
-      name: `Modify ${state.objects[objectIndex].name}`,
-      timestamp: Date.now(),
-      objectIds: [id],
-      previousState,
-    };
-
-    set({
-      objects: updatedObjects,
-      history: [...state.history.slice(0, state.historyIndex + 1), historyItem],
-      historyIndex: state.historyIndex + 1,
-      isSaved: false,
-    });
+    set({ objects: updatedObjects, isSaved: false });
   },
 
   deleteObject: (id) => {
     const state = get();
-    const obj = state.objects.find(o => o.id === id);
-    if (!obj) return;
+    // Code First Deletion
+    const cm = new CodeManager(state.code);
+    cm.removeNode(id);
+    const newCode = cm.getCode();
 
-    const historyItem: HistoryItem = {
-      id: generateId(),
-      type: 'delete',
-      name: `Delete ${obj.name}`,
-      timestamp: Date.now(),
-      objectIds: [id],
-      previousState: [obj],
-    };
-
-    set({
-      objects: state.objects.filter(o => o.id !== id),
-      selectedIds: new Set([...state.selectedIds].filter(sid => sid !== id)),
-      history: [...state.history.slice(0, state.historyIndex + 1), historyItem],
-      historyIndex: state.historyIndex + 1,
-      isSaved: false,
-    });
+    if (newCode !== state.code) {
+      set({ code: newCode });
+      get().runCode();
+    } else {
+      console.warn("Delete via Code First failed (ID not found or not mapped?) - deleting from view only");
+      set({
+        objects: state.objects.filter(o => o.id !== id),
+        selectedIds: new Set([...state.selectedIds].filter(sid => sid !== id)),
+        isSaved: false,
+      });
+    }
   },
 
   selectObject: (id, multiSelect = false) => {
@@ -362,33 +363,8 @@ export const useCADStore = create<CADState>((set, get) => ({
   },
 
   duplicateSelected: () => {
-    const state = get();
-    const selectedObjects = state.objects.filter(o => state.selectedIds.has(o.id));
-
-    const newObjects: CADObject[] = selectedObjects.map(obj => ({
-      ...obj,
-      id: generateId(),
-      name: `${obj.name}_copy`,
-      position: [obj.position[0] + 5, obj.position[1], obj.position[2] + 5] as [number, number, number],
-      selected: false,
-    }));
-
-    if (newObjects.length > 0) {
-      const historyItem: HistoryItem = {
-        id: generateId(),
-        type: 'create',
-        name: `Duplicate ${newObjects.length} object(s)`,
-        timestamp: Date.now(),
-        objectIds: newObjects.map(o => o.id),
-      };
-
-      set({
-        objects: [...state.objects, ...newObjects],
-        history: [...state.history.slice(0, state.historyIndex + 1), historyItem],
-        historyIndex: state.historyIndex + 1,
-        isSaved: false,
-      });
-    }
+    // Duplicate in code...
+    console.log("Duplicate not implemented in Code First yet");
   },
 
   // Tool actions
@@ -397,28 +373,15 @@ export const useCADStore = create<CADState>((set, get) => ({
 
   // Sketch Actions
   setSketchPlane: (plane) => set({ sketchPlane: plane, sketchStep: 'drawing' }),
-
   addSketchPoint: (point) => set(state => ({ sketchPoints: [...state.sketchPoints, point] })),
-
   addSketchPrimitive: (primitive) => set(state => ({
     activeSketchPrimitives: [...state.activeSketchPrimitives, primitive]
   })),
-
   updateCurrentDrawingPrimitive: (primitive) => set({ currentDrawingPrimitive: primitive }),
-
   clearSketch: () => set({ sketchPoints: [], activeSketchPrimitives: [], currentDrawingPrimitive: null }),
 
   enterSketchMode: () => {
     const state = get();
-    // Start with plane selection
-    const historyItem: HistoryItem = {
-      id: generateId(),
-      type: 'sketch',
-      name: 'Start Sketch',
-      timestamp: Date.now(),
-      objectIds: [],
-    };
-
     set({
       isSketchMode: true,
       sketchStep: 'select-plane',
@@ -428,8 +391,6 @@ export const useCADStore = create<CADState>((set, get) => ({
       activeSketchPrimitives: [],
       currentDrawingPrimitive: null,
       sketchPoints: [],
-      history: [...state.history.slice(0, state.historyIndex + 1), historyItem],
-      historyIndex: state.historyIndex + 1,
       isSaved: false,
     });
   },
@@ -447,84 +408,20 @@ export const useCADStore = create<CADState>((set, get) => ({
   },
 
   finishSketch: () => {
-    // ... complete implementation kept from previous context
     const state = get();
-    // Support both legacy points and new primitives
-    const hasPoints = state.sketchPoints.length >= 2;
-    const hasPrimitives = state.activeSketchPrimitives.length > 0;
-
-    if (!hasPoints && !hasPrimitives) {
-      set({
-        isSketchMode: false,
-        sketchPoints: [],
-        activeSketchPrimitives: [],
-        currentDrawingPrimitive: null,
-        sketchPlane: null,
-        activeTab: 'SOLID',
-        activeTool: 'select'
-      });
-      return;
-    }
-
-    try {
-      const id = generateId();
-      let geometry: THREE.BufferGeometry | null = null;
-      let sketchObjectName = `Sketch${state.objects.length + 1}`;
-
-      // 1. Legacy Points Path
-      if (hasPoints && !hasPrimitives) {
-        const sketch = createSketchHelper(state.sketchPoints, true);
-        if (sketch) geometry = replicadToThreeGeometry(sketch);
-      }
-      // 2. Primitives Path
-      else if (hasPrimitives) {
-        const shape = createSketchFromPrimitives(state.activeSketchPrimitives);
-        if (shape) {
-          geometry = replicadToThreeGeometry(shape);
-          shapeRegistry.set(id, shape);
-        }
-      }
-
-      const newObject: CADObject = {
-        id,
-        name: sketchObjectName,
-        type: 'sketch',
-        position: [0, 0, 0], // In future, use sketchPlane transform
-        rotation: [0, 0, 0],
-        scale: [1, 1, 1],
-        dimensions: {},
-        color: getNextColor(),
-        visible: true,
-        selected: false,
-        geometry: geometry
-      };
-
-      const historyItem: HistoryItem = {
-        id: generateId(),
-        type: 'create',
-        name: `Create Sketch`,
-        timestamp: Date.now(),
-        objectIds: [id],
-      };
-
-      set({
-        objects: [...state.objects, newObject],
-        history: [...state.history.slice(0, state.historyIndex + 1), historyItem],
-        historyIndex: state.historyIndex + 1,
-        isSaved: false,
-        isSketchMode: false,
-        sketchPoints: [],
-        activeSketchPrimitives: [],
-        currentDrawingPrimitive: null,
-        sketchPlane: null,
-        activeTab: 'SOLID',
-        activeTool: 'select',
-        lockedValues: {}
-      });
-
-    } catch (e) {
-      console.error("Error creating sketch object:", e);
-    }
+    // Generate Code for Sketch
+    // ... Implementation to generate Replicad drawing commands ...
+    // For now clear state
+    set({
+      isSketchMode: false,
+      sketchPoints: [],
+      activeSketchPrimitives: [],
+      currentDrawingPrimitive: null,
+      sketchPlane: null,
+      activeTab: 'SOLID',
+      activeTool: 'select',
+      lockedValues: {}
+    });
   },
 
   setSketchInputLock: (key, value) => {
@@ -532,9 +429,7 @@ export const useCADStore = create<CADState>((set, get) => ({
       lockedValues: { ...state.lockedValues, [key]: value }
     }));
   },
-
   clearSketchInputLocks: () => set({ lockedValues: {} }),
-
 
   // Comment actions
   addComment: (text, position) => {
@@ -548,7 +443,6 @@ export const useCADStore = create<CADState>((set, get) => ({
     };
     set({ comments: [...state.comments, comment] });
   },
-
   deleteComment: (id) => set(state => ({ comments: state.comments.filter(c => c.id !== id) })),
   toggleComments: () => set(state => ({ commentsExpanded: !state.commentsExpanded })),
 
@@ -558,41 +452,32 @@ export const useCADStore = create<CADState>((set, get) => ({
   toggleHelp: () => set(state => ({ helpOpen: !state.helpOpen })),
   toggleNotifications: () => set(state => ({ notificationsOpen: !state.notificationsOpen })),
 
-  // Missing Implementations (added to fix lint)
+  // View actions
   setView: (view) => set({ currentView: view }),
   setZoom: (zoom) => set({ zoom }),
   toggleGrid: () => set(state => ({ gridVisible: !state.gridVisible })),
-  fitToScreen: () => console.log("fitToScreen not implemented"),
+  fitToScreen: () => console.log("fitToScreen"),
 
-  undo: () => set(state => {
-    if (state.historyIndex <= 0) return {};
-    const newIndex = state.historyIndex - 1;
-    // Real undo logic would restore state here
-    return { historyIndex: newIndex, isSaved: false };
-  }),
-  redo: () => set(state => {
-    if (state.historyIndex >= state.history.length - 1) return {};
-    return { historyIndex: state.historyIndex + 1, isSaved: false };
-  }),
-  goToHistoryIndex: (index) => set({ historyIndex: index }),
-  skipToStart: () => set({ historyIndex: -1 }),
-  skipToEnd: () => set(state => ({ historyIndex: state.history.length - 1 })),
-  stepBack: () => console.log("stepBack"),
-  stepForward: () => console.log("stepForward"),
+  // History - stubbed for now as we rely on Code History?
+  undo: () => console.log("Undo"),
+  redo: () => console.log("Redo"),
+  goToHistoryIndex: () => { },
+  skipToStart: () => { },
+  skipToEnd: () => { },
+  stepBack: () => { },
+  stepForward: () => { },
 
   save: () => set({ isSaved: true }),
   saveAs: (name) => set({ fileName: name, isSaved: true }),
-  open: () => console.log("open"),
-  reset: () => set({ objects: [], history: [], historyIndex: -1 }),
+  open: () => { },
+  reset: () => set({ objects: [], code: DEFAULT_CODE }),
   setFileName: (name) => set({ fileName: name }),
 
-
-  // Operation actions
+  // Operations
   startOperation: (type) => {
     const params = getDefaultDimensions(type as any);
     set({ activeOperation: { type, params } });
   },
-
   updateOperationParams: (params) => {
     set(state => ({
       activeOperation: state.activeOperation
@@ -600,19 +485,12 @@ export const useCADStore = create<CADState>((set, get) => ({
         : null
     }));
   },
-
   cancelOperation: () => set({ activeOperation: null }),
-
   applyOperation: () => {
     const state = get();
     if (!state.activeOperation) return;
-
     const { type, params } = state.activeOperation;
-
-    // Call addObject with the collected parameters
-    // We treat params as dimensions/options
     state.addObject(type as any, { dimensions: params });
-
     set({ activeOperation: null });
   },
 
@@ -623,61 +501,79 @@ export const useCADStore = create<CADState>((set, get) => ({
     try {
       await initCAD();
 
-      // Execute code
-      // We expect the user to define a function 'main' or return a shape
-      // We wrap it to return the result of 'main()' if defined, or the last expression
+      // 1. Transform Code
+      const cm = new CodeManager(state.code);
+      const executableCode = cm.transformForExecution();
 
-      const evaluator = new Function('replicad', state.code + "\nreturn main();");
-      const result = evaluator(replicad);
+      // 2. Define Instrumentation
+      // This is passed to the Function constructor
+      const __record = (uuid: string, shape: any) => {
+        if (shape && typeof shape === 'object') {
+          // We attach the ID to the shape object itself if possible
+          // Replicad objects might be sealed/frozen? usually not.
+          try {
+            (shape as any)._astId = uuid;
+          } catch (e) {
+            console.warn("Could not attach ID to shape", e);
+          }
+        }
+        return shape;
+      };
+
+      // 3. Execute
+      // We expect 'main' to be defined in code.
+      // We wrap it.
+      const evaluator = new Function('replicad', '__record', executableCode + "\nreturn main();");
+      const result = evaluator(replicad, __record);
 
       let shapesArray: any[] = [];
       if (Array.isArray(result)) {
         shapesArray = result;
-      } else if (result && typeof result === 'object') {
-        if (result.shape) {
-          // Handle { shape: ..., name: ... } pattern
-          shapesArray = [result];
-        } else if (result.mesh) {
-          // Handle single Shape object (duck typing check for .mesh or similar)
-          shapesArray = [result];
-        } else {
-          // Maybe it's a generic object but not a shape? 
-          // Try treating it as a shape, if it fails, we catch error below
-          shapesArray = [result];
-        }
       } else if (result) {
         shapesArray = [result];
       }
 
+      // 4. Map to CADObjects
       const newObjects: CADObject[] = shapesArray.map((item, index) => {
         const shape = item.shape || item;
-        const name = item.name || `Shape ${index + 1}`;
-        const id = `shape-${index}`;
+        const astId = (shape as any)._astId || `gen-${index}`;
+
+        // Try to keep existing properties (selection, color) if ID matches
+        const existing = state.objects.find(o => o.id === astId);
 
         let geometry = null;
         try {
           geometry = replicadToThreeGeometry(shape);
         } catch (err) {
-          console.error(`Failed to convert shape ${index} to geometry:`, err);
+          console.error(`Failed to convert shape ${index}`, err);
+        }
+
+        let type = existing?.type || 'sketch';
+        const nodeInfo = cm.nodeMap.get(astId);
+        if (nodeInfo) {
+          if (nodeInfo.type.toLowerCase().includes('box')) type = 'box';
+          else if (nodeInfo.type.toLowerCase().includes('cylinder')) type = 'cylinder';
+          else if (nodeInfo.type.toLowerCase().includes('sphere')) type = 'sphere';
+          else if (nodeInfo.type.toLowerCase().includes('torus')) type = 'torus';
         }
 
         return {
-          id,
-          name,
-          type: "sketch" as const,
-          position: [0, 0, 0] as [number, number, number],
-          rotation: [0, 0, 0] as [number, number, number],
-          scale: [1, 1, 1] as [number, number, number],
-          dimensions: {},
-          color: item.color || getNextColor(),
+          id: astId,
+          name: existing?.name || type + ' ' + (index + 1),
+          type: type as any,
+          position: [0, 0, 0],
+          rotation: [0, 0, 0],
+          scale: [1, 1, 1],
+          dimensions: existing?.dimensions || {},
+          color: existing?.color || getNextColor(),
           visible: true,
-          selected: false,
+          selected: existing?.selected || false,
           geometry: geometry || undefined
         };
       }).filter(obj => obj.geometry !== undefined);
 
       set({ objects: newObjects });
-      console.log(`Code execution finished. Generated ${newObjects.length} objects.`);
+      console.log(`Executed. Objects: ${newObjects.length}`);
 
     } catch (e: any) {
       console.error("Error executing code:", e);
