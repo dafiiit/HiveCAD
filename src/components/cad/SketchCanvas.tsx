@@ -6,6 +6,7 @@ import { useCADStore, SketchPrimitive, ToolType } from "../../hooks/useCADStore"
 import { SnappingEngine, SnapResult } from "../../lib/snapping";
 import { toolRegistry } from "../../lib/tools";
 import SketchToolDialog, { TOOL_PARAMS } from "./SketchToolDialog";
+import { DimensionBadge, createAnnotationContext } from "./SketchAnnotations";
 
 // Type needed for dynamic inputs
 interface DynamicInputProps {
@@ -44,7 +45,6 @@ const DynamicInputOverlay = ({ position, value, label, showLabel, onChange, onLo
 
 // Tools that require parameter dialog before drawing
 const DIALOG_REQUIRED_TOOLS: ToolType[] = [
-    'polarline', 'tangentline',
     'sagittaArc', 'ellipse',
     'smoothSpline', 'bezier', 'quadraticBezier', 'cubicBezier',
     'roundedRectangle', 'polygon', 'text'
@@ -61,9 +61,10 @@ const SketchCanvas = () => {
         isSketchMode, sketchStep, sketchPlane, activeTool,
         activeSketchPrimitives, currentDrawingPrimitive,
         addSketchPrimitive, updateCurrentDrawingPrimitive,
+        selectedIds, selectObject, clearSelection,
         lockedValues, setSketchInputLock, clearSketchInputLocks, finishSketch,
         // Solver state and actions
-        solverInstance, sketchEntities, draggingEntityId,
+        solverInstance, sketchEntities, sketchConstraints, draggingEntityId,
         initializeSolver, setDrivingPoint, solveConstraints, setDraggingEntity,
         addSolverLineMacro, addSolverRectangleMacro, addSolverCircleMacro,
         // Snapping state and actions
@@ -92,35 +93,58 @@ const SketchCanvas = () => {
         }
     }, [snappingEngine, activeSketchPrimitives]);
 
+    const annotationCtx = useMemo(() => sketchPlane ? createAnnotationContext(sketchPlane) : null, [sketchPlane]);
+
     // Only active in sketch mode drawing step
     if (!isSketchMode || sketchStep !== 'drawing' || !sketchPlane) return null;
 
-    const planeRotation: [number, number, number] =
-        sketchPlane === 'XY' ? [0, 0, 0] :
-            sketchPlane === 'XZ' ? [Math.PI / 2, 0, 0] :
-                [0, Math.PI / 2, 0];
+    /**
+     * PLANE COORDINATE SYSTEM - Using Normal Vectors
+     * 
+     * In Three.js Y-up, a PlaneGeometry defaults to XY plane with normal +Z.
+     * Camera positions determine what the user SEES:
+     * 
+     * | Plane Name | Camera At | User Sees    | Drawing Surface | Normal Vector | Raycast Rotation |
+     * |------------|-----------|--------------|-----------------|---------------|------------------|
+     * | XY (Top)   | +Y        | XZ plane     | Y=0 horizontal  | (0, 1, 0)     | [-π/2, 0, 0]     |
+     * | XZ (Front) | +Z        | XY plane     | Z=0 vertical    | (0, 0, 1)     | [0, 0, 0]        |
+     * | YZ (Right) | +X        | YZ plane     | X=0 vertical    | (1, 0, 0)     | [0, π/2, 0]      |
+     * 
+     * 2D Sketch Coordinates: (u, v) where u=horizontal, v=vertical on screen
+     * 3D World Mapping must match what camera sees!
+     */
 
-    // Helper to map 3D point to 2D sketch plane coordinates
+    // Raycast plane rotation - rotates default XY plane to match the actual drawing surface
+    // Normal (0,0,1) → target normal via rotation
+    const planeRotation: [number, number, number] =
+        sketchPlane === 'XY' ? [-Math.PI / 2, 0, 0] :  // Normal → (0,1,0), horizontal plane at Y=0
+            sketchPlane === 'XZ' ? [0, 0, 0] :              // Normal stays (0,0,1), vertical plane at Z=0
+                [0, Math.PI / 2, 0];     // Normal → (1,0,0), vertical plane at X=0
+
+    // Helper to map 3D world point to 2D sketch coordinates
+    // Must extract the two coordinates visible on screen for each camera view
     const to2D = (p: THREE.Vector3): [number, number] => {
-        if (sketchPlane === 'XY') return [p.x, p.y];
-        if (sketchPlane === 'XZ') return [p.x, p.z];
-        return [p.y, p.z];
+        if (sketchPlane === 'XY') return [p.x, p.z];  // Top view: X is horizontal, Z is vertical
+        if (sketchPlane === 'XZ') return [p.x, p.y];  // Front view: X is horizontal, Y is vertical
+        return [p.z, p.y];                             // Right view: Z is horizontal, Y is vertical
     };
 
     // Helper to map 2D sketch coord back to 3D world
-    const to3D = (x: number, y: number): THREE.Vector3 => {
-        if (sketchPlane === 'XY') return new THREE.Vector3(x, y, 0);
-        if (sketchPlane === 'XZ') return new THREE.Vector3(x, 0, y);
-        return new THREE.Vector3(0, x, y);
+    // The fixed coordinate is on the plane (e.g., Y=0 for horizontal XY/Top plane)
+    const to3D = (u: number, v: number): THREE.Vector3 => {
+        if (sketchPlane === 'XY') return new THREE.Vector3(u, 0, v);  // Y=0 plane, u→X, v→Z
+        if (sketchPlane === 'XZ') return new THREE.Vector3(u, v, 0);  // Z=0 plane, u→X, v→Y
+        return new THREE.Vector3(0, v, u);                             // X=0 plane, u→Z, v→Y
     };
 
     const handlePointerMove = (e: ThreeEvent<PointerEvent>) => {
         if (e.intersections.length > 0) {
             const worldPoint = e.intersections[0].point;
 
-            if (sketchPlane === 'XY') worldPoint.z = 0;
-            if (sketchPlane === 'XZ') worldPoint.y = 0;
-            if (sketchPlane === 'YZ') worldPoint.x = 0;
+            // Clamp to exact plane to avoid floating point drift
+            if (sketchPlane === 'XY') worldPoint.y = 0;  // Y=0 plane
+            if (sketchPlane === 'XZ') worldPoint.z = 0;  // Z=0 plane
+            if (sketchPlane === 'YZ') worldPoint.x = 0;  // X=0 plane
 
             const p2d = to2D(worldPoint);
             let finalP2d = [...p2d] as [number, number];
@@ -181,6 +205,72 @@ const SketchCanvas = () => {
         }
     };
 
+    // Hit Test Helper
+    const hitTest = (p: [number, number]) => {
+        const hitThreshold = 0.5;
+        let closestEntityId: string | null = null;
+        let minDistance = hitThreshold;
+
+        sketchEntities.forEach((entity) => {
+            let distance = Infinity;
+
+            if (entity.type === 'point') {
+                const dx = entity.x - p[0];
+                const dy = entity.y - p[1];
+                distance = Math.sqrt(dx * dx + dy * dy);
+            } else if (entity.type === 'line') {
+                const p1 = sketchEntities.get(entity.p1Id);
+                const p2 = sketchEntities.get(entity.p2Id);
+                if (p1 && p2 && p1.type === 'point' && p2.type === 'point') {
+                    // Distance from point to line segment
+                    const A = p[0] - p1.x;
+                    const B = p[1] - p1.y;
+                    const C = p2.x - p1.x;
+                    const D = p2.y - p1.y;
+
+                    const dot = A * C + B * D;
+                    const lenSq = C * C + D * D;
+                    let param = -1;
+                    if (lenSq !== 0) // in case of 0 length line
+                        param = dot / lenSq;
+
+                    let xx, yy;
+
+                    if (param < 0) {
+                        xx = p1.x;
+                        yy = p1.y;
+                    }
+                    else if (param > 1) {
+                        xx = p2.x;
+                        yy = p2.y;
+                    }
+                    else {
+                        xx = p1.x + param * C;
+                        yy = p1.y + param * D;
+                    }
+
+                    const dx = p[0] - xx;
+                    const dy = p[1] - yy;
+                    distance = Math.sqrt(dx * dx + dy * dy);
+                }
+            } else if (entity.type === 'circle') {
+                const center = sketchEntities.get(entity.centerId);
+                if (center && center.type === 'point') {
+                    const dx = center.x - p[0];
+                    const dy = center.y - p[1];
+                    const distToCenter = Math.sqrt(dx * dx + dy * dy);
+                    distance = Math.abs(distToCenter - entity.radius);
+                }
+            }
+
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestEntityId = entity.id;
+            }
+        });
+        return closestEntityId;
+    };
+
     const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
         if (e.button !== 0 || !hoverPoint || showDialog) return;
         e.stopPropagation();
@@ -189,6 +279,57 @@ const SketchCanvas = () => {
 
         if (!currentDrawingPrimitive) {
             clearSketchInputLocks();
+        }
+
+        // Handle Selection and Dimension Tools
+        if (activeTool === 'select' || activeTool === 'dimension') {
+            const hitId = hitTest(p2d);
+
+            if (hitId) {
+                // For dimension tool, we want to accumulate selection (multi-select behavior mostly)
+                // but if we click the same thing, maybe toggle?
+                const multiSelect = e.ctrlKey || e.metaKey || e.shiftKey || activeTool === 'dimension';
+                selectObject(hitId, multiSelect);
+
+                if (activeTool === 'dimension') {
+                    // Check if we can apply a dimension with current selection
+                    const state = useCADStore.getState();
+                    // We need to fetch FRESH selectedIds from state because selectObject updates store asynchronously? 
+                    // No, Zustand updates are synchronous usually.
+                    // But we should use the updated selection.
+                    // We can check 'selectedIds' from hook + hitId? 
+                    // Or just re-read state.
+                    const currentSelected = new Set(state.selectedIds);
+                    // Filter for sketch entities
+                    const sEntities = Array.from(currentSelected)
+                        .filter(id => sketchEntities.has(id))
+                        .map(id => sketchEntities.get(id)!);
+
+                    let applied = false;
+                    const { applyConstraintToSelection, clearSelection: clear } = state;
+
+                    // Case: 1 Circle -> Radius
+                    if (sEntities.length === 1 && sEntities[0].type === 'circle') {
+                        applyConstraintToSelection('radius');
+                        applied = true;
+                    }
+                    // Case: 2 Points -> Distance
+                    else if (sEntities.length === 2 && sEntities.every(e => e.type === 'point')) {
+                        applyConstraintToSelection('distance');
+                        applied = true;
+                    }
+
+                    if (applied) {
+                        clear();
+                        toast.success("Dimension added");
+                    }
+                }
+            } else {
+                if (activeTool === 'select' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                    clearSelection();
+                }
+            }
+            return;
         }
 
         // Check if this tool requires a dialog
@@ -212,8 +353,8 @@ const SketchCanvas = () => {
         const toolDef = toolRegistry.get(tool);
         if (toolDef?.createInitialPrimitive) {
             const primitive = toolDef.createInitialPrimitive(p2d, props) as SketchPrimitive;
-            // Special case: movePointer and text are added immediately
-            if (tool === 'movePointer' || tool === 'text') {
+            // Special case: text is added immediately
+            if (tool === 'text') {
                 addSketchPrimitive(primitive);
             } else {
                 updateCurrentDrawingPrimitive(primitive);
@@ -267,7 +408,7 @@ const SketchCanvas = () => {
         }
 
         // Line types - complete on second click (two-point)
-        if (['line', 'vline', 'hline', 'polarline', 'tangentline'].includes(type)) {
+        if (['line'].includes(type)) {
             // Update the end point and finish the line
             const finalPoints = [currentDrawingPrimitive.points[0], p2d];
             addSketchPrimitive({
@@ -367,7 +508,11 @@ const SketchCanvas = () => {
     };
 
     const renderSolverEntity = (entity: any) => {
-        const color = "#ffffff";
+        const isSelected = selectedIds.has(entity.id);
+        const baseColor = isSelected ? "#ff9900" : "#ffffff";
+        const lineWidth = isSelected ? 3 : 2;
+        const opacity = isSelected ? 1.0 : 0.8;
+
         if (entity.type === 'line') {
             const p1 = sketchEntities.get(entity.p1Id);
             const p2 = sketchEntities.get(entity.p2Id);
@@ -383,7 +528,7 @@ const SketchCanvas = () => {
                             itemSize={3}
                         />
                     </bufferGeometry>
-                    <lineBasicMaterial color={color} linewidth={2} depthTest={false} transparent opacity={0.8} />
+                    <lineBasicMaterial color={baseColor} linewidth={lineWidth} depthTest={false} transparent opacity={opacity} />
                 </line>
             );
         }
@@ -408,17 +553,33 @@ const SketchCanvas = () => {
                             itemSize={3}
                         />
                     </bufferGeometry>
-                    <lineBasicMaterial color={color} linewidth={2} depthTest={false} transparent opacity={0.8} />
+                    <lineBasicMaterial color={baseColor} linewidth={lineWidth} depthTest={false} transparent opacity={opacity} />
                 </line>
             );
         }
-        if (entity.type === 'point' && draggingEntityId === entity.id) {
+        // Points rendering
+        if (entity.type === 'point') {
+            // We generally only render points if they are significant (corners, etc.) or selected/dragged
+            // For now, let's render points if they are selected or if they are terminals of lines/arcs?
+            // Actually, usually CAD tools show points as small dots.
+            // Let's show points if selected or if they are "driving points" (dragging)
+            // The original code only showed points if draggingEntityId === entity.id
+
+            if (isSelected || draggingEntityId === entity.id) {
+                return (
+                    <mesh key={entity.id} position={to3D(entity.x, entity.y)}>
+                        <sphereGeometry args={[isSelected ? 0.3 : 0.2, 8, 8]} />
+                        <meshBasicMaterial color={isSelected ? "#ff9900" : "#00ffff"} depthTest={false} />
+                    </mesh>
+                );
+            }
+            // Also render points slightly to give a target for clicking?
             return (
-                <mesh key={entity.id} position={to3D(entity.x, entity.y)}>
-                    <sphereGeometry args={[0.2, 8, 8]} />
-                    <meshBasicMaterial color="#00ffff" depthTest={false} />
+                <mesh key={entity.id} position={to3D(entity.x, entity.y)} visible={false}>
+                    <sphereGeometry args={[0.3, 8, 8]} />
+                    <meshBasicMaterial color="red" />
                 </mesh>
-            );
+            )
         }
         return null;
     };
@@ -506,6 +667,29 @@ const SketchCanvas = () => {
                     <lineDashedMaterial color="#ffffff" dashSize={1} gapSize={1} depthTest={false} />
                 </line>
             ))}
+
+            {/* Dimension Annotations */}
+            {annotationCtx && sketchConstraints.map(c => {
+                if (c.type === 'distance' && c.value !== undefined && c.entityIds.length >= 2) {
+                    const p1 = sketchEntities.get(c.entityIds[0]);
+                    const p2 = sketchEntities.get(c.entityIds[1]);
+                    if (p1?.type === 'point' && p2?.type === 'point') {
+                        const midX = (p1.x + p2.x) / 2;
+                        const midY = (p1.y + p2.y) / 2;
+                        return <DimensionBadge key={c.id} position={{ x: midX, y: midY }} value={c.value} unit="mm" ctx={annotationCtx} />;
+                    }
+                }
+                if (c.type === 'radius' && c.value !== undefined) {
+                    const circle = sketchEntities.get(c.entityIds[0]);
+                    if (circle?.type === 'circle') {
+                        const center = sketchEntities.get(circle.centerId);
+                        if (center?.type === 'point') {
+                            return <DimensionBadge key={c.id} position={{ x: center.x + circle.radius * 0.7, y: center.y + circle.radius * 0.7 }} value={c.value} unit="R" ctx={annotationCtx} />;
+                        }
+                    }
+                }
+                return null;
+            })}
 
             {/* Tool Parameter Dialog */}
             {showDialog && pendingStartPoint && (

@@ -68,7 +68,8 @@ export type ConstraintType =
     | 'distance'        // Fixed distance between points or point-to-line
     | 'angle'           // Angle between two lines
     | 'pointOnLine'     // Point lies on a line
-    | 'pointOnCircle';  // Point lies on a circle/arc
+    | 'pointOnCircle'   // Point lies on a circle/arc
+    | 'radius';         // Radius of circle/arc
 
 /** A geometric constraint between entities */
 export interface SketchConstraint {

@@ -427,12 +427,22 @@ export class ConstraintSolver {
                 };
                 break;
 
+            case 'radius':
+                gcsConstraint = {
+                    id: constraint.id,
+                    type: 'radius',
+                    c_id: entityIds[0],
+                    value: value || 10,
+                    driving: constraint.driving ?? true
+                } as any;
+                break;
+
             default:
                 console.warn(`Unsupported constraint type: ${type}`);
                 return;
         }
 
-        this.wrapper.push_primitive(gcsConstraint as SketchPrimitive);
+        this.wrapper.push_primitive(gcsConstraint as any);
     }
 
     /**

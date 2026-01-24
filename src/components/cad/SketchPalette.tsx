@@ -79,10 +79,16 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
     toast.success("Sketch completed");
   };
 
+  const planeLabels: Record<string, string> = {
+    'XY': 'Top',
+    'XZ': 'Front',
+    'YZ': 'Right'
+  };
+
   const handlePlaneSelect = (plane: 'XY' | 'XZ' | 'YZ') => {
     setSketchPlane(plane);
     setPlaneDropdownOpen(false);
-    toast.success(`Sketch plane set to ${plane}`);
+    toast.success(`Sketch plane set to ${planeLabels[plane]} (${plane})`);
   };
 
   const planeColors: Record<string, string> = {
@@ -112,8 +118,8 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
             <button
               onClick={() => setPlaneDropdownOpen(!planeDropdownOpen)}
               className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 text-xs rounded border transition-colors ${sketchStep === 'select-plane'
-                  ? 'border-yellow-500/50 bg-yellow-500/10 text-yellow-500'
-                  : 'border-border bg-secondary/50 hover:bg-secondary'
+                ? 'border-yellow-500/50 bg-yellow-500/10 text-yellow-500'
+                : 'border-border bg-secondary/50 hover:bg-secondary'
                 }`}
             >
               <span className="flex items-center gap-2">
@@ -123,7 +129,7 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
                       className="w-2.5 h-2.5 rounded-sm"
                       style={{ backgroundColor: planeColors[sketchPlane] }}
                     />
-                    <span className="font-medium">{sketchPlane} Plane</span>
+                    <span className="font-medium">{planeLabels[sketchPlane]} ({sketchPlane})</span>
                   </>
                 ) : (
                   <span className="text-muted-foreground italic">Select a plane...</span>
@@ -145,7 +151,7 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
                       className="w-2.5 h-2.5 rounded-sm"
                       style={{ backgroundColor: planeColors[plane] }}
                     />
-                    <span>{plane} Plane</span>
+                    <span>{planeLabels[plane]} ({plane})</span>
                     {sketchPlane === plane && <span className="ml-auto text-primary">✓</span>}
                   </button>
                 ))}

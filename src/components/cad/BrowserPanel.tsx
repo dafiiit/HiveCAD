@@ -116,14 +116,20 @@ const BrowserPanel = () => {
     setSketchPlane
   } = useCADStore();
 
+  const planeLabels: Record<string, string> = {
+    'XY': 'Top',
+    'XZ': 'Front',
+    'YZ': 'Right'
+  };
+
   const handlePlaneClick = (plane: 'XY' | 'XZ' | 'YZ') => {
     if (isSketchMode && sketchStep === 'select-plane') {
       setSketchPlane(plane);
-      toast.success(`Sketch plane set to ${plane}`);
+      toast.success(`Sketch plane set to ${planeLabels[plane]} (${plane})`);
     } else if (isSketchMode) {
-      toast(`Sketch plane is already ${plane}`);
+      toast(`Sketch plane is already ${planeLabels[plane]}`);
     } else {
-      toast(`${plane} Plane selected`);
+      toast(`${planeLabels[plane]} Plane selected`);
     }
   };
 
@@ -269,21 +275,21 @@ const BrowserPanel = () => {
           >
             <TreeItem
               icon={<Box className="w-3.5 h-3.5" />}
-              label="XY Plane"
+              label="Top (XY)"
               level={2}
               isSelected={isSketchMode && sketchPlane === 'XY'}
               onClick={() => handlePlaneClick('XY')}
             />
             <TreeItem
               icon={<Box className="w-3.5 h-3.5" />}
-              label="XZ Plane"
+              label="Front (XZ)"
               level={2}
               isSelected={isSketchMode && sketchPlane === 'XZ'}
               onClick={() => handlePlaneClick('XZ')}
             />
             <TreeItem
               icon={<Box className="w-3.5 h-3.5" />}
-              label="YZ Plane"
+              label="Right (YZ)"
               level={2}
               isSelected={isSketchMode && sketchPlane === 'YZ'}
               onClick={() => handlePlaneClick('YZ')}

@@ -1,5 +1,5 @@
 // Line tools
-export { lineTool, vlineTool, hlineTool, polarLineTool, tangentLineTool, movePointerTool } from './line';
+export { lineTool } from './line';
 
 // Arc tools
 export { threePointsArcTool, tangentArcTool, sagittaArcTool, ellipseTool } from './arc';

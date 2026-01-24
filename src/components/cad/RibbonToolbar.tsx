@@ -32,7 +32,13 @@ import {
   ChevronDown,
   CheckCircle2,
   Trash2,
-  MoreHorizontal
+  MoreHorizontal,
+  Anchor,
+  AlignHorizontalSpaceAround,
+  AlignVerticalSpaceAround,
+  Equal,
+  GitCommit,
+  ArrowUpLeft
 } from "lucide-react";
 import { useCADStore, ToolType } from "@/hooks/useCADStore";
 import { toast } from "sonner";
@@ -106,7 +112,8 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
     deleteObject,
     selectedIds,
     startOperation,
-    objects
+    objects,
+    applyConstraintToSelection
   } = useCADStore();
 
   const tabs: ToolTab[] = ["SOLID", "SURFACE", "MESH", "SHEET", "PLASTIC", "MANAGE", "UTILITIES"];
@@ -215,25 +222,13 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
         <div className="flex items-center py-1 px-1">
           <ToolGroup label="CREATE">
 
-            {/* Line Dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <ToolButton
-                  icon={<Minus className="w-5 h-5" />}
-                  label="Line"
-                  isActive={['line', 'vline', 'hline', 'polarline', 'tangentline'].includes(activeTool)}
-                  hasDropdown
-                />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => handleToolSelect('line')}>Line</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleToolSelect('vline')}>Vertical Line</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleToolSelect('hline')}>Horizontal Line</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleToolSelect('polarline')}>Polar Line</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleToolSelect('tangentline')}>Tangent Line</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleToolSelect('movePointer')}>Move Pointer</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Line Tool (Direct) */}
+            <ToolButton
+              icon={<Minus className="w-5 h-5" />}
+              label="Line"
+              isActive={activeTool === 'line'}
+              onClick={() => handleToolSelect('line')}
+            />
 
             {/* Arc Dropdown */}
             <DropdownMenu>
@@ -349,12 +344,65 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
               isActive={activeTool === 'dimension'}
               onClick={() => handleToolSelect('dimension')}
             />
+            {/* Logic Constraints */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <ToolButton
+                  icon={<Crosshair className="w-5 h-5" />}
+                  label="Constraints"
+                  hasDropdown
+                />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuLabel>Geometric Constraints</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => applyConstraintToSelection('coincident')}>
+                  <GitCommit className="w-4 h-4 mr-2" /> Coincident (Point-Point)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => applyConstraintToSelection('horizontal')}>
+                  <AlignHorizontalSpaceAround className="w-4 h-4 mr-2" /> Horizontal
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => applyConstraintToSelection('vertical')}>
+                  <AlignVerticalSpaceAround className="w-4 h-4 mr-2" /> Vertical
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => applyConstraintToSelection('parallel')}>
+                  <MoreHorizontal className="w-4 h-4 mr-2" /> Parallel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => applyConstraintToSelection('perpendicular')}>
+                  <ArrowUpLeft className="w-4 h-4 mr-2" /> Perpendicular
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => applyConstraintToSelection('tangent')}>
+                  <CircleDot className="w-4 h-4 mr-2" /> Tangent
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => applyConstraintToSelection('equal')}>
+                  <Equal className="w-4 h-4 mr-2" /> Equal Length/Radius
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => applyConstraintToSelection('midpoint')}>
+                  <MoreHorizontal className="w-4 h-4 mr-2" /> Midpoint
+                </DropdownMenuItem>
+                {/*
+                 <DropdownMenuItem onClick={() => applyConstraintToSelection('concentric')}>
+                   <Circle className="w-4 h-4 mr-2" /> Concentric
+                 </DropdownMenuItem>
+                 */}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Quick access buttons for common ones */}
             <ToolButton
-              icon={<Crosshair className="w-5 h-5" />}
-              label="Constrain"
-              hasDropdown
-              isActive={activeTool === 'constrain'}
-              onClick={() => handleToolSelect('constrain')}
+              icon={<AlignHorizontalSpaceAround className="w-5 h-5" />}
+              label="Horiz"
+              onClick={() => applyConstraintToSelection('horizontal')}
+            />
+            <ToolButton
+              icon={<AlignVerticalSpaceAround className="w-5 h-5" />}
+              label="Vert"
+              onClick={() => applyConstraintToSelection('vertical')}
+            />
+            <ToolButton
+              icon={<GitCommit className="w-5 h-5" />}
+              label="Coinc"
+              onClick={() => applyConstraintToSelection('coincident')}
             />
           </ToolGroup>
 
@@ -409,32 +457,11 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
       <div className="flex items-center py-1 px-1 overflow-x-auto">
         <ToolGroup label="CREATE">
           <ToolButton
-            icon={<Box className="w-5 h-5" />}
-            label="Box"
-            hasDropdown
-            onClick={() => handleCreatePrimitive('box')}
+            icon={<Pencil className="w-5 h-5" />}
+            label="Sketch"
+            isActive={isSketchMode}
+            onClick={handleStartSketch}
           />
-          <ToolButton
-            icon={<Cylinder className="w-5 h-5" />}
-            label="Cylinder"
-            onClick={() => handleCreatePrimitive('cylinder')}
-          />
-          <ToolButton
-            icon={<Circle className="w-5 h-5" />}
-            label="Sphere"
-            onClick={() => handleCreatePrimitive('sphere')}
-          />
-          <ToolButton
-            icon={<Hexagon className="w-5 h-5" />}
-            label="Torus"
-            onClick={() => handleCreatePrimitive('torus')}
-          />
-          <ToolButton
-            icon={<Triangle className="w-5 h-5" />}
-            label="Coil"
-            onClick={() => handleCreatePrimitive('coil')}
-          />
-          <div className="w-px h-8 bg-border mx-1" />
           <ToolButton
             icon={<ArrowUpRight className="w-5 h-5" />}
             label="Extrude"
@@ -445,12 +472,41 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
             label="Revolve"
             onClick={() => handleOperation('revolve')}
           />
-          <ToolButton
-            icon={<Pencil className="w-5 h-5" />}
-            label="Sketch"
-            isActive={isSketchMode}
-            onClick={handleStartSketch}
-          />
+          <div className="w-px h-8 bg-border mx-1" />
+
+          {/* 3D Primitives Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <ToolButton
+                icon={<Box className="w-5 h-5" />}
+                label="Box"
+                hasDropdown
+                onClick={() => handleCreatePrimitive('box')}
+              />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => handleCreatePrimitive('box')}>
+                <Box className="w-4 h-4 mr-2" />
+                Box
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleCreatePrimitive('cylinder')}>
+                <Cylinder className="w-4 h-4 mr-2" />
+                Cylinder
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleCreatePrimitive('sphere')}>
+                <Circle className="w-4 h-4 mr-2" />
+                Sphere
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleCreatePrimitive('torus')}>
+                <Hexagon className="w-4 h-4 mr-2" />
+                Torus
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleCreatePrimitive('coil')}>
+                <Triangle className="w-4 h-4 mr-2" />
+                Coil
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </ToolGroup>
 
         <ToolGroup label="MODIFY">

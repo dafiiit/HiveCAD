@@ -7,7 +7,7 @@ import { boxTool, cylinderTool, sphereTool, torusTool, coilTool, planeTool } fro
 
 // Sketch tools
 import {
-    lineTool, vlineTool, hlineTool, polarLineTool, tangentLineTool, movePointerTool,
+    lineTool,
     threePointsArcTool, tangentArcTool, sagittaArcTool, ellipseTool,
     smoothSplineTool, bezierTool, quadraticBezierTool, cubicBezierTool,
     rectangleTool, roundedRectangleTool, circleTool, polygonTool, textTool
@@ -27,7 +27,7 @@ const allTools = [
     // Primitives
     boxTool, cylinderTool, sphereTool, torusTool, coilTool, planeTool,
     // Sketch - Lines
-    lineTool, vlineTool, hlineTool, polarLineTool, tangentLineTool, movePointerTool,
+    lineTool,
     // Sketch - Arcs
     threePointsArcTool, tangentArcTool, sagittaArcTool, ellipseTool,
     // Sketch - Splines

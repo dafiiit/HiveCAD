@@ -24,7 +24,7 @@ export type ToolType =
   | 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil'
   | 'sketch'
   // Line tools
-  | 'line' | 'vline' | 'hline' | 'polarline' | 'tangentline' | 'movePointer'
+  | 'line'
   // Arc tools
   | 'threePointsArc' | 'tangentArc' | 'ellipse' | 'sagittaArc'
   // Legacy arc/spline
@@ -77,7 +77,7 @@ export interface Comment {
 
 export interface SketchPrimitive {
   id: string;
-  type: 'line' | 'vline' | 'hline' | 'polarline' | 'tangentline' | 'movePointer'
+  type: 'line'
   | 'threePointsArc' | 'tangentArc' | 'ellipse' | 'sagittaArc'
   | 'bezier' | 'quadraticBezier' | 'cubicBezier' | 'smoothSpline'
   | 'rectangle' | 'circle' | 'polygon' | 'roundedRectangle' | 'text'
@@ -587,6 +587,9 @@ export const useCADStore = create<CADState>((set, get) => ({
 
   enterSketchMode: () => {
     const state = get();
+    // Ensure solver is initialized when entering sketch mode
+    state.initializeSolver();
+
     set({
       isSketchMode: true,
       sketchStep: 'select-plane',
@@ -726,14 +729,7 @@ export const useCADStore = create<CADState>((set, get) => ({
           const p2 = { x: prim.points[1][0], y: prim.points[1][1] };
           graph.addGeometry(new LineSegment(p1, p2));
         }
-        // Specialized line types (treat as regular lines)
-        else if (['vline', 'hline', 'polarline', 'tangentline'].includes(prim.type)) {
-          if (prim.points.length >= 2) {
-            const p1 = { x: prim.points[0][0], y: prim.points[0][1] };
-            const p2 = { x: prim.points[1][0], y: prim.points[1][1] };
-            graph.addGeometry(new LineSegment(p1, p2));
-          }
-        }
+
         // Rectangle
         else if (prim.type === 'rectangle' || prim.type === 'roundedRectangle') {
           const [p1, p2] = prim.points;
@@ -1084,6 +1080,143 @@ export const useCADStore = create<CADState>((set, get) => ({
     const constraints = solverInstance.getAllConstraints();
     set({ sketchConstraints: constraints });
     return id;
+  },
+
+  applyConstraintToSelection: (type: ConstraintType) => {
+    const state = get();
+    const { solverInstance, sketchEntities, selectedIds } = state;
+
+    if (!solverInstance?.isInitialized) {
+      toast.error("Solver not initialized");
+      return;
+    }
+
+    if (selectedIds.size === 0) {
+      toast.error("No entities selected");
+      return;
+    }
+
+    const ids = Array.from(selectedIds).filter(id => sketchEntities.has(id));
+    const entities = ids.map(id => sketchEntities.get(id)!);
+
+    // Validation Logic
+    let valid = false;
+    let errorMsg = "Invalid selection for this constraint";
+
+    switch (type) {
+      case 'horizontal':
+      case 'vertical':
+        if (ids.length === 1 && entities[0].type === 'line') valid = true;
+        else if (ids.length === 2 && entities.every(e => e.type === 'point')) valid = true;
+        else errorMsg = "Select 1 Line or 2 Points";
+        break;
+
+      case 'coincident':
+        if (ids.length === 2 && entities.every(e => e.type === 'point')) valid = true;
+        else errorMsg = "Select 2 Points";
+        // Special case: dragging a point onto another should merge them? 
+        // Or Coincident constraint just makes them stick together.
+        break;
+
+      case 'parallel':
+      case 'perpendicular':
+      case 'equal':
+      case 'angle':
+        if (ids.length === 2 && entities.every(e => e.type === 'line')) valid = true;
+        else errorMsg = "Select 2 Lines";
+        break;
+
+      case 'tangent':
+        // Line + Circle/Arc OR 2 Circles/Arcs
+        if (ids.length === 2) {
+          const hasLine = entities.some(e => e.type === 'line');
+          const hasCircle = entities.some(e => ['circle', 'arc'].includes(e.type));
+          const allCircles = entities.every(e => ['circle', 'arc'].includes(e.type));
+
+          if ((hasLine && hasCircle) || allCircles) valid = true;
+          else errorMsg = "Select 1 Line + 1 Circle/Arc OR 2 Circles/Arcs";
+        }
+        break;
+
+      case 'midpoint':
+        if (ids.length === 2) {
+          const hasLine = entities.some(e => e.type === 'line');
+          const hasPoint = entities.some(e => e.type === 'point');
+          if (hasLine && hasPoint) valid = true;
+          else errorMsg = "Select 1 Point and 1 Line";
+        }
+        break;
+
+      case 'pointOnLine':
+        if (ids.length === 2) {
+          const hasLine = entities.some(e => e.type === 'line');
+          const hasPoint = entities.some(e => e.type === 'point');
+          if (hasLine && hasPoint) valid = true;
+          else errorMsg = "Select 1 Point and 1 Line";
+        }
+        break;
+
+      case 'pointOnCircle':
+        if (ids.length === 2) {
+          const hasCircle = entities.some(e => ['circle', 'arc'].includes(e.type));
+          const hasPoint = entities.some(e => e.type === 'point');
+          if (hasCircle && hasPoint) valid = true;
+          else errorMsg = "Select 1 Point and 1 Circle/Arc";
+        }
+        break;
+
+      case 'distance':
+        // Simplest case: Distance between 2 points
+        if (ids.length === 2 && entities.every(e => e.type === 'point')) valid = true;
+        else errorMsg = "Select 2 Points (for distance)";
+        break;
+
+      default:
+        valid = true; // Try anyway?
+    }
+
+    if (!valid) {
+      toast.error(errorMsg);
+      return;
+    }
+
+    // Apply Constraint
+    // For distance/angle, we might need a current value?
+    // For now, if value is required but not provided, the solver wrapper might auto-calculate?
+    // ConstraintSolver.addConstraint's value is optional.
+    // If we want to "Lock" current distance, we need to calculate it.
+    let value: number | undefined = undefined;
+
+    if (type === 'distance') {
+      if (entities[0].type === 'point' && entities[1].type === 'point') {
+        const p1 = entities[0] as any;
+        const p2 = entities[1] as any;
+        value = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+      }
+    } else if (type === 'angle') {
+      // Calculate angle? Complex for lines if not sharing point.
+      // Let user type it? For now let's skip auto-calc for angle unless we implement a dialog.
+      // Or default to 0/90? No, let's leave undefined and see if wrapper handles it or we default to 0.
+      // The wrapper for angle uses `value || 0`.
+    }
+
+    const cid = solverInstance.addConstraint(type, ids, value);
+    if (cid) {
+      set(state => ({
+        sketchConstraints: [...state.sketchConstraints, {
+          id: cid, type, entityIds: ids, value, driving: true
+        }]
+      }));
+
+      const result = state.solveConstraints();
+      if (result?.success) {
+        toast.success(`Applied ${type} constraint`);
+      } else {
+        toast.error("Constraint invalid or redundant");
+        // Maybe remove it if failed?
+        // solverInstance.removeConstraint(cid);
+      }
+    }
   },
 
   setDrivingPoint: (id: EntityId, x: number, y: number) => {

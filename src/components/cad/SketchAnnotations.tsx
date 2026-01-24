@@ -38,33 +38,40 @@ export interface AnnotationContext {
 /**
  * Create an annotation context for a given sketch plane.
  * This provides all the coordinate conversion utilities needed for annotations.
+ * 
+ * PLANE COORDINATE SYSTEM - Using Normal Vectors:
+ * | Plane Name | Camera At | Drawing Surface | Normal Vector | 2D→3D Mapping        |
+ * |------------|-----------|-----------------|---------------|----------------------|
+ * | XY (Top)   | +Y        | Y=0 horizontal  | (0, 1, 0)     | (u,v) → (u, 0, v)    |
+ * | XZ (Front) | +Z        | Z=0 vertical    | (0, 0, 1)     | (u,v) → (u, v, 0)    |
+ * | YZ (Right) | +X        | X=0 vertical    | (1, 0, 0)     | (u,v) → (0, v, u)    |
  */
 export function createAnnotationContext(plane: SketchPlane): AnnotationContext {
     const to3D = (point: Point2D): THREE.Vector3 => {
         switch (plane) {
-            case 'XY': return new THREE.Vector3(point.x, point.y, 0);
-            case 'XZ': return new THREE.Vector3(point.x, 0, point.y);
-            case 'YZ': return new THREE.Vector3(0, point.x, point.y);
+            case 'XY': return new THREE.Vector3(point.x, 0, point.y);  // Y=0 plane
+            case 'XZ': return new THREE.Vector3(point.x, point.y, 0); // Z=0 plane  
+            case 'YZ': return new THREE.Vector3(0, point.y, point.x); // X=0 plane
         }
     };
 
     // Define "right" (horizontal in sketch space) and "up" (vertical in sketch space)
-    // for each plane
+    // for each plane - must match camera orientation
     let rightVector: THREE.Vector3;
     let upVector: THREE.Vector3;
 
     switch (plane) {
-        case 'XY':
+        case 'XY': // Top view from +Y
+            rightVector = new THREE.Vector3(1, 0, 0);  // +X is right
+            upVector = new THREE.Vector3(0, 0, 1);     // +Z is up
+            break;
+        case 'XZ': // Front view from +Z
             rightVector = new THREE.Vector3(1, 0, 0);  // +X is right
             upVector = new THREE.Vector3(0, 1, 0);     // +Y is up
             break;
-        case 'XZ':
-            rightVector = new THREE.Vector3(1, 0, 0);  // +X is right
-            upVector = new THREE.Vector3(0, 0, 1);     // +Z is up (Y is normal)
-            break;
-        case 'YZ':
-            rightVector = new THREE.Vector3(0, 1, 0);  // +Y is right
-            upVector = new THREE.Vector3(0, 0, 1);     // +Z is up (X is normal)
+        case 'YZ': // Right view from +X
+            rightVector = new THREE.Vector3(0, 0, 1);  // +Z is right
+            upVector = new THREE.Vector3(0, 1, 0);     // +Y is up
             break;
     }
 

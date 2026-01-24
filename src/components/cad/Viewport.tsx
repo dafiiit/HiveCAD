@@ -247,7 +247,14 @@ const PlaneSelector = () => {
         />
       </mesh>
 
-      {/* XZ Plane - Redish - Front */}
+      {/* 
+        Visual Plane Selector - Normal Vector Reference:
+        - XY (Top):   Y=0 horizontal plane, normal (0,1,0), rotation [-π/2,0,0]
+        - XZ (Front): Z=0 vertical plane, normal (0,0,1), NO rotation needed
+        - YZ (Right): X=0 vertical plane, normal (1,0,0), rotation [0,π/2,0]
+      */}
+
+      {/* XZ Plane - Red - Front (vertical, normal +Z, no rotation needed) */}
       <mesh
         onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XZ'); }}
         onPointerOut={() => setHoveredPlane(null)}
