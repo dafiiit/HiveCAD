@@ -1,16 +1,14 @@
 import { create } from 'zustand';
 import * as THREE from 'three';
-import { initCAD, replicadToThreeGeometry, createSketchHelper, createSketchFromPrimitives } from '../lib/cad-kernel';
+import { initCAD, replicadToThreeGeometry, replicadToThreeEdges, createSketchHelper, createSketchFromPrimitives } from '../lib/cad-kernel';
 import * as replicad from 'replicad';
 import { toast } from 'sonner';
 import { CodeManager } from '../lib/code-manager';
 
 const DEFAULT_CODE = `
 const main = () => {
-  let shapes = [];
-  shapes.push(replicad.makeBox(20, 20, 20));
-  shapes.push(replicad.makeCylinder(10, 30));
-  return shapes;
+  const sphere = replicad.makeSphere(10);
+  return sphere;
 };`;
 
 const shapeRegistry = new Map<string, any>(); // Stores WASM objects
@@ -19,18 +17,29 @@ const shapeRegistry = new Map<string, any>(); // Stores WASM objects
 export type ToolType =
   | 'select' | 'pan' | 'orbit'
   | 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil'
-  | 'sketch' | 'line' | 'arc' | 'circle' | 'rectangle' | 'polygon' | 'spline'
+  | 'sketch'
+  // Line tools
+  | 'line' | 'vline' | 'hline' | 'polarline' | 'tangentline' | 'movePointer'
+  // Arc tools
+  | 'threePointsArc' | 'tangentArc' | 'ellipse' | 'sagittaArc'
+  // Spline tools
+  | 'bezier' | 'quadraticBezier' | 'cubicBezier' | 'smoothSpline'
+  // Shape wrappers (Drawing helpers)
+  | 'rectangle' | 'circle' | 'polygon' | 'roundedRectangle' | 'text'
+  // Plane operations
+  | 'plane' | 'pivot' | 'translatePlane' | 'makePlane'
+  // Modifications
   | 'move' | 'rotate' | 'scale' | 'copy'
   | 'trim' | 'join' | 'cut' | 'intersect'
   | 'measure' | 'dimension' | 'constrain'
-  | 'plane' | 'axis' | 'point';
+  | 'axis' | 'point';
 
 export type ViewType = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 'home' | 'isometric';
 
 export interface CADObject {
   id: string;
   name: string;
-  type: 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil' | 'sketch' | 'extrusion' | 'revolve';
+  type: 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil' | 'sketch' | 'extrusion' | 'revolve' | 'plane';
   position: [number, number, number];
   rotation: [number, number, number];
   scale: [number, number, number];
@@ -39,6 +48,7 @@ export interface CADObject {
   visible: boolean;
   selected: boolean;
   geometry?: THREE.BufferGeometry;
+  edgeGeometry?: THREE.BufferGeometry;
 }
 
 export interface HistoryItem {
@@ -60,10 +70,21 @@ export interface Comment {
 
 export interface SketchPrimitive {
   id: string;
-  type: 'line' | 'rectangle' | 'circle' | 'arc' | 'polygon' | 'spline';
-  points: [number, number][]; // Standardized points: Line [p1...pn], Rect [p1, p2], Circle [center, edge]
+  type: 'line' | 'vline' | 'hline' | 'polarline' | 'tangentline' | 'movePointer'
+  | 'threePointsArc' | 'tangentArc' | 'ellipse' | 'sagittaArc'
+  | 'bezier' | 'quadraticBezier' | 'cubicBezier' | 'smoothSpline'
+  | 'rectangle' | 'circle' | 'polygon' | 'roundedRectangle' | 'text'
+  | 'arc' | 'spline'; // Keep legacy if needed
+  points: [number, number][]; // Standardized points
   properties?: {
     sides?: number; // For polygon
+    radius?: number; // For polarline, circle
+    angle?: number; // For polarline
+    distance?: number; // For tangentline
+    xRadius?: number; // For ellipse
+    yRadius?: number; // For ellipse
+    text?: string; // For text tool
+    fontSize?: number;
   };
 }
 
@@ -115,7 +136,7 @@ interface CADState {
   } | null;
 
   // Actions - Objects
-  addObject: (type: CADObject['type'], options?: Partial<CADObject>) => void;
+  addObject: (type: CADObject['type'] | string, options?: Partial<CADObject>) => void;
   updateObject: (id: string, updates: Partial<CADObject>) => void;
   deleteObject: (id: string) => void;
   selectObject: (id: string, multiSelect?: boolean) => void;
@@ -192,15 +213,18 @@ const getNextColor = () => {
   return color;
 };
 
-const getDefaultDimensions = (type: CADObject['type']): Record<string, any> => {
+const getDefaultDimensions = (type: string): Record<string, any> => {
   switch (type) {
     case 'box': return { width: 10, height: 10, depth: 10 };
     case 'cylinder': return { radius: 5, height: 15 };
     case 'sphere': return { radius: 5 };
     case 'torus': return { radius: 8, tube: 2 };
     case 'coil': return { radius: 5, height: 20, turns: 5 };
+    case 'plane': return { plane: 'XY', origin: [0, 0, 0] };
     case 'extrusion': return { distance: 10, twistAngle: 0, endFactor: 1, profile: 'linear' };
     case 'revolve': return { angle: 360 };
+    case 'pivot': return { angle: 45, axis: [0, 0, 1] };
+    case 'translatePlane': return { x: 0, y: 0, z: 0 };
     default: return {};
   }
 };
@@ -250,7 +274,7 @@ export const useCADStore = create<CADState>((set, get) => ({
 
     if (type === 'box') {
       const { width, height, depth } = options.dimensions || { width: 10, height: 10, depth: 10 };
-      cm.addFeature('makeBox', null, [width, height, depth]);
+      cm.addFeature('makeBaseBox', null, [width, depth, height]); // Replicad uses x, y, z usually. makeBaseBox(x, y, z)
     } else if (type === 'cylinder') {
       const { radius, height } = options.dimensions || { radius: 5, height: 15 };
       cm.addFeature('makeCylinder', null, [radius, height]);
@@ -259,7 +283,62 @@ export const useCADStore = create<CADState>((set, get) => ({
       cm.addFeature('makeSphere', null, [radius]);
     } else if (type === 'torus') {
       const { radius, tube } = options.dimensions || { radius: 10, tube: 2 };
-      cm.addFeature('makeTorus', null, [radius, tube]);
+      // Torus via revolve
+      // drawCircle(tube).translate(radius, 0).sketchOnPlane("XZ").revolve()
+      const sketchName = cm.addFeature('drawCircle', null, [tube]);
+      cm.addOperation(sketchName, 'translate', [radius, 0]);
+      cm.addOperation(sketchName, 'sketchOnPlane', ["XZ"]);
+      cm.addOperation(sketchName, 'revolve', []);
+    } else if (type === 'coil') {
+      const { radius, height, turns } = options.dimensions || { radius: 5, height: 20, turns: 5 };
+      // Coil via twisted extrusion
+      // drawCircle(1).translate(radius, 0).sketchOnPlane("XY").extrude(height, {twistAngle: 360*turns})
+      // We assume tube radius is small, say 1 or derived. Let's create a property for tube radius or default.
+      const tubeRadius = 1;
+      const sketchName = cm.addFeature('drawCircle', null, [tubeRadius]);
+      cm.addOperation(sketchName, 'translate', [radius, 0]);
+      cm.addOperation(sketchName, 'sketchOnPlane', ["XY"]);
+      cm.addOperation(sketchName, 'extrude', [height, { twistAngle: 360 * turns }]);
+    } else if (type === 'plane') {
+      // makePlane
+      // makePlane(plane: "XY"|"XZ"|"YZ", origin)
+      const { plane } = options.dimensions || { plane: 'XY' };
+      cm.addFeature('makePlane', null, [plane]);
+    } else if (type === 'pivot') {
+      const selectedId = [...currentState.selectedIds][0];
+      if (selectedId) {
+        const { angle, axis } = options.dimensions || { angle: 45, axis: [0, 0, 1] };
+        cm.addOperation(selectedId, 'pivot', [angle, axis]);
+      } else {
+        toast.error("No plane selected for pivot");
+        return;
+      }
+    } else if (type === 'translatePlane') {
+      const selectedId = [...currentState.selectedIds][0];
+      if (selectedId) {
+        const { x, y, z } = options.dimensions || { x: 0, y: 0, z: 0 };
+        cm.addOperation(selectedId, 'translate', [x, y, z]);
+      } else {
+        toast.error("No plane selected for translation");
+        return;
+      }
+    } else if (type === 'extrusion') {
+      const selectedId = [...currentState.selectedIds][0];
+      if (selectedId) {
+        const { distance } = options.dimensions || { distance: 10 };
+        cm.addOperation(selectedId, 'extrude', [distance]);
+      } else {
+        toast.error("No sketch selected for extrusion");
+        return;
+      }
+    } else if (type === 'revolve') {
+      const selectedId = [...currentState.selectedIds][0];
+      if (selectedId) {
+        cm.addOperation(selectedId, 'revolve', []);
+      } else {
+        toast.error("No sketch selected for revolve");
+        return;
+      }
     }
 
     set({ code: cm.getCode() });
@@ -410,47 +489,104 @@ export const useCADStore = create<CADState>((set, get) => ({
 
     // Create new sketch variable
     // const sketch1 = replicad.draw();
-    const sketchName = cm.addFeature('draw', null, []);
+    let sketchName = '';
 
-    // Iterate commands
-    // We assume primitives are: Line, Circle, etc.
-    // Replicad 'draw' is turtle-like.
-    // For now, let's just generate the primitives as a chain.
+    // Check if we are starting with a Shape Wrapper (Rectangle, Circle, etc. from 'draw...')
+    const firstPrim = state.activeSketchPrimitives[0];
+    const shapeWrappers = ['rectangle', 'circle', 'roundedRectangle', 'polygon', 'text'];
 
-    // WARNING: This assumes primitives are ordered and connected.
-    // In a real implementation we would need to walk the graph or just issue absolute moves.
-    // replicad.draw() starts at (0,0).
-
-    // Move to start point of first primitive?
-
-    state.activeSketchPrimitives.forEach(prim => {
-      if (prim.type === 'line') {
-        // Line is [start, end]
-        // We might need to 'move' to start if not there
-        // But for now, let's assume usage of .lineEdit() or similar if available, OR just .lineTo(x, y)
-        // Replicad typically has .line(dx, dy) or .lineTo(x, y)
-        const end = prim.points[1];
-        cm.addOperation(sketchName, 'lineTo', [end[0], end[1]]);
-      } else if (prim.type === 'circle') {
-        // Circle [center, edge] -> calculated radius
-        const center = prim.points[0];
-        const edge = prim.points[1];
+    if (firstPrim && shapeWrappers.includes(firstPrim.type)) {
+      // These are standalone creators usually, e.g. drawRectangle(w, h)
+      // For now, let's assume if the first one is a shape wrapper, it defines the base.
+      // But replicad mix and match is tricky.
+      // Simplification: If using shape wrapper, it's the only thing or base.
+      if (firstPrim.type === 'rectangle') {
+        const [p1, p2] = firstPrim.points;
+        const width = Math.abs(p2[0] - p1[0]);
+        const height = Math.abs(p2[1] - p1[1]);
+        sketchName = cm.addFeature('drawRectangle', null, [width, height]);
+        // Translate to center? drawRectangle is centered.
+        const centerX = (p1[0] + p2[0]) / 2;
+        const centerY = (p1[1] + p2[1]) / 2;
+        if (centerX !== 0 || centerY !== 0) {
+          cm.addOperation(sketchName, 'translate', [centerX, centerY]);
+        }
+      } else if (firstPrim.type === 'circle') {
+        const [center, edge] = firstPrim.points;
         const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
-
-        // Move to center? Or arc?
-        // Replicad simple 'circle' usually creates a full circle.
-        // If we are chaining inside 'draw', we usually do lines/arcs.
-        // If we want a separate circle, we might use replicad.makeCircle().
-        // But for now, let's assume we are drawing a profile.
+        sketchName = cm.addFeature('drawCircle', null, [radius]);
+        if (center[0] !== 0 || center[1] !== 0) {
+          cm.addOperation(sketchName, 'translate', [center[0], center[1]]);
+        }
       }
-    });
+      // ... implement others
+    } else {
+      // Standard Drawing Chain
+      // const sketch1 = replicad.draw(startPoint?);
+      let startPoint = state.activeSketchPrimitives[0]?.points[0];
+      if (state.activeSketchPrimitives[0]?.type === 'movePointer') {
+        startPoint = state.activeSketchPrimitives[0].points[0]; // Logic for movePointer
+      }
 
-    // Handle common 'rectangle' case which is a closed loop
-    // If it's a rectangle tool, we might have a specific primitive.
+      if (startPoint) {
+        sketchName = cm.addFeature('draw', null, [startPoint[0], startPoint[1]]);
+      } else {
+        sketchName = cm.addFeature('draw', null, []);
+      }
 
-    if (state.activeSketchPrimitives.length > 0) {
-      // Naive: just close?
+      state.activeSketchPrimitives.forEach(prim => {
+        if (prim.type === 'line') {
+          const end = prim.points[1];
+          cm.addOperation(sketchName, 'lineTo', [end[0], end[1]]);
+        } else if (prim.type === 'vline') {
+          const end = prim.points[1];
+          // Assuming vLineTo(y)
+          cm.addOperation(sketchName, 'vLineTo', [end[1]]);
+        } else if (prim.type === 'hline') {
+          const end = prim.points[1];
+          cm.addOperation(sketchName, 'hLineTo', [end[0]]);
+        } else if (prim.type === 'polarline') {
+          // Point 1 is start (implicit), Point 2 defines vector?
+          // Or properties has radius/angle.
+          // Assuming we store radius/angle in properties for polar line interaction
+          const radius = prim.properties?.radius || 10;
+          const angle = prim.properties?.angle || 0;
+          cm.addOperation(sketchName, 'polarLine', [radius, angle]);
+        } else if (prim.type === 'tangentline') {
+          const dist = prim.properties?.distance || 10;
+          cm.addOperation(sketchName, 'tangentLine', [dist]);
+        } else if (prim.type === 'threePointsArc') {
+          const [start, end, mid] = prim.points; // logic might differ on how points are stored
+          // .threePointsArcTo(end, mid)
+          cm.addOperation(sketchName, 'threePointsArcTo', [[end[0], end[1]], [mid[0], mid[1]]]);
+        } else if (prim.type === 'tangentArc') {
+          const end = prim.points[1];
+          cm.addOperation(sketchName, 'tangentArcTo', [[end[0], end[1]]]);
+        } else if (prim.type === 'ellipse') {
+          const [start, end] = prim.points;
+          const xRadius = prim.properties?.xRadius || 10;
+          const yRadius = prim.properties?.yRadius || 5;
+          // .ellipseTo([x,y], xRadius, yRadius)
+          cm.addOperation(sketchName, 'ellipseTo', [[end[0], end[1]], xRadius, yRadius]);
+        } else if (prim.type === 'smoothSpline') {
+          // points[1]
+          const end = prim.points[1];
+          // .smoothSplineTo([x,y], config?)
+          cm.addOperation(sketchName, 'smoothSplineTo', [[end[0], end[1]]]);
+        } else if (prim.type === 'bezier') {
+          // points[1] is end, points[2+] are control?
+          const end = prim.points[1];
+          const control = prim.points.slice(2);
+          // .bezierCurveTo(end, controlPoints)
+          cm.addOperation(sketchName, 'bezierCurveTo', [[end[0], end[1]], control]);
+        }
+      });
+
+      // Close if needed?
       // cm.addOperation(sketchName, 'close', []);
+
+      // Ensure the DrawingPen is finished before sketching on plane
+      cm.addOperation(sketchName, 'done', []);
     }
 
     // Sketch on Plane
@@ -577,7 +713,8 @@ export const useCADStore = create<CADState>((set, get) => ({
 
       let shapesArray: any[] = [];
       if (Array.isArray(result)) {
-        shapesArray = result;
+        // FIX 1: .flat(Infinity) hinzufügen, um verschachtelte Arrays wie [shapes, shape1] zu unterstützen
+        shapesArray = result.flat(Infinity);
       } else if (result) {
         shapesArray = [result];
       }
@@ -591,41 +728,50 @@ export const useCADStore = create<CADState>((set, get) => ({
         const existing = state.objects.find(o => o.id === astId);
 
         let geometry = null;
+        let edgeGeometry = null;
         try {
           geometry = replicadToThreeGeometry(shape);
+          edgeGeometry = replicadToThreeEdges(shape);
         } catch (err) {
           console.error(`Failed to convert shape ${index}`, err);
         }
 
-        let type = existing?.type || 'sketch';
-
+        // FIX 2: Identify type based on the LAST operation in the chain
+        let type: CADObject['type'] = existing?.type || 'box';
 
         // Find feature by ID (variable name)
         const feature = cm.getFeatures().find(f => f.id === astId);
 
-        if (feature) {
-          // Heuristic: check last operation or creation op
-          const opName = feature.operations[0]?.name?.toLowerCase() || '';
-          if (opName.includes('box')) type = 'box';
-          else if (opName.includes('cylinder')) type = 'cylinder';
-          else if (opName.includes('sphere')) type = 'sphere';
-          else if (opName.includes('torus')) type = 'torus';
+        if (feature && feature.operations.length > 0) {
+          // The last operation usually determines the final state/type
+          const lastOp = feature.operations[feature.operations.length - 1];
+          const lastOpName = lastOp.name.toLowerCase();
+
+          if (lastOpName.includes('box')) type = 'box';
+          else if (lastOpName.includes('cylinder')) type = 'cylinder';
+          else if (lastOpName.includes('sphere')) type = 'sphere';
+          else if (lastOpName.includes('torus')) type = 'torus';
+          else if (lastOpName.includes('extrude')) type = 'extrusion';
+          else if (lastOpName.includes('revolve')) type = 'revolve';
+          else if (lastOpName.includes('draw') || lastOpName.includes('sketch')) type = 'sketch';
+          else if (lastOpName.includes('plane')) type = 'plane';
         }
 
         return {
           id: astId,
-          name: existing?.name || type + ' ' + (index + 1),
-          type: type as any,
-          position: [0, 0, 0],
-          rotation: [0, 0, 0],
-          scale: [1, 1, 1],
+          name: existing?.name || (type === 'extrusion' ? 'Extrusion' : type.charAt(0).toUpperCase() + type.slice(1)) + ' ' + (index + 1),
+          type: type as CADObject['type'],
+          position: [0, 0, 0] as [number, number, number],
+          rotation: [0, 0, 0] as [number, number, number],
+          scale: [1, 1, 1] as [number, number, number],
           dimensions: existing?.dimensions || {},
           color: existing?.color || getNextColor(),
           visible: true,
           selected: existing?.selected || false,
-          geometry: geometry || undefined
+          geometry: geometry || undefined,
+          edgeGeometry: edgeGeometry || undefined
         };
-      }).filter(obj => obj.geometry !== undefined);
+      }).filter(obj => (obj.geometry !== undefined || obj.edgeGeometry !== undefined));
 
       set({ objects: newObjects });
       console.log(`Executed. Objects: ${newObjects.length}`);

@@ -165,13 +165,44 @@ export class CodeManager {
         return output.code;
     }
 
+    private injectIntoBody(body: any[], decl: any, varName: string) {
+        // Find the return statement in the body
+        const returnIdx = body.findIndex(n => t.isReturnStatement(n));
+
+        if (returnIdx !== -1) {
+            // Insert the new variable declaration BEFORE the return statement
+            body.splice(returnIdx, 0, decl);
+
+            // Update the return statement to include the new variable
+            const returnStmt = body[returnIdx + 1]; // +1 because we inserted a node
+
+            if (!returnStmt.argument) {
+                // return; -> return [newVar];
+                returnStmt.argument = t.arrayExpression([t.identifier(varName)]);
+            } else if (t.isArrayExpression(returnStmt.argument)) {
+                // return [a, b]; -> return [a, b, newVar];
+                returnStmt.argument.elements.push(t.identifier(varName));
+            } else {
+                // return a; -> return [a, newVar];
+                returnStmt.argument = t.arrayExpression([
+                    returnStmt.argument,
+                    t.identifier(varName)
+                ]);
+            }
+        } else {
+            // No return statement found? Append variable and add a return.
+            body.push(decl);
+            body.push(t.returnStatement(t.arrayExpression([t.identifier(varName)])));
+        }
+    }
+
     addFeature(type: string, sourceId: string | null, params: any[]) {
         if (!this.ast) return;
 
         const newVarName = `shape${this.features.length + 1}`;
-
         let init: t.Expression;
 
+        // Generate the init expression (same as before)
         if (sourceId) {
             const args = params.map(p => typeof p === 'string' ? t.stringLiteral(p) : t.numericLiteral(p));
             init = t.callExpression(
@@ -190,7 +221,35 @@ export class CodeManager {
             t.variableDeclarator(t.identifier(newVarName), init)
         ]);
 
-        (this.ast.program.body as any[]).push(decl);
+        let injected = false;
+
+        // Traverse to find 'main' function and inject code there
+        traverse(this.ast, {
+            // Handle: function main() { ... }
+            FunctionDeclaration: (path: any) => {
+                if (path.node.id?.name === 'main') {
+                    this.injectIntoBody(path.node.body.body, decl, newVarName);
+                    injected = true;
+                    path.stop();
+                }
+            },
+            // Handle: const main = () => { ... }
+            VariableDeclarator: (path: any) => {
+                if (t.isIdentifier(path.node.id) && path.node.id.name === 'main' &&
+                    (t.isArrowFunctionExpression(path.node.init) || t.isFunctionExpression(path.node.init))) {
+                    if (t.isBlockStatement(path.node.init.body)) {
+                        this.injectIntoBody(path.node.init.body.body, decl, newVarName);
+                        injected = true;
+                        path.stop();
+                    }
+                }
+            }
+        });
+
+        // Fallback: if no main function is found, append to global scope (legacy behavior)
+        if (!injected) {
+            (this.ast.program.body as any[]).push(decl);
+        }
 
         this.regenerate();
         return newVarName;
@@ -213,6 +272,16 @@ export class CodeManager {
             const args = params.map(p => {
                 if (typeof p === 'string') return t.stringLiteral(p);
                 if (typeof p === 'number') return t.numericLiteral(p);
+                if (Array.isArray(p)) {
+                    // Recursively handle array elements? Or just simple primitives for now.
+                    // Assuming [number, number] or similar.
+                    const elements = p.map(el => {
+                        if (typeof el === 'number') return t.numericLiteral(el);
+                        if (typeof el === 'string') return t.stringLiteral(el);
+                        return t.identifier('undefined');
+                    });
+                    return t.arrayExpression(elements);
+                }
                 // Handle raw code/predicate object { type: 'raw', content: '...' }
                 if (typeof p === 'object' && p.type === 'raw' && p.content) {
                     try {
@@ -265,15 +334,22 @@ export class CodeManager {
                 }
             }
 
-            // console.log("Chain stack size:", chainStack.length);
-            // console.log("Targeting opIndex:", opIndex);
-
             const targetNode = chainStack[chainStack.length - 1 - opIndex];
 
             if (targetNode) {
                 targetNode.arguments = args.map((val: any) => {
                     if (typeof val === 'number') return t.numericLiteral(val);
                     if (typeof val === 'string') return t.stringLiteral(val);
+                    if (Array.isArray(val)) {
+                        return t.arrayExpression(val.map(v => typeof v === 'number' ? t.numericLiteral(v) : t.stringLiteral(v)));
+                    }
+                    if (typeof val === 'object' && val !== null) {
+                        // Very basic object literal support
+                        const properties = Object.entries(val).map(([k, v]) =>
+                            t.objectProperty(t.identifier(k), typeof v === 'number' ? t.numericLiteral(v) : t.stringLiteral(v as string))
+                        );
+                        return t.objectExpression(properties);
+                    }
                     return t.identifier('undefined');
                 });
                 this.regenerate();

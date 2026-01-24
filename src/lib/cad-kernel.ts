@@ -1,4 +1,4 @@
-import { setOC, makeBox, makeCylinder, makeSphere, draw, sketchRectangle, sketchCircle, sketchRoundedRectangle, sketchPolysides, drawCircle, drawRectangle, drawRoundedRectangle, drawPolysides, Sketcher, makePlane } from 'replicad';
+import { setOC, makeBaseBox, makeCylinder, makeSphere, draw, sketchRectangle, sketchCircle, sketchRoundedRectangle, sketchPolysides, drawCircle, drawRectangle, drawRoundedRectangle, drawPolysides, Sketcher, makePlane } from 'replicad';
 import opencascade from 'replicad-opencascadejs/src/replicad_single.js';
 import * as THREE from 'three';
 
@@ -24,7 +24,7 @@ export const initCAD = async () => {
 
 export const makeBoxHelper = (width: number, height: number, depth: number) => {
     if (!initialized) throw new Error('CAD Kernel not initialized');
-    return makeBox([0, 0, 0], [width, height, depth]);
+    return makeBaseBox(width, height, depth);
 };
 
 export const makeCylinderHelper = (radius: number, height: number) => {
@@ -131,38 +131,80 @@ export const createSketchFromPrimitives = (primitives: { type: string, points: [
 };
 
 export const replicadToThreeGeometry = (shape: any): THREE.BufferGeometry => {
-    // Tesselate the shape
-    const mesh = shape.mesh({
-        tolerance: 0.1,
-        angularTolerance: 30.0
-    });
+    let meshable = shape;
 
-    // Create BufferGeometry
-    const geometry = new THREE.BufferGeometry();
+    // Handle Sketch objects
+    if (shape && !shape.mesh) {
+        if (typeof shape.face === 'function') {
+            meshable = shape.face();
+        } else if (shape.face) {
+            meshable = shape.face;
+        }
+    }
 
-    // Replicad mesh output structure:
-    // vertices: Float32Array (flat x,y,z)
-    // triangles: Uint32Array (flat indices)
-    // normals: Float32Array (flat x,y,z) - optional
+    if (!meshable || typeof meshable.mesh !== 'function') {
+        return new THREE.BufferGeometry();
+    }
 
-    // Check for 'faces' vs 'triangles' property
-    const indices = mesh.triangles || mesh.faces;
-    const vertices = mesh.vertices;
+    try {
+        const mesh = meshable.mesh({
+            tolerance: 0.1,
+            angularTolerance: 30.0
+        });
 
-    if (!vertices || !indices) {
-        console.error('Invalid mesh data from replicad:', mesh);
+        const geometry = new THREE.BufferGeometry();
+        const indices = mesh.triangles || mesh.faces;
+        const vertices = mesh.vertices;
+
+        if (!vertices || !indices) return geometry;
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+        geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+
+        if (mesh.normals && mesh.normals.length > 0) {
+            geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(mesh.normals), 3));
+        } else {
+            geometry.computeVertexNormals();
+        }
+
         return geometry;
+    } catch (e) {
+        console.error("Error meshing shape:", e);
+        return new THREE.BufferGeometry();
     }
+}
 
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
-    geometry.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
+/**
+ * Extracts edges from a replicad shape/sketch and converts them to Three.js geometry.
+ * Uses meshEdges() for robust extraction.
+ */
+export const replicadToThreeEdges = (shape: any): THREE.BufferGeometry | null => {
+    if (!shape) return null;
 
-    if (mesh.normals && mesh.normals.length > 0) {
-        geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(mesh.normals), 3));
-    } else {
-        geometry.computeVertexNormals();
+    try {
+        let edgeSource = shape;
+        if (shape && typeof shape.meshEdges !== 'function' && shape.face) {
+            edgeSource = typeof shape.face === 'function' ? shape.face() : shape.face;
+        }
+
+        if (!edgeSource || typeof edgeSource.meshEdges !== 'function') {
+            // Fallback for wires/edges if meshEdges is not available
+            return null;
+        }
+
+        const { lines } = edgeSource.meshEdges({
+            tolerance: 0.1,
+            angularTolerance: 30.0
+        });
+
+        if (!lines || lines.length === 0) return null;
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(lines), 3));
+        return geometry;
+    } catch (e) {
+        console.error("Error extracting edges from Replicad shape:", e);
+        return null;
     }
-
-    return geometry;
 }
 

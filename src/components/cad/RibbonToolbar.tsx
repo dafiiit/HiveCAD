@@ -31,10 +31,20 @@ import {
   Crosshair,
   ChevronDown,
   CheckCircle2,
-  Trash2
+  Trash2,
+  MoreHorizontal
 } from "lucide-react";
 import { useCADStore, ToolType } from "@/hooks/useCADStore";
 import { toast } from "sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type ToolTab = "SOLID" | "SURFACE" | "MESH" | "SHEET" | "PLASTIC" | "MANAGE" | "UTILITIES" | "SKETCH";
 
@@ -47,11 +57,13 @@ interface ToolButtonProps {
   disabled?: boolean;
 }
 
-const ToolButton = ({ icon, label, isActive, hasDropdown, onClick, disabled }: ToolButtonProps) => (
+const ToolButton = React.forwardRef<HTMLButtonElement, ToolButtonProps>(({ icon, label, isActive, hasDropdown, onClick, disabled, ...props }, ref) => (
   <button
+    ref={ref}
     onClick={onClick}
     disabled={disabled}
     className={`cad-tool-button ${isActive ? 'cad-tool-button-active' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+    {...props}
   >
     {icon}
     <span className="text-2xs whitespace-nowrap flex items-center gap-0.5">
@@ -59,7 +71,7 @@ const ToolButton = ({ icon, label, isActive, hasDropdown, onClick, disabled }: T
       {hasDropdown && <ChevronDown className="w-2 h-2" />}
     </span>
   </button>
-);
+));
 
 interface ToolGroupProps {
   label: string;
@@ -99,7 +111,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
 
   const tabs: ToolTab[] = ["SOLID", "SURFACE", "MESH", "SHEET", "PLASTIC", "MANAGE", "UTILITIES"];
 
-  const handleCreatePrimitive = (type: 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil') => {
+  const handleCreatePrimitive = (type: 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil' | 'plane') => {
     startOperation(type);
     toast.info(`Configure ${type} parameters`);
   };
@@ -111,7 +123,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
 
   const handleToolSelect = (tool: ToolType) => {
     setActiveTool(tool);
-    toast(`Tool: ${tool.charAt(0).toUpperCase() + tool.slice(1)}`);
+    toast(`Tool: ${tool}`);
   };
 
   const handleStartSketch = () => {
@@ -214,42 +226,99 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
         {/* Sketch Tools */}
         <div className="flex items-center py-1 px-1">
           <ToolGroup label="CREATE">
-            <ToolButton
-              icon={<Minus className="w-5 h-5" />}
-              label="Line"
-              isActive={activeTool === 'line'}
-              onClick={() => handleToolSelect('line')}
-            />
-            <ToolButton
-              icon={<ArrowUpRight className="w-5 h-5" />}
-              label="Arc"
-              isActive={activeTool === 'arc'}
-              onClick={() => handleToolSelect('arc')}
-            />
-            <ToolButton
-              icon={<Circle className="w-5 h-5" />}
-              label="Circle"
-              isActive={activeTool === 'circle'}
-              onClick={() => handleToolSelect('circle')}
-            />
-            <ToolButton
-              icon={<RectangleHorizontal className="w-5 h-5" />}
-              label="Rect"
-              isActive={activeTool === 'rectangle'}
-              onClick={() => handleToolSelect('rectangle')}
-            />
-            <ToolButton
-              icon={<Pentagon className="w-5 h-5" />}
-              label="Polygon"
-              isActive={activeTool === 'polygon'}
-              onClick={() => handleToolSelect('polygon')}
-            />
-            <ToolButton
-              icon={<Spline className="w-5 h-5" />}
-              label="Spline"
-              isActive={activeTool === 'spline'}
-              onClick={() => handleToolSelect('spline')}
-            />
+
+            {/* Line Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <ToolButton
+                  icon={<Minus className="w-5 h-5" />}
+                  label="Line"
+                  isActive={['line', 'vline', 'hline', 'polarline', 'tangentline'].includes(activeTool)}
+                  hasDropdown
+                />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => handleToolSelect('line')}>Line</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleToolSelect('vline')}>Vertical Line</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleToolSelect('hline')}>Horizontal Line</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleToolSelect('polarline')}>Polar Line</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleToolSelect('tangentline')}>Tangent Line</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleToolSelect('movePointer')}>Move Pointer</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Arc Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <ToolButton
+                  icon={<ArrowUpRight className="w-5 h-5" />}
+                  label="Arc"
+                  isActive={['threePointsArc', 'tangentArc', 'sagittaArc', 'ellipse'].includes(activeTool)}
+                  hasDropdown
+                />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => handleToolSelect('threePointsArc')}>3-Point Arc</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleToolSelect('tangentArc')}>Tangent Arc</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleToolSelect('sagittaArc')}>Sagitta Arc</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleToolSelect('ellipse')}>Ellipse</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Shape (Rectangle/Circle) Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <ToolButton
+                  icon={<RectangleHorizontal className="w-5 h-5" />}
+                  label="Shape"
+                  isActive={['rectangle', 'circle', 'polygon', 'roundedRectangle', 'text'].includes(activeTool)}
+                  hasDropdown
+                />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => handleToolSelect('rectangle')}>Rectangle</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleToolSelect('circle')}>Circle</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleToolSelect('roundedRectangle')}>Rounded Rectangle</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleToolSelect('polygon')}>Polygon</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleToolSelect('text')}>Text</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Spline Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <ToolButton
+                  icon={<Spline className="w-5 h-5" />}
+                  label="Spline"
+                  isActive={['spline', 'bezier', 'smoothSpline'].includes(activeTool)}
+                  hasDropdown
+                />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => handleToolSelect('smoothSpline')}>Smooth Spline</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleToolSelect('bezier')}>Bezier Curve</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+          </ToolGroup>
+
+          <ToolGroup label="CONSTRUCT">
+            {/* Plane Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <ToolButton
+                  icon={<Square className="w-5 h-5" />}
+                  label="Plane"
+                  isActive={['plane', 'makePlane', 'pivot', 'translatePlane'].includes(activeTool)}
+                  hasDropdown
+                />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => handleCreatePrimitive('plane')}>Make Plane</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleOperation('pivot')}>Pivot Plane</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleOperation('translatePlane')}>Translate Plane</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </ToolGroup>
 
           <ToolGroup label="MODIFY">
@@ -461,13 +530,22 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
         </ToolGroup>
 
         <ToolGroup label="CONSTRUCT">
-          <ToolButton
-            icon={<Square className="w-5 h-5" />}
-            label="Plane"
-            hasDropdown
-            isActive={activeTool === 'plane'}
-            onClick={() => handleToolSelect('plane')}
-          />
+          {/* Plane Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <ToolButton
+                icon={<Square className="w-5 h-5" />}
+                label="Plane"
+                hasDropdown
+                isActive={['plane', 'makePlane', 'pivot', 'translatePlane'].includes(activeTool)}
+              />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => handleCreatePrimitive('plane')}>Make Plane</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleOperation('pivot')}>Pivot Plane</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleOperation('translatePlane')}>Translate Plane</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <ToolButton
             icon={<Minus className="w-5 h-5" />}
             label="Axis"

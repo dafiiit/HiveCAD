@@ -60,4 +60,13 @@ describe('CodeManager', () => {
 
         expect(manager.code).toMatch(/fillet\(2, \(?e\)? => e\.inPlane\(['"]XY['"]\)\)/);
     });
+    it('should add operations with array arguments', () => {
+        const code = `const shape = replicad.draw();`;
+        const manager = new CodeManager(code);
+        const featureId = manager.features[0].id;
+
+        manager.addOperation(featureId, 'lineTo', [[10, 20]]);
+
+        expect(manager.code).toContain('.lineTo([10, 20])');
+    });
 });

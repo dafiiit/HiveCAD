@@ -102,20 +102,32 @@ const SceneObjects = () => {
 };
 
 const CADObjectRenderer = ({ object }: { object: CADObject }) => {
+  const isSketch = object.type === 'sketch';
+
   return (
     <group position={object.position} rotation={object.rotation} scale={object.scale}>
       {object.geometry && (
         <mesh geometry={object.geometry}>
           <meshStandardMaterial
             color={object.color}
-            metalness={0.3}
-            roughness={0.7}
+            metalness={0.1}
+            roughness={0.8}
             transparent
-            opacity={0.85}
+            opacity={isSketch ? 0.3 : 0.85}
+            side={THREE.DoubleSide}
           />
         </mesh>
       )}
-      {/* Fallback or Edges logic could go here */}
+      {object.edgeGeometry && (
+        <lineSegments geometry={object.edgeGeometry}>
+          <lineBasicMaterial
+            color={isSketch ? "#00ffff" : "#222222"}
+            transparent={isSketch}
+            opacity={isSketch ? 0.8 : 1.0}
+            depthTest={true}
+          />
+        </lineSegments>
+      )}
     </group>
   );
 };

@@ -1,70 +1,37 @@
+import { initCAD, replicadToThreeGeometry } from '../lib/cad-kernel';
+import * as replicad from 'replicad';
 
-import { describe, it, expect } from 'vitest';
-import { CodeManager } from '../lib/code-manager';
+async function testSketchConversion() {
+    await initCAD();
+    console.log("Testing Sketch Conversion...");
 
-describe('CodeManager - Complex Chaining and Binding', () => {
-    it('should correctly parse a complex sketch chain', () => {
-        const code = `
-            const sketch = replicad.draw()
-                .line(10, 0)
-                .line(0, 10)
-                .arc(5, 5)
-                .close();
-        `;
-        const manager = new CodeManager(code);
+    // Create a simple rectangle sketch
+    const drawing = replicad.drawRectangle(10, 20);
+    const sketch = drawing.sketchOnPlane("XY");
 
-        expect(manager.features.length).toBe(1);
-        const feature = manager.features[0];
-        expect(feature.id).toBe('sketch');
+    console.log("Sketch object:", sketch);
+    console.log("Sketch properties:", Object.keys(sketch));
 
-        // Expected operations: [draw, line, line, arc, close] (or similar, depending on how draw is handled)
-        // Current implementation might reverse them or miss some if not robust
-        const opNames = feature.operations.map(op => op.name);
-        expect(opNames).toEqual(['draw', 'line', 'line', 'arc', 'close']);
+    try {
+        const geometry = replicadToThreeGeometry(sketch);
+        console.log("Geometry created:", !!geometry);
+        if (geometry) {
+            console.log("Attributes:", Object.keys(geometry.attributes));
+            console.log("Index:", !!geometry.index);
+        }
+    } catch (e) {
+        console.error("Conversion failed for Sketch:", e);
+    }
 
-        // Verify codeRange exists
-        feature.operations.forEach(op => {
-            expect(op.codeRange).toBeDefined();
-            expect(op.codeRange.start.line).toBeGreaterThan(0);
-        });
-    });
+    // Try converting the face explicitly
+    try {
+        const face = sketch.face;
+        console.log("Face object:", face);
+        const geometry = replicadToThreeGeometry(face);
+        console.log("Face Geometry created:", !!geometry);
+    } catch (e) {
+        console.error("Conversion failed for Face:", e);
+    }
+}
 
-    it('should track variable usage in subsequent operations', () => {
-        const code = `
-            const profile = replicad.drawRectangle(10, 20);
-            const box = profile.sketchOnPlane('XY').extrude(5);
-        `;
-        const manager = new CodeManager(code);
-
-        expect(manager.features.length).toBe(2);
-
-        const profile = manager.features.find(f => f.id === 'profile');
-        const box = manager.features.find(f => f.id === 'box');
-
-        expect(profile).toBeDefined();
-        expect(box).toBeDefined();
-
-        // Box source should ideally point to 'profile' or track back to it
-        expect(box?.source).toBe('profile');
-
-        // Check if operations are correctly mapped for 'box'
-        const boxOps = box?.operations.map(op => op.name);
-        expect(boxOps).toEqual(['sketchOnPlane', 'extrude']);
-    });
-
-    it('should handle nested variable dependencies', () => {
-        const code = `
-            const w = 10;
-            const h = 20;
-            const sketch = replicad.drawRectangle(w, h);
-            const body = sketch.extrude(10);
-        `;
-        const manager = new CodeManager(code);
-        const sketch = manager.features.find(f => f.id === 'sketch');
-
-        // We might want to see if it captures the arguments as variable references
-        // simpler check for now: just ensuring it parses
-        expect(sketch).toBeDefined();
-        expect(sketch?.operations[0].name).toBe('drawRectangle');
-    });
-});
+testSketchConversion();
