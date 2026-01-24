@@ -80,7 +80,7 @@ const OperationProperties = () => {
     };
 
     return (
-        <div className="absolute right-4 bottom-4 w-72 bg-popover/95 backdrop-blur border border-border rounded-lg shadow-lg flex flex-col overflow-hidden z-50">
+        <div className="absolute right-4 bottom-24 w-72 bg-popover/95 backdrop-blur border border-border rounded-lg shadow-lg flex flex-col overflow-hidden z-50">
             {/* Header */}
             <div className="px-4 py-2 border-b border-border bg-muted/30 flex items-center justify-between">
                 <span className="font-semibold text-sm uppercase tracking-wide">
