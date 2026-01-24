@@ -3,7 +3,6 @@ import MenuBar from "./MenuBar";
 import RibbonToolbar from "./RibbonToolbar";
 import BrowserPanel from "./BrowserPanel";
 import Viewport from "./Viewport";
-import ViewCube from "./ViewCube";
 import SketchPalette from "./SketchPalette";
 import Timeline from "./Timeline";
 import StatusBar from "./StatusBar";
@@ -93,9 +92,6 @@ const CADLayout = () => {
         <div className="flex-1 flex flex-col relative">
           <div className="flex-1 relative">
             <Viewport isSketchMode={isSketchMode} />
-
-            {/* View cube overlay */}
-            <ViewCube />
           </div>
 
           {/* Comments panel */}

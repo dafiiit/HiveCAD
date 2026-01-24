@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { ArcballControls, Grid, PerspectiveCamera } from "@react-three/drei";
+import { ArcballControls, Grid, PerspectiveCamera, GizmoHelper, GizmoViewcube } from "@react-three/drei";
 import * as THREE from "three";
 import { useCADStore, CADObject } from "../../hooks/useCADStore";
 import SketchCanvas from "./SketchCanvas";
@@ -279,86 +279,8 @@ const PlaneSelector = () => {
   );
 };
 
-const CameraSync = () => {
-  const { camera } = useThree();
-  const setCameraQuaternion = useCADStore(state => state.setCameraQuaternion);
-  const cameraQuaternion = useCADStore(state => state.cameraQuaternion); // Read from store to avoid loop
-
-  const lastQuaternionRef = useRef<string>("");
-
-  useFrame(() => {
-    // Sync using Quaternions to support full 3D rotation (including roll)
-    const q = camera.quaternion;
-    const quatKey = `${q.x.toFixed(4)},${q.y.toFixed(4)},${q.z.toFixed(4)},${q.w.toFixed(4)}`;
-
-    // Only update if changed (to avoid infinite loops)
-    if (quatKey !== lastQuaternionRef.current) {
-
-      // CHECK: Did this change come from the store?
-      // If the current camera quaternion matches the store quaternion (within epsilon), don't write back.
-      // This breaks the loop: ViewCube -> Store -> Viewport -> Store -> ...
-      let matchesStore = false;
-      if (cameraQuaternion) {
-        const dq = q.dot(new THREE.Quaternion().fromArray(cameraQuaternion));
-        // Dot product of quats: 1 = same, -1 = same (double cover), 0 = 90 deg.
-        if (Math.abs(dq) > 0.9999) {
-          matchesStore = true;
-        }
-      }
-
-      if (!matchesStore) {
-        lastQuaternionRef.current = quatKey;
-        setCameraQuaternion([q.x, q.y, q.z, q.w]);
-      } else {
-        // It matches store, so we update our ref to match current state but don't dispatch
-        lastQuaternionRef.current = quatKey;
-      }
-    }
-  });
-
-  return null;
-};
-
-// Component to LISTEN to store updates and force-apply to ArcballControls
-// This was previously done by CameraController but logic needs to be robust for Arcball
-const StoreToCameraSync = () => {
-  const { camera } = useThree();
-  const cameraQuaternion = useCADStore(state => state.cameraQuaternion);
-  const lastAppliedQuatRef = useRef<string>("");
-
-  useFrame(() => {
-    if (cameraQuaternion) {
-      const quatKey = `${cameraQuaternion[0].toFixed(4)},${cameraQuaternion[1].toFixed(4)},${cameraQuaternion[2].toFixed(4)},${cameraQuaternion[3].toFixed(4)}`;
-
-      if (quatKey !== lastAppliedQuatRef.current) {
-        // Store changed! Apply to camera.
-
-        // Check if camera is ALREADY there (e.g. we dragged it)
-        const currentQ = camera.quaternion;
-        const dq = currentQ.dot(new THREE.Quaternion().fromArray(cameraQuaternion));
-        if (Math.abs(dq) < 0.9999) {
-          // Difference is significant, apply store value
-          const newQ = new THREE.Quaternion().fromArray(cameraQuaternion);
-
-          // ARCBALL HACK: Arcball rotates camera AROUND target (0,0,0) usually.
-          // Just setting quaternion rotates the camera in place, but doesn't move it on the sphere surface.
-          // We need to move the camera position too!
-          const dist = camera.position.length();
-          const newPos = new THREE.Vector3(0, 0, dist).applyQuaternion(newQ);
-          camera.position.copy(newPos);
-          camera.quaternion.copy(newQ);
-          camera.updateMatrixWorld();
-
-          lastAppliedQuatRef.current = quatKey;
-        } else {
-          // Camera is already there, just update ref
-          lastAppliedQuatRef.current = quatKey;
-        }
-      }
-    }
-  });
-  return null;
-}
+// GizmoHelper + GizmoViewcube are now used instead of custom camera sync
+// They render in a HUD overlay and directly use the main camera
 
 const Viewport = ({ isSketchMode }: ViewportProps) => {
   return (
@@ -400,9 +322,19 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
 
         <SketchCanvas />
 
-        {/* <CameraController />  Replaced by StoreToCameraSync for cleaner split */}
-        <StoreToCameraSync />
-        <CameraSync />
+        {/* ViewCube using drei's GizmoHelper - renders in HUD overlay with smooth animations */}
+        <GizmoHelper
+          alignment="top-right"
+          margin={[80, 80]}
+        >
+          <GizmoViewcube
+            faces={['Right', 'Left', 'Top', 'Bottom', 'Front', 'Back']}
+            color="#1a1a2e"
+            hoverColor="#80c0ff"
+            textColor="#ffffff"
+            strokeColor="#8ab4f8"
+          />
+        </GizmoHelper>
       </Canvas>
     </div>
   );

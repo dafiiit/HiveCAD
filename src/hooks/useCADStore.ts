@@ -614,7 +614,53 @@ export const useCADStore = create<CADState>((set, get) => ({
 
   finishSketch: () => {
     const state = get();
-    if (state.activeSketchPrimitives.length === 0) {
+
+    // SYNC: Copy solver positions back to primitives before processing
+    // This ensures that dragged/constrained geometry uses final solved positions
+    let syncedPrimitives = [...state.activeSketchPrimitives];
+
+    if (state.solverInstance?.isInitialized && state.sketchEntities.size > 0) {
+      syncedPrimitives = syncedPrimitives.map(prim => {
+        // If primitive has a solverId, get solved position from sketchEntities
+        const solverId = prim.properties?.solverId;
+        if (!solverId) return prim;
+
+        const entity = state.sketchEntities.get(solverId as string);
+        if (!entity) return prim;
+
+        // Handle different entity types
+        if (entity.type === 'point') {
+          // Update the relevant point in the primitive (typically the last/end point)
+          const newPoints = [...prim.points] as [number, number][];
+          if (newPoints.length > 1) {
+            newPoints[newPoints.length - 1] = [entity.x, entity.y];
+          } else if (newPoints.length === 1) {
+            newPoints[0] = [entity.x, entity.y];
+          }
+          return { ...prim, points: newPoints };
+        }
+
+        // For line entities, update both endpoints
+        if (entity.type === 'line') {
+          const p1Entity = state.sketchEntities.get(entity.p1Id);
+          const p2Entity = state.sketchEntities.get(entity.p2Id);
+
+          if (p1Entity?.type === 'point' && p2Entity?.type === 'point') {
+            return {
+              ...prim,
+              points: [
+                [p1Entity.x, p1Entity.y],
+                [p2Entity.x, p2Entity.y]
+              ] as [number, number][]
+            };
+          }
+        }
+
+        return prim;
+      });
+    }
+
+    if (syncedPrimitives.length === 0) {
       // No primitives, just exit
       set({
         isSketchMode: false,
@@ -638,10 +684,10 @@ export const useCADStore = create<CADState>((set, get) => ({
     // GUIDANCE: If there's only one primitive and it's a shape wrapper, keep legacy behavior for cleaner code.
     // If there are multiple, or mixed types, use the Graph.
     const shapeWrappers = ['rectangle', 'roundedRectangle', 'circle', 'polygon', 'text'];
-    const isSingleShape = state.activeSketchPrimitives.length === 1 && shapeWrappers.includes(state.activeSketchPrimitives[0].type);
+    const isSingleShape = syncedPrimitives.length === 1 && shapeWrappers.includes(syncedPrimitives[0].type);
 
     if (isSingleShape) {
-      const firstPrim = state.activeSketchPrimitives[0];
+      const firstPrim = syncedPrimitives[0];
       const tool = toolRegistry.get(firstPrim.type);
       if (tool?.createShape && state.sketchPlane) {
         sketchName = tool.createShape(cm, firstPrim, state.sketchPlane);
@@ -672,13 +718,24 @@ export const useCADStore = create<CADState>((set, get) => ({
       // 1. Initialize Graph
       const graph = new PlanarGraph();
 
-      // 2. Feed Primitives
-      state.activeSketchPrimitives.forEach(prim => {
+      // 2. Feed Primitives (using syncedPrimitives for solved positions)
+      syncedPrimitives.forEach(prim => {
+        // Regular line
         if (prim.type === 'line') {
           const p1 = { x: prim.points[0][0], y: prim.points[0][1] };
           const p2 = { x: prim.points[1][0], y: prim.points[1][1] };
           graph.addGeometry(new LineSegment(p1, p2));
-        } else if (prim.type === 'rectangle') {
+        }
+        // Specialized line types (treat as regular lines)
+        else if (['vline', 'hline', 'polarline', 'tangentline'].includes(prim.type)) {
+          if (prim.points.length >= 2) {
+            const p1 = { x: prim.points[0][0], y: prim.points[0][1] };
+            const p2 = { x: prim.points[1][0], y: prim.points[1][1] };
+            graph.addGeometry(new LineSegment(p1, p2));
+          }
+        }
+        // Rectangle
+        else if (prim.type === 'rectangle' || prim.type === 'roundedRectangle') {
           const [p1, p2] = prim.points;
           // Decompose into 4 lines
           const p3 = { x: p2[0], y: p1[1] };
@@ -688,19 +745,107 @@ export const useCADStore = create<CADState>((set, get) => ({
           graph.addGeometry(new LineSegment(p3, { x: p2[0], y: p2[1] })); // Right
           graph.addGeometry(new LineSegment({ x: p2[0], y: p2[1] }, p4)); // Bottom/Top
           graph.addGeometry(new LineSegment(p4, { x: p1[0], y: p1[1] })); // Left
-        } else if (prim.type === 'circle') {
+        }
+        // Circle
+        else if (prim.type === 'circle') {
           const [center, edge] = prim.points;
           const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
           graph.addGeometry(new Circle({ x: center[0], y: center[1] }, radius));
-        } else if (['threePointsArc', 'arc'].includes(prim.type) && prim.points.length >= 3) {
-          // Arc logic
+        }
+        // Standard arcs (threePointsArc, arc)
+        else if (['threePointsArc', 'arc'].includes(prim.type) && prim.points.length >= 3) {
           const p1 = { x: prim.points[0][0], y: prim.points[0][1] };
           const p2 = { x: prim.points[1][0], y: prim.points[1][1] }; // End
           const p3 = { x: prim.points[2][0], y: prim.points[2][1] }; // Mid/Via
           const arc = arcFromThreePoints(p1, p2, p3);
           if (arc) graph.addGeometry(arc);
         }
-        // TODO: Handle Splines, Ellipses etc.
+        // Tangent arc and sagitta arc
+        else if (['tangentArc', 'sagittaArc'].includes(prim.type) && prim.points.length >= 2) {
+          const p1 = { x: prim.points[0][0], y: prim.points[0][1] };
+          const p2 = { x: prim.points[1][0], y: prim.points[1][1] };
+          const sagitta = prim.properties?.sagitta || 0;
+          if (Math.abs(sagitta) > 0.001) {
+            // Calculate arc from sagitta
+            const midX = (p1.x + p2.x) / 2;
+            const midY = (p1.y + p2.y) / 2;
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const perpX = -dy / len;
+            const perpY = dx / len;
+            const via = { x: midX + perpX * sagitta, y: midY + perpY * sagitta };
+            const arc = arcFromThreePoints(p1, p2, via);
+            if (arc) graph.addGeometry(arc);
+          } else {
+            // No sagitta = straight line
+            graph.addGeometry(new LineSegment(p1, p2));
+          }
+        }
+        // Polygon - decompose into line segments
+        else if (prim.type === 'polygon' && prim.points.length >= 2) {
+          const center = prim.points[0];
+          const edge = prim.points[1];
+          const sides = prim.properties?.sides || 6;
+          const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
+          const dx = edge[0] - center[0];
+          const dy = edge[1] - center[1];
+          const startAngle = Math.atan2(dy, dx);
+
+          const polyPoints: { x: number; y: number }[] = [];
+          for (let i = 0; i <= sides; i++) {
+            const theta = startAngle + (i / sides) * Math.PI * 2;
+            polyPoints.push({
+              x: center[0] + Math.cos(theta) * radius,
+              y: center[1] + Math.sin(theta) * radius
+            });
+          }
+          for (let i = 0; i < polyPoints.length - 1; i++) {
+            graph.addGeometry(new LineSegment(polyPoints[i], polyPoints[i + 1]));
+          }
+        }
+        // Ellipse - approximate with line segments (tessellation)
+        else if (prim.type === 'ellipse' && prim.points.length >= 2) {
+          const startPt = prim.points[0];
+          const endPt = prim.points[1];
+          const xRadius = prim.properties?.xRadius || 10;
+          const yRadius = prim.properties?.yRadius || 5;
+          const cx = (startPt[0] + endPt[0]) / 2;
+          const cy = (startPt[1] + endPt[1]) / 2;
+          const segments = 32;
+
+          const ellipsePoints: { x: number; y: number }[] = [];
+          for (let i = 0; i <= segments; i++) {
+            const theta = (i / segments) * Math.PI * 2;
+            ellipsePoints.push({
+              x: cx + Math.cos(theta) * xRadius,
+              y: cy + Math.sin(theta) * yRadius
+            });
+          }
+          for (let i = 0; i < ellipsePoints.length - 1; i++) {
+            graph.addGeometry(new LineSegment(ellipsePoints[i], ellipsePoints[i + 1]));
+          }
+        }
+        // Splines - tessellate to line segments for topology
+        else if (['spline', 'smoothSpline'].includes(prim.type) && prim.points.length >= 2) {
+          const pts = prim.points.map(p => ({ x: p[0], y: p[1] }));
+          // For simple tessellation, connect each point directly
+          // TODO: Use proper spline interpolation for more accurate results
+          for (let i = 0; i < pts.length - 1; i++) {
+            graph.addGeometry(new LineSegment(pts[i], pts[i + 1]));
+          }
+        }
+        // Bezier curves - tessellate to line segments for topology
+        else if (['bezier', 'quadraticBezier', 'cubicBezier'].includes(prim.type) && prim.points.length >= 2) {
+          const pts = prim.points.map(p => ({ x: p[0], y: p[1] }));
+          // Simple tessellation: connect endpoints
+          // TODO: Use proper bezier interpolation for more accurate results
+          if (pts.length >= 2) {
+            graph.addGeometry(new LineSegment(pts[0], pts[pts.length > 2 ? 1 : pts.length - 1]));
+          }
+        }
+        // Text is ignored for geometry (not a closed profile)
+        // movePointer is ignored (just position marker)
       });
 
       // 3. Compute Topology
@@ -795,13 +940,70 @@ export const useCADStore = create<CADState>((set, get) => ({
           cm.addOperation(sketchName, 'sketchOnPlane', [state.sketchPlane]);
         }
       } else {
-        // No cycles found - maybe just lines?
-        // Fallback to simple draw of all primitives as wires
-        toast.error("No closed profiles found. Generating wires.");
-        // ... (Existing fallback logic or just clean exit?)
-        // For now, let's keep the existing logic as a fallback path?
-        // No, let's leave it empty or user just gets nothing but the toast, 
-        // prompting them to close their sketch.
+        // No closed cycles - generate wire geometry to preserve work
+        // This creates open paths that can still be used for operations like loft/sweep
+        sketchName = cm.addFeature('draw', null, []);
+        let isFirst = true;
+
+        syncedPrimitives.forEach((prim) => {
+          // Handle line-type primitives
+          if (['line', 'vline', 'hline', 'polarline', 'tangentline'].includes(prim.type)) {
+            if (prim.points.length >= 2) {
+              const [p1, p2] = prim.points;
+              if (isFirst) {
+                cm.addOperation(sketchName, 'movePointer', [p1[0], p1[1]]);
+                isFirst = false;
+              }
+              cm.addOperation(sketchName, 'lineTo', [p2[0], p2[1]]);
+            }
+          }
+          // Handle arcs
+          else if (['threePointsArc', 'arc', 'tangentArc', 'sagittaArc'].includes(prim.type)) {
+            if (prim.points.length >= 2) {
+              const p1 = prim.points[0];
+              const p2 = prim.points[1];
+              if (isFirst) {
+                cm.addOperation(sketchName, 'movePointer', [p1[0], p1[1]]);
+                isFirst = false;
+              }
+              if (prim.points.length >= 3) {
+                // Three-point arc
+                const via = prim.points[2];
+                cm.addOperation(sketchName, 'threePointsArcTo', [[p2[0], p2[1]], [via[0], via[1]]]);
+              } else {
+                // Fallback to line
+                cm.addOperation(sketchName, 'lineTo', [p2[0], p2[1]]);
+              }
+            }
+          }
+          // Handle splines
+          else if (['spline', 'smoothSpline'].includes(prim.type) && prim.points.length >= 2) {
+            if (isFirst && prim.points.length > 0) {
+              cm.addOperation(sketchName, 'movePointer', [prim.points[0][0], prim.points[0][1]]);
+              isFirst = false;
+            }
+            // Generate line segments for each point
+            for (let i = 1; i < prim.points.length; i++) {
+              cm.addOperation(sketchName, 'lineTo', [prim.points[i][0], prim.points[i][1]]);
+            }
+          }
+          // Handle bezier (connect start to end as approximation)
+          else if (['bezier', 'quadraticBezier', 'cubicBezier'].includes(prim.type) && prim.points.length >= 2) {
+            const p1 = prim.points[0];
+            const p2 = prim.points[1];
+            if (isFirst) {
+              cm.addOperation(sketchName, 'movePointer', [p1[0], p1[1]]);
+              isFirst = false;
+            }
+            cm.addOperation(sketchName, 'lineTo', [p2[0], p2[1]]);
+          }
+        });
+
+        if (state.sketchPlane && sketchName) {
+          cm.addOperation(sketchName, 'sketchOnPlane', [state.sketchPlane]);
+        }
+
+        toast.info("Created open wire (not closed - may need to close for extrusion)");
       }
     }
 

@@ -143,6 +143,55 @@ export class PlanarGraph {
             // Sort points along the geometry
             const uniquePoints = this.sortPointsAlongGeometry(points, geo);
 
+            // Handle Circle geometry specially
+            if (geo.type === GeometryType.Circle) {
+                const circle = geo as Circle;
+                
+                if (uniquePoints.length < 2) {
+                    // Standalone circle with no intersections - create a self-loop arc edge
+                    // This represents a closed profile that can be detected as a cycle
+                    const refAngle = 0;
+                    const subGeo = new ArcSegment(
+                        circle.center, 
+                        circle.radius, 
+                        refAngle, 
+                        refAngle + 2 * Math.PI, 
+                        true
+                    );
+                    const nodePoint = { 
+                        x: circle.center.x + circle.radius, 
+                        y: circle.center.y 
+                    };
+                    const node = this.findOrAddNode(nodePoint);
+                    const edge = new GraphEdge(this.edgeIdCounter++, node, node, subGeo);
+                    node.edges.push(edge);
+                    node.edges.push(edge); // Add twice for self-loop traversal (in/out)
+                    this.edges.push(edge);
+                } else {
+                    // Circle with intersection points - split into arc segments
+                    for (let k = 0; k < uniquePoints.length; k++) {
+                        const pStart = uniquePoints[k];
+                        const pEnd = uniquePoints[(k + 1) % uniquePoints.length];
+                        
+                        if (pointsEqual(pStart, pEnd)) continue;
+                        
+                        const u = this.findOrAddNode(pStart);
+                        const v = this.findOrAddNode(pEnd);
+                        
+                        const ang1 = Math.atan2(pStart.y - circle.center.y, pStart.x - circle.center.x);
+                        const ang2 = Math.atan2(pEnd.y - circle.center.y, pEnd.x - circle.center.x);
+                        const subGeo = new ArcSegment(circle.center, circle.radius, ang1, ang2, true);
+                        
+                        const edge = new GraphEdge(this.edgeIdCounter++, u, v, subGeo);
+                        u.edges.push(edge);
+                        v.edges.push(edge);
+                        this.edges.push(edge);
+                    }
+                }
+                continue; // Move to next geometry
+            }
+
+            // Handle Line and Arc geometries
             for (let k = 0; k < uniquePoints.length - 1; k++) {
                 const pStart = uniquePoints[k];
                 const pEnd = uniquePoints[k + 1];
@@ -168,11 +217,7 @@ export class PlanarGraph {
                     // So we just connect k to k+1 with same params.
                     subGeo = new ArcSegment(orig.center, orig.radius, ang1, ang2, orig.ccw);
                 } else {
-                    // Circle splitting?
-                    // treat as arcs
-                    // TODO: Circle support is trickier, usually splits into 2 arcs if 2 points.
-                    // If 0 points, it's a floating circle (profile).
-                    // If 1 point, it's a loop on a node?
+                    // Unknown geometry type - skip
                     continue;
                 }
 
