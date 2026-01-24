@@ -1231,8 +1231,13 @@ export const useCADStore = create<CADState>((set, get) => ({
 
       // 3. Execute
       // We expect 'main' to be defined in code.
-      // We wrap it.
-      const evaluator = new Function('replicad', '__record', executableCode + "\nreturn main();");
+      // Check if defaultParams is defined and pass it to main() if so.
+      // This supports the common replicad pattern: function main(r, params) { ... }
+      const hasDefaultParams = /const\s+defaultParams\s*=/.test(state.code);
+      const mainCall = hasDefaultParams
+        ? "\nreturn main(replicad, defaultParams);"
+        : "\nreturn main();";
+      const evaluator = new Function('replicad', '__record', executableCode + mainCall);
       const result = evaluator(replicad, __record);
 
       let shapesArray: any[] = [];
