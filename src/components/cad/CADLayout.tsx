@@ -11,6 +11,7 @@ import OperationProperties from "./OperationProperties";
 import UnifiedSidebar from "./UnifiedSidebar";
 import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
+import { Maximize2, Minimize2 } from "lucide-react";
 
 const CADLayout = () => {
   const {
@@ -26,7 +27,9 @@ const CADLayout = () => {
     save,
     duplicateSelected,
     deleteObject,
-    selectedIds
+    selectedIds,
+    isFullscreen,
+    toggleFullscreen
   } = useCADStore();
 
   // Keyboard shortcuts
@@ -57,15 +60,43 @@ const CADLayout = () => {
           [...selectedIds].forEach(id => deleteObject(id));
           toast(`Deleted ${selectedIds.size} object(s)`);
         }
-      } else if (e.key === 'Escape' && isSketchMode) {
-        exitSketchMode();
-        toast("Exited sketch mode");
+      } else if (e.key === 'Escape') {
+        if (isFullscreen) {
+          toggleFullscreen();
+          toast("Exited fullscreen");
+        } else if (isSketchMode) {
+          exitSketchMode();
+          toast("Exited sketch mode");
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo, save, duplicateSelected, deleteObject, selectedIds, isSketchMode, exitSketchMode]);
+  }, [undo, redo, save, duplicateSelected, deleteObject, selectedIds, isSketchMode, exitSketchMode, isFullscreen, toggleFullscreen]);
+
+  if (isFullscreen) {
+    return (
+      <div className="w-screen h-screen bg-background relative overflow-hidden">
+        <Viewport isSketchMode={isSketchMode} />
+
+        {/* Fullscreen Overlays */}
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 bg-background/80 backdrop-blur-sm border border-border rounded-lg p-1 shadow-sm flex items-center justify-center">
+          <button
+            onClick={toggleFullscreen}
+            className="p-1 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors"
+            title="Exit Fullscreen (Esc)"
+          >
+            <Minimize2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Minimal controls could go here if requested, for now just the Viewport which includes ViewCube */}
+
+        {/* We might want to show operation properties if an operation is active? Keeping it simple for now as requested. */}
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">

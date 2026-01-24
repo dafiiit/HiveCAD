@@ -143,6 +143,9 @@ interface CADState {
   lockedValues: Record<string, number | null>;
   sketchPoints: [number, number][];
 
+  // View State
+  isFullscreen: boolean;
+
   // Constraint Solver State (New entity-based system)
   solverInstance: ConstraintSolver | null;
   sketchEntities: Map<EntityId, SketchEntity>;
@@ -206,6 +209,7 @@ interface CADState {
   setZoom: (zoom: number) => void;
   toggleGrid: () => void;
   fitToScreen: () => void;
+  toggleFullscreen: () => void;
 
   // Actions - History
   undo: () => void;
@@ -321,6 +325,7 @@ export const useCADStore = create<CADState>((set, get) => ({
   currentDrawingPrimitive: null,
   lockedValues: {},
   sketchPoints: [],
+  isFullscreen: false,
   currentView: 'home',
   cameraRotation: { x: -0.4, y: -0.6, z: 0 }, // Default isometric view - KEEP for legacy/ViewCube reference if needed?
   cameraQuaternion: [0, 0, 0, 1], // Identity by default, will be set on mount
@@ -574,6 +579,7 @@ export const useCADStore = create<CADState>((set, get) => ({
   setActiveTab: (tab) => set({ activeTab: tab }),
 
   setCameraQuaternion: (quaternion) => set({ cameraQuaternion: quaternion }),
+  toggleFullscreen: () => set(state => ({ isFullscreen: !state.isFullscreen })),
 
   // Sketch Actions
   setSketchPlane: (plane) => set({ sketchPlane: plane, sketchStep: 'drawing' }),
