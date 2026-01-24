@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { useCADStore, SketchPrimitive, ToolType } from "../../hooks/useCADStore";
 import { SnappingEngine, SnapResult } from "../../lib/snapping";
 import SketchToolDialog, { TOOL_PARAMS } from "./SketchToolDialog";
+import { LineAnnotation, CircleAnnotation, RectangleAnnotation } from "./SketchAnnotations";
 
 // Type needed for dynamic inputs
 interface DynamicInputProps {
@@ -346,12 +347,24 @@ const SketchCanvas = () => {
 
         const type = currentDrawingPrimitive.type;
 
-        // Multi-point tools (lines, splines)
-        if (['line', 'smoothSpline', 'spline'].includes(type)) {
+        // Multi-point tools (splines only - lines are now two-point)
+        if (['smoothSpline', 'spline'].includes(type)) {
             updateCurrentDrawingPrimitive({
                 ...currentDrawingPrimitive,
                 points: [...currentDrawingPrimitive.points, p2d]
             });
+            return;
+        }
+
+        // Line types - complete on second click (two-point)
+        if (['line', 'vline', 'hline', 'polarline', 'tangentline'].includes(type)) {
+            // Update the end point and finish the line
+            const finalPoints = [currentDrawingPrimitive.points[0], p2d];
+            addSketchPrimitive({
+                ...currentDrawingPrimitive,
+                points: finalPoints
+            });
+            updateCurrentDrawingPrimitive(null);
             return;
         }
 
@@ -840,6 +853,41 @@ const SketchCanvas = () => {
 
             {/* Render Current Drawing Primitive */}
             {currentDrawingPrimitive && renderPrimitive(currentDrawingPrimitive, true)}
+
+            {/* Line Drawing Overlay - Visual feedback for line tool */}
+            {currentDrawingPrimitive &&
+                ['line', 'vline', 'hline', 'polarline', 'tangentline'].includes(currentDrawingPrimitive.type) &&
+                currentDrawingPrimitive.points.length >= 2 && (
+                    <LineAnnotation
+                        start={{ x: currentDrawingPrimitive.points[0][0], y: currentDrawingPrimitive.points[0][1] }}
+                        end={{ x: currentDrawingPrimitive.points[currentDrawingPrimitive.points.length - 1][0], y: currentDrawingPrimitive.points[currentDrawingPrimitive.points.length - 1][1] }}
+                        plane={sketchPlane!}
+                        lockedLength={lockedValues['length']}
+                        lockedAngle={lockedValues['angle']}
+                    />
+                )}
+
+            {/* Circle Drawing Overlay */}
+            {currentDrawingPrimitive &&
+                currentDrawingPrimitive.type === 'circle' &&
+                currentDrawingPrimitive.points.length >= 2 && (
+                    <CircleAnnotation
+                        center={{ x: currentDrawingPrimitive.points[0][0], y: currentDrawingPrimitive.points[0][1] }}
+                        edge={{ x: currentDrawingPrimitive.points[1][0], y: currentDrawingPrimitive.points[1][1] }}
+                        plane={sketchPlane!}
+                    />
+                )}
+
+            {/* Rectangle Drawing Overlay */}
+            {currentDrawingPrimitive &&
+                ['rectangle', 'roundedRectangle'].includes(currentDrawingPrimitive.type) &&
+                currentDrawingPrimitive.points.length >= 2 && (
+                    <RectangleAnnotation
+                        corner1={{ x: currentDrawingPrimitive.points[0][0], y: currentDrawingPrimitive.points[0][1] }}
+                        corner2={{ x: currentDrawingPrimitive.points[1][0], y: currentDrawingPrimitive.points[1][1] }}
+                        plane={sketchPlane!}
+                    />
+                )}
 
             {/* Hover Cursor */}
             {hoverPoint && !showDialog && (

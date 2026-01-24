@@ -192,11 +192,13 @@ const CameraController = () => {
 };
 
 const PlaneSelector = () => {
-  const { sketchStep, setSketchPlane } = useCADStore();
+  const { sketchStep, setSketchPlane, isSketchMode } = useCADStore();
   const [hoveredPlane, setHoveredPlane] = useState<string | null>(null);
   const { camera } = useThree();
 
-  if (sketchStep !== 'select-plane') return null;
+  // Only show plane selector when in sketch mode AND at the select-plane step
+  // This prevents planes from appearing on initial load (where sketchStep defaults to 'select-plane')
+  if (!isSketchMode || sketchStep !== 'select-plane') return null;
 
   const handlePlaneClick = (plane: 'XY' | 'XZ' | 'YZ') => {
     // setSketchPlane(plane);
