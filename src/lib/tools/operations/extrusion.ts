@@ -24,6 +24,11 @@ export const extrusionTool: Tool = {
             ]
         }
     ],
+    selectionRequirements: {
+        min: 1,
+        max: 1,
+        allowedTypes: ['sketch', 'face']
+    },
     execute(codeManager: CodeManager, selectedIds: string[], params: Record<string, any>): void {
         const selectedId = selectedIds[0];
         if (selectedId) {
@@ -54,6 +59,11 @@ export const revolveTool: Tool = {
     uiProperties: [
         { key: 'angle', label: 'Angle', type: 'number', default: 360, unit: 'deg', min: 1, max: 360 }
     ],
+    selectionRequirements: {
+        min: 1,
+        max: 1,
+        allowedTypes: ['sketch', 'face']
+    },
     execute(codeManager: CodeManager, selectedIds: string[], params: Record<string, any>): void {
         const selectedId = selectedIds[0];
         if (selectedId) {

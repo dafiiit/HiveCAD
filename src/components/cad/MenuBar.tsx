@@ -1,8 +1,8 @@
-import { 
-  Save, 
-  FolderOpen, 
-  Undo2, 
-  Redo2, 
+import {
+  Save,
+  FolderOpen,
+  Undo2,
+  Redo2,
   RotateCcw,
   Settings,
   HelpCircle,
@@ -28,13 +28,13 @@ interface MenuBarProps {
 }
 
 const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
-  const { 
-    save, 
-    open, 
-    undo, 
-    redo, 
-    reset, 
-    history, 
+  const {
+    save,
+    open,
+    undo,
+    redo,
+    reset,
+    history,
     historyIndex,
     searchOpen,
     settingsOpen,
@@ -88,7 +88,7 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
     }
   };
 
-  const filteredObjects = objects.filter(obj => 
+  const filteredObjects = objects.filter(obj =>
     obj.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -97,36 +97,32 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
       <div className="h-8 bg-background flex items-center justify-between px-2 border-b border-border text-xs">
         {/* Left section - App controls */}
         <div className="flex items-center gap-1">
-          <button 
-            className="p-1.5 hover:bg-secondary rounded transition-colors"
-            onClick={() => toast("Application menu")}
+          <button
+            className="p-1 hover:bg-secondary rounded transition-colors flex items-center justify-center"
+            onClick={() => toast("HiveCAD Menu")}
           >
-            <div className="w-4 h-4 grid grid-cols-3 gap-0.5">
-              {[...Array(9)].map((_, i) => (
-                <div key={i} className="bg-foreground/60 rounded-sm" />
-              ))}
-            </div>
+            <img src="/favicon.ico" alt="HiveCAD Logo" className="w-5 h-5" />
           </button>
-          
-          <button 
+
+          <button
             className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
             onClick={handleSave}
             title="Save (Ctrl+S)"
           >
             <Save className="w-4 h-4" />
           </button>
-          
-          <button 
+
+          <button
             className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
             onClick={handleOpen}
             title="Open (Ctrl+O)"
           >
             <FolderOpen className="w-4 h-4" />
           </button>
-          
+
           <div className="w-px h-4 bg-border mx-1" />
-          
-          <button 
+
+          <button
             className={`p-1.5 hover:bg-secondary rounded transition-colors ${historyIndex >= 0 ? 'text-icon-default hover:text-icon-hover' : 'text-muted-foreground/50'}`}
             onClick={handleUndo}
             disabled={historyIndex < 0}
@@ -134,8 +130,8 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           >
             <Undo2 className="w-4 h-4" />
           </button>
-          
-          <button 
+
+          <button
             className={`p-1.5 hover:bg-secondary rounded transition-colors ${historyIndex < history.length - 1 ? 'text-icon-default hover:text-icon-hover' : 'text-muted-foreground/50'}`}
             onClick={handleRedo}
             disabled={historyIndex >= history.length - 1}
@@ -143,8 +139,8 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           >
             <Redo2 className="w-4 h-4" />
           </button>
-          
-          <button 
+
+          <button
             className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
             onClick={handleReset}
             title="Reset"
@@ -161,15 +157,15 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
 
         {/* Right section - User controls */}
         <div className="flex items-center gap-1">
-          <button 
+          <button
             className={`p-1.5 hover:bg-secondary rounded transition-colors ${searchOpen ? 'bg-secondary text-foreground' : 'text-icon-default hover:text-icon-hover'}`}
             onClick={toggleSearch}
             title="Search (Ctrl+F)"
           >
             <Search className="w-4 h-4" />
           </button>
-          
-          <button 
+
+          <button
             className={`p-1.5 hover:bg-secondary rounded transition-colors relative ${notificationsOpen ? 'bg-secondary text-foreground' : 'text-icon-default hover:text-icon-hover'}`}
             onClick={toggleNotifications}
             title="Notifications"
@@ -177,26 +173,26 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
             <Bell className="w-4 h-4" />
             <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-primary rounded-full" />
           </button>
-          
-          <button 
+
+          <button
             className={`p-1.5 hover:bg-secondary rounded transition-colors ${settingsOpen ? 'bg-secondary text-foreground' : 'text-icon-default hover:text-icon-hover'}`}
             onClick={toggleSettings}
             title="Settings"
           >
             <Settings className="w-4 h-4" />
           </button>
-          
-          <button 
+
+          <button
             className={`p-1.5 hover:bg-secondary rounded transition-colors ${helpOpen ? 'bg-secondary text-foreground' : 'text-icon-default hover:text-icon-hover'}`}
             onClick={toggleHelp}
             title="Help"
           >
             <HelpCircle className="w-4 h-4" />
           </button>
-          
+
           <div className="w-px h-4 bg-border mx-1" />
-          
-          <button 
+
+          <button
             className="w-7 h-7 rounded-full bg-primary flex items-center justify-center hover:opacity-90 transition-opacity"
             onClick={() => toast("User profile")}
           >
@@ -224,8 +220,8 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
             <div className="max-h-48 overflow-y-auto space-y-1">
               {filteredObjects.length > 0 ? (
                 filteredObjects.map(obj => (
-                  <div 
-                    key={obj.id} 
+                  <div
+                    key={obj.id}
                     className="p-2 rounded hover:bg-secondary cursor-pointer text-sm flex items-center justify-between"
                     onClick={() => {
                       useCADStore.getState().selectObject(obj.id);

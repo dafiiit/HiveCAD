@@ -83,7 +83,6 @@ const CameraSyncer = () => {
   const lastQuaternionRef = useRef<string>("");
 
   useFrame(() => {
-    // Check if main viewport camera rotation changed (via quaternion)
     if (cameraQuaternion) {
       const quatKey = `${cameraQuaternion[0].toFixed(4)},${cameraQuaternion[1].toFixed(4)},${cameraQuaternion[2].toFixed(4)},${cameraQuaternion[3].toFixed(4)}`;
 
@@ -91,19 +90,17 @@ const CameraSyncer = () => {
       if (quatKey !== lastQuaternionRef.current) {
         lastQuaternionRef.current = quatKey;
 
-        // --- PREVENT WRITING BACK TO STORE ---
-        // If we are updating ViewCube FROM store, we must NOT let ViewCube controls write back to store immediately.
-        // (However, ViewCubeControls only writes on drag, so this might be safe).
-
-        // Position camera at distance 3 from origin, apply rotation
         const distance = 3;
         const q = new THREE.Quaternion().fromArray(cameraQuaternion);
 
-        const v = new THREE.Vector3(0, 0, distance);
-        v.applyQuaternion(q);
+        // Calculate camera position from quaternion
+        // The camera should look at origin from a distance
+        const direction = new THREE.Vector3(0, 0, 1);
+        direction.applyQuaternion(q);
 
-        camera.position.copy(v);
+        camera.position.copy(direction.multiplyScalar(distance));
         camera.quaternion.copy(q);
+        camera.lookAt(0, 0, 0);
         camera.updateMatrixWorld();
       }
     }
@@ -121,13 +118,6 @@ const ViewCubeControls = ({ onRotationChange }: { onRotationChange: (x: number, 
   useFrame(() => {
     // Only send rotation updates when user is actively dragging the ViewCube
     if (controlsRef.current && isDragging.current) {
-      // We need to pass the quaternion
-      // But the prop is (x, y). We should change the interface or ignore it and do logic here?
-      // Let's rely on stored state or ref?
-      // Actually, we should change the parent to accept Quaternion.
-      // For minimal refactor, let's just NOT do anything here and rely on a sync component? 
-      // No, we need to push changes to the store.
-
       const q = camera.quaternion;
       onRotationChange(q.x, q.y, q.z, q.w);
     }
@@ -153,46 +143,47 @@ const ViewCube = ({ onViewChange }: ViewCubeProps) => {
   const setView = useCADStore(state => state.setView);
 
   const handleFaceClick = (face: string) => {
-    // Set standard view based on clicked face
-    const views: Record<string, { x: number; y: number }> = {
-      front: { x: 0, y: 0 },
-      back: { x: 0, y: Math.PI },
-      right: { x: 0, y: Math.PI / 2 },
-      left: { x: 0, y: -Math.PI / 2 },
-      top: { x: Math.PI / 2, y: 0 },
-      bottom: { x: -Math.PI / 2, y: 0 },
-    };
+    const distance = 50;
+    const dummyCam = new THREE.Object3D();
 
-    const view = views[face];
-    if (view) {
-      // Create quaternion from Euler (XZ view logic is specific)
-      // ViewCube logic was: x=polar, y=azimuth.
-      // We need to convert this "idea" to a quaternion that Arcball respects.
-      // Note: Arcball is free, so "up" changes. 
-      // It's safer to just set the position and LookAt, then capture the Quaternion?
-      // Or construct the Quaternion manually.
+    // Default up vector
+    dummyCam.up.set(0, 1, 0);
 
-      // Let's use a temporary dummy object to compute the quaternion
-      const distance = 50; // Arbitrary distance
-      const dummyCam = new THREE.Object3D();
-
-      // Calculate position from spherical coords (ViewCube logic match)
-      const x = view.x;
-      const y = view.y;
-
-      const px = distance * Math.sin(y) * Math.cos(x);
-      const py = distance * Math.sin(x);
-      const pz = distance * Math.cos(y) * Math.cos(x);
-
-      dummyCam.position.set(px, py, pz);
-      dummyCam.lookAt(0, 0, 0);
-      dummyCam.updateMatrix();
-
-      // Force update by setting a new array reference
-      const newQuat: [number, number, number, number] = [dummyCam.quaternion.x, dummyCam.quaternion.y, dummyCam.quaternion.z, dummyCam.quaternion.w];
-      setCameraQuaternion(newQuat);
+    // Determine position based on face
+    switch (face) {
+      case "front":
+        dummyCam.position.set(0, 0, distance);
+        break;
+      case "back":
+        dummyCam.position.set(0, 0, -distance);
+        break;
+      case "right":
+        dummyCam.position.set(distance, 0, 0);
+        break;
+      case "left":
+        dummyCam.position.set(-distance, 0, 0);
+        break;
+      case "top":
+        dummyCam.position.set(0, distance, 0);
+        dummyCam.up.set(0, 0, -1); // Adjust up vector for top view
+        break;
+      case "bottom":
+        dummyCam.position.set(0, -distance, 0);
+        dummyCam.up.set(0, 0, 1); // Adjust up vector for bottom view
+        break;
     }
 
+    dummyCam.lookAt(0, 0, 0);
+    dummyCam.updateMatrix();
+
+    const newQuat: [number, number, number, number] = [
+      dummyCam.quaternion.x,
+      dummyCam.quaternion.y,
+      dummyCam.quaternion.z,
+      dummyCam.quaternion.w
+    ];
+
+    setCameraQuaternion(newQuat);
     onViewChange?.(face);
     setView(face as any);
   };
@@ -202,12 +193,18 @@ const ViewCube = ({ onViewChange }: ViewCubeProps) => {
   };
 
   const handleHomeClick = () => {
-    // Isometric home view
-    // Calculate iso quaternion
     const dummyCam = new THREE.Object3D();
     dummyCam.position.set(50, 40, 50); // Matches default Viewport camera pos
+    dummyCam.up.set(0, 1, 0);
     dummyCam.lookAt(0, 0, 0);
-    setCameraQuaternion([dummyCam.quaternion.x, dummyCam.quaternion.y, dummyCam.quaternion.z, dummyCam.quaternion.w]);
+    dummyCam.updateMatrix();
+
+    setCameraQuaternion([
+      dummyCam.quaternion.x,
+      dummyCam.quaternion.y,
+      dummyCam.quaternion.z,
+      dummyCam.quaternion.w
+    ]);
     onViewChange?.("home");
     setView("home");
   };

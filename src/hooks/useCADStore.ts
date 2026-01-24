@@ -395,10 +395,54 @@ export const useCADStore = create<CADState>((set, get) => ({
       } else if (tool.execute) {
         // Operation tools that modify selected objects
         const selectedIds = [...currentState.selectedIds];
-        if (selectedIds.length === 0 && ['extrusion', 'revolve', 'pivot', 'translatePlane'].includes(type)) {
+
+        // Validate selection requirements
+        if (tool.selectionRequirements) {
+          const reqs = tool.selectionRequirements;
+          const count = selectedIds.length;
+
+          if (reqs.min !== undefined && count < reqs.min) {
+            toast.error(`${tool.metadata.label} requires at least ${reqs.min} selection${reqs.min > 1 ? 's' : ''}`);
+            return;
+          }
+          if (reqs.max !== undefined && count > reqs.max) {
+            toast.error(`${tool.metadata.label} supports at most ${reqs.max} selection${reqs.max > 1 ? 's' : ''}`);
+            return;
+          }
+
+          if (reqs.allowedTypes) {
+            const invalidSelection = selectedIds.some(id => {
+              const obj = currentState.objects.find(o => o.id === id);
+              if (!obj) return true; // Should not happen
+
+              // Map CADObject type to SelectionRequirements type
+              // CADObject types: 'box', 'cylinder', ... 'sketch', 'extrusion', 'revolve'
+              // Requirement types: 'sketch', 'face', 'solid', 'other'
+
+              const isSolid = ['box', 'cylinder', 'sphere', 'torus', 'coil', 'extrusion', 'revolve'].includes(obj.type);
+              const isSketch = obj.type === 'sketch' || toolRegistry.get(obj.type)?.metadata.category === 'sketch';
+
+              if (reqs.allowedTypes?.includes('solid') && isSolid) return false;
+              if (reqs.allowedTypes?.includes('sketch') && isSketch) return false;
+
+              // TODO: Better type mapping (Face selection from inside objects not yet fully supported in state)
+
+              return true; // Invalid
+            });
+
+            if (invalidSelection) {
+              toast.error(`${tool.metadata.label} requires specific selection types: ${reqs.allowedTypes.join(', ')}`);
+              return;
+            }
+          }
+        }
+
+        // Fallback check if no requirements defined but tool is "operation"
+        if (!tool.selectionRequirements && selectedIds.length === 0 && ['extrusion', 'revolve', 'pivot', 'translatePlane'].includes(type)) {
           toast.error(`No object selected for ${type}`);
           return;
         }
+
         tool.execute(cm, selectedIds, params);
       }
     } else {

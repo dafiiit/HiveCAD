@@ -42,10 +42,19 @@ export interface SketchPrimitiveData {
     properties?: Record<string, any>;
 }
 
+// Tool selection requirements
+export interface SelectionRequirements {
+    min?: number;
+    max?: number;
+    allowedTypes?: ('sketch' | 'face' | 'solid' | 'other')[]; // Map to CADObject types
+}
+
 // Base Tool interface - all tools implement this
 export interface Tool {
     metadata: ToolMetadata;
     uiProperties: ToolUIProperty[];
+    selectionRequirements?: SelectionRequirements;
+
 
     /**
      * Create geometry (for primitive tools like box, cylinder, sphere)
