@@ -1,14 +1,14 @@
 import { useEffect } from "react";
 import MenuBar from "./MenuBar";
 import RibbonToolbar from "./RibbonToolbar";
-import BrowserPanel from "./BrowserPanel";
+
 import Viewport from "./Viewport";
 import SketchPalette from "./SketchPalette";
 import Timeline from "./Timeline";
 import StatusBar from "./StatusBar";
 import CommentsPanel from "./CommentsPanel";
 import OperationProperties from "./OperationProperties";
-import CodeEditorPanel from "./CodeEditorPanel";
+import UnifiedSidebar from "./UnifiedSidebar";
 import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
 
@@ -82,11 +82,8 @@ const CADLayout = () => {
 
       {/* Main content area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left browser panel */}
-        <BrowserPanel />
-
-        {/* Code Editor Panel */}
-        <CodeEditorPanel />
+        {/* Unified Sidebar (Browser & Code) */}
+        <UnifiedSidebar />
 
         {/* Center viewport */}
         <div className="flex-1 flex flex-col relative">

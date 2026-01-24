@@ -1,0 +1,120 @@
+import { useState } from "react";
+import BrowserPanel from "./BrowserPanel";
+import CodeEditorPanel from "./CodeEditorPanel";
+import { ChevronRight, Minus, Code, FolderTree } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+const UnifiedSidebar = () => {
+    const [isCollapsed, setIsCollapsed] = useState(false);
+    const [activeTab, setActiveTab] = useState<'browser' | 'code'>('browser');
+
+    const toggleCollapse = () => {
+        setIsCollapsed(!isCollapsed);
+    };
+
+    return (
+        <div
+            className={cn(
+                "flex flex-col h-full border-r border-border bg-background transition-all duration-300 ease-in-out flex-none",
+                isCollapsed ? "w-10" : "w-72"
+            )}
+        >
+            {/* Header with Tabs */}
+            <div className={cn(
+                "h-10 flex items-center border-b border-border bg-muted/30 select-none overflow-hidden",
+                isCollapsed ? "justify-center flex-col py-2 h-auto gap-2 bg-transparent border-b-0" : "px-2"
+            )}>
+                {/* Expanded Header Content */}
+                {!isCollapsed && (
+                    <>
+                        <div className="flex items-center space-x-1 flex-1">
+                            <button
+                                onClick={() => setActiveTab('browser')}
+                                className={cn(
+                                    "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                                    activeTab === 'browser'
+                                        ? "bg-background shadow-sm text-foreground"
+                                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                )}
+                            >
+                                <FolderTree className="w-3.5 h-3.5" />
+                                <span>Browser</span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('code')}
+                                className={cn(
+                                    "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                                    activeTab === 'code'
+                                        ? "bg-background shadow-sm text-foreground"
+                                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                )}
+                            >
+                                <Code className="w-3.5 h-3.5" />
+                                <span>Code</span>
+                            </button>
+                        </div>
+
+                        <button
+                            className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors"
+                            onClick={toggleCollapse}
+                            title="Collapse sidebar"
+                        >
+                            <Minus className="w-3.5 h-3.5" />
+                        </button>
+                    </>
+                )}
+
+                {/* Collapsed Header Content (Vertical Icons) */}
+                {isCollapsed && (
+                    <>
+                        <button
+                            onClick={toggleCollapse}
+                            className="p-1.5 hover:bg-secondary rounded mb-2 transition-colors"
+                            title="Expand Sidebar"
+                        >
+                            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        </button>
+                        <div className="w-full h-[1px] bg-border mb-2" />
+
+                        <button
+                            onClick={() => { setActiveTab('browser'); setIsCollapsed(false); }}
+                            className={cn(
+                                "p-2 rounded mb-1 transition-colors",
+                                activeTab === 'browser' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
+                            )}
+                            title="Browser"
+                        >
+                            <FolderTree className="w-4 h-4" />
+                        </button>
+                        <button
+                            onClick={() => { setActiveTab('code'); setIsCollapsed(false); }}
+                            className={cn(
+                                "p-2 rounded mb-1 transition-colors",
+                                activeTab === 'code' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
+                            )}
+                            title="Code Editor"
+                        >
+                            <Code className="w-4 h-4" />
+                        </button>
+                    </>
+                )}
+            </div>
+
+            {/* Content Area - Only visible when not collapsed */}
+            <div className={cn(
+                "flex-1 overflow-hidden relative transition-opacity duration-300",
+                isCollapsed ? "opacity-0 invisible" : "opacity-100 visible delay-100"
+            )}>
+                <div className={cn("absolute inset-0 flex flex-col", activeTab === 'browser' ? "z-10" : "-z-10 opacity-0 pointer-events-none")}>
+                    <BrowserPanel />
+                </div>
+
+                <div className={cn("absolute inset-0 flex flex-col bg-[#1e1e1e]", activeTab === 'code' ? "z-10" : "-z-10 opacity-0 pointer-events-none")}>
+                    <CodeEditorPanel />
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default UnifiedSidebar;

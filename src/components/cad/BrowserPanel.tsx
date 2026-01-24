@@ -13,7 +13,6 @@ import {
   Pencil,
   FolderClosed,
   FolderOpen,
-  Minus,
   Trash2
 } from "lucide-react";
 import { useCADStore } from "@/hooks/useCADStore";
@@ -139,7 +138,6 @@ const BrowserPanel = () => {
   const [visibleItems, setVisibleItems] = useState<Set<string>>(
     new Set(["origin", "sketches", "bodies"])
   );
-  const [collapsed, setCollapsed] = useState(false);
 
   const toggleExpand = (id: string) => {
     const newExpanded = new Set(expandedItems);
@@ -189,36 +187,8 @@ const BrowserPanel = () => {
     toast.success("Sketch mode activated");
   };
 
-  const handleCollapse = () => {
-    setCollapsed(!collapsed);
-  };
-
-  if (collapsed) {
-    return (
-      <div className="w-8 bg-panel border-r border-border flex flex-col items-center py-2">
-        <button
-          onClick={handleCollapse}
-          className="p-1.5 hover:bg-secondary rounded"
-          title="Expand Browser"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div className="cad-panel w-56 flex flex-col h-full">
-      <div className="cad-panel-header">
-        <span>Browser</span>
-        <button
-          className="text-muted-foreground hover:text-foreground"
-          onClick={handleCollapse}
-          title="Collapse panel"
-        >
-          <Minus className="w-3 h-3" />
-        </button>
-      </div>
+    <div className="flex flex-col h-full w-full">
 
       <div className="flex-1 overflow-y-auto py-1 text-xs">
         {/* Document */}

@@ -34,7 +34,7 @@ const CodeEditorPanel = () => {
     };
 
     return (
-        <div className="flex flex-col h-full bg-[#1e1e1e] border-r border-border" style={{ width: '400px', minWidth: '300px' }}>
+        <div className="flex flex-col h-full bg-[#1e1e1e] w-full">
             <div className="p-2 bg-muted text-muted-foreground text-xs font-mono border-b border-border flex justify-between items-center">
                 <span>script.js</span>
                 <button
