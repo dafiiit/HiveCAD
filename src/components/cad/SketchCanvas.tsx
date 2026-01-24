@@ -64,6 +64,7 @@ const SketchCanvas = () => {
         // Solver state and actions
         solverInstance, sketchEntities, draggingEntityId,
         initializeSolver, setDrivingPoint, solveConstraints, setDraggingEntity,
+        addSolverLineMacro, addSolverRectangleMacro, addSolverCircleMacro,
         // Snapping state and actions
         activeSnapPoint, snappingEnabled, snappingEngine,
         setSnapPoint, setSnappingEngine
@@ -168,6 +169,13 @@ const SketchCanvas = () => {
                 const newPoints = [...currentDrawingPrimitive.points];
                 newPoints[newPoints.length - 1] = finalP2d;
                 updateCurrentDrawingPrimitive({ ...currentDrawingPrimitive, points: newPoints });
+
+                // Update Solver if drawing
+                const solverId = currentDrawingPrimitive.properties?.solverId;
+                if (solverId) {
+                    setDrivingPoint(solverId as string, finalP2d[0], finalP2d[1]);
+                    solveConstraints();
+                }
             }
         }
     };
@@ -324,7 +332,12 @@ const SketchCanvas = () => {
                 });
                 break;
             default:
-                updateCurrentDrawingPrimitive({ ...baseProps, type: 'line' });
+                const lineData = addSolverLineMacro(p2d, p2d);
+                updateCurrentDrawingPrimitive({
+                    ...baseProps,
+                    type: 'line',
+                    properties: { ...baseProps.properties, solverId: lineData?.p2Id }
+                });
         }
     };
 
@@ -747,6 +760,63 @@ const SketchCanvas = () => {
         return null;
     };
 
+    const renderSolverEntity = (entity: any) => {
+        const color = "#ffffff";
+        if (entity.type === 'line') {
+            const p1 = sketchEntities.get(entity.p1Id);
+            const p2 = sketchEntities.get(entity.p2Id);
+            if (!p1 || !p2 || p1.type !== 'point' || p2.type !== 'point') return null;
+            const points = [to3D(p1.x, p1.y), to3D(p2.x, p2.y)];
+            return (
+                <line key={entity.id}>
+                    <bufferGeometry>
+                        <bufferAttribute
+                            attach="attributes-position"
+                            count={2}
+                            array={new Float32Array(points.flatMap(v => [v.x, v.y, v.z]))}
+                            itemSize={3}
+                        />
+                    </bufferGeometry>
+                    <lineBasicMaterial color={color} linewidth={2} depthTest={false} transparent opacity={0.8} />
+                </line>
+            );
+        }
+        if (entity.type === 'circle') {
+            const center = sketchEntities.get(entity.centerId);
+            if (!center || center.type !== 'point') return null;
+            const segments = 64;
+            const circlePoints: THREE.Vector3[] = [];
+            for (let i = 0; i <= segments; i++) {
+                const theta = (i / segments) * Math.PI * 2;
+                const x = center.x + Math.cos(theta) * entity.radius;
+                const y = center.y + Math.sin(theta) * entity.radius;
+                circlePoints.push(to3D(x, y));
+            }
+            return (
+                <line key={entity.id}>
+                    <bufferGeometry>
+                        <bufferAttribute
+                            attach="attributes-position"
+                            count={circlePoints.length}
+                            array={new Float32Array(circlePoints.flatMap(v => [v.x, v.y, v.z]))}
+                            itemSize={3}
+                        />
+                    </bufferGeometry>
+                    <lineBasicMaterial color={color} linewidth={2} depthTest={false} transparent opacity={0.8} />
+                </line>
+            );
+        }
+        if (entity.type === 'point' && draggingEntityId === entity.id) {
+            return (
+                <mesh key={entity.id} position={to3D(entity.x, entity.y)}>
+                    <sphereGeometry args={[0.2, 8, 8]} />
+                    <meshBasicMaterial color="#00ffff" depthTest={false} />
+                </mesh>
+            );
+        }
+        return null;
+    };
+
     return (
         <group>
             {/* Invisible plane for raycasting */}
@@ -762,7 +832,10 @@ const SketchCanvas = () => {
                 <meshBasicMaterial color="red" wireframe side={THREE.DoubleSide} />
             </mesh>
 
-            {/* Render Active Primitives */}
+            {/* Render Solver Entities */}
+            {Array.from(sketchEntities.values()).map(entity => renderSolverEntity(entity))}
+
+            {/* Render Active Primitives (Legacy) */}
             {activeSketchPrimitives.map(prim => renderPrimitive(prim, false))}
 
             {/* Render Current Drawing Primitive */}

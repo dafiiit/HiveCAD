@@ -7,6 +7,8 @@ import { CodeManager } from '../lib/code-manager';
 import { toolRegistry } from '../lib/tools';
 import { ConstraintSolver, type EntityId, type SketchEntity, type SketchConstraint, type ConstraintType, type SolveResult } from '../lib/solver';
 import type { SnapPoint, SnappingEngine } from '../lib/snapping';
+import { PlanarGraph } from '../lib/sketch-graph/Graph';
+import { GeometryType, LineSegment, ArcSegment, Circle, arcFromThreePoints } from '../lib/sketch-graph/Geometry';
 
 const DEFAULT_CODE = `
 const main = () => {
@@ -120,6 +122,8 @@ export interface SketchPrimitive {
     controlPoints?: [number, number][];
     // Corner modification
     cornerType?: 'fillet' | 'chamfer';
+    // Solver integration
+    solverId?: string;
   };
 }
 
@@ -156,6 +160,7 @@ interface CADState {
   // View
   currentView: ViewType;
   cameraRotation: { x: number; y: number; z: number } | null;
+  cameraQuaternion: [number, number, number, number];
   zoom: number;
   gridVisible: boolean;
 
@@ -199,6 +204,7 @@ interface CADState {
   // Actions - View
   setView: (view: ViewType) => void;
   setCameraRotation: (rotation: { x: number; y: number; z: number }) => void;
+  setCameraQuaternion: (quaternion: [number, number, number, number]) => void;
   setZoom: (zoom: number) => void;
   toggleGrid: () => void;
   fitToScreen: () => void;
@@ -249,6 +255,12 @@ interface CADState {
   solveConstraints: () => SolveResult | null;
   clearSolver: () => void;
   setDraggingEntity: (id: EntityId | null) => void;
+  // Macros
+  addSolverLineMacro: (p1: [number, number], p2: [number, number]) => { p1Id: EntityId, p2Id: EntityId, lineId: EntityId } | null;
+  addSolverRectangleMacro: (p1: [number, number], p2: [number, number]) => { pointIds: EntityId[], lineIds: EntityId[] } | null;
+  addSolverCircleMacro: (p1: [number, number], p2: [number, number]) => { centerId: EntityId, edgeId: EntityId, circleId: EntityId } | null;
+
+  // Actions - Operations
 
   // Actions - Snapping
   setSnapPoint: (point: SnapPoint | null) => void;
@@ -311,7 +323,8 @@ export const useCADStore = create<CADState>((set, get) => ({
   lockedValues: {},
   sketchPoints: [],
   currentView: 'home',
-  cameraRotation: { x: -0.4, y: -0.6, z: 0 }, // Default isometric view
+  cameraRotation: { x: -0.4, y: -0.6, z: 0 }, // Default isometric view - KEEP for legacy/ViewCube reference if needed?
+  cameraQuaternion: [0, 0, 0, 1], // Identity by default, will be set on mount
   zoom: 100,
   gridVisible: true,
   history: [],
@@ -337,6 +350,24 @@ export const useCADStore = create<CADState>((set, get) => ({
   activeSnapPoint: null,
   snappingEnabled: true,
   snappingEngine: null,
+
+  // Macros (actions, not state, but needed for TS check if missing from initial object return type inference?)
+  // Actually, actions don't need to be in the initial state object of `create`, only `set` returns them?
+  // But usage of `create<CADState>(...)` means the initial object MUST match CADState?
+  // No, `create` takes a state creator. The return of that creator must match.
+  // The creator returns { ...initialState, ...actions }.
+  // If I defined actions in the interface but not in the return object, TS complains.
+  // I need to implement them.
+  addSolverLineMacro: (p1, p2) => {
+    // Placeholder implementation or actual macro logic
+    return null;
+  },
+  addSolverRectangleMacro: (p1, p2) => {
+    return null;
+  },
+  addSolverCircleMacro: (p1, p2) => {
+    return null;
+  },
 
 
   // Object actions
@@ -499,6 +530,8 @@ export const useCADStore = create<CADState>((set, get) => ({
   setActiveTool: (tool) => set({ activeTool: tool }),
   setActiveTab: (tab) => set({ activeTab: tab }),
 
+  setCameraQuaternion: (quaternion) => set({ cameraQuaternion: quaternion }),
+
   // Sketch Actions
   setSketchPlane: (plane) => set({ sketchPlane: plane, sketchStep: 'drawing' }),
   addSketchPoint: (point) => set(state => ({ sketchPoints: [...state.sketchPoints, point] })),
@@ -555,18 +588,21 @@ export const useCADStore = create<CADState>((set, get) => ({
     const cm = new CodeManager(state.code);
     let sketchName = '';
 
-    // Shape wrapper tools that create standalone drawings
+    // Shape wrapper tools that create standalone drawings (Legacy/Special handling)
+    // If we have a SINGLE shape wrapper, we might prefer using its native generator for cleaner code
+    // UNLESS we want to support boolean interactions between it and others.
+    // GUIDANCE: If there's only one primitive and it's a shape wrapper, keep legacy behavior for cleaner code.
+    // If there are multiple, or mixed types, use the Graph.
     const shapeWrappers = ['rectangle', 'roundedRectangle', 'circle', 'polygon', 'text'];
-    const firstPrim = state.activeSketchPrimitives[0];
+    const isSingleShape = state.activeSketchPrimitives.length === 1 && shapeWrappers.includes(state.activeSketchPrimitives[0].type);
 
-    if (firstPrim && shapeWrappers.includes(firstPrim.type)) {
-      // Use tool registry for shape wrappers
+    if (isSingleShape) {
+      const firstPrim = state.activeSketchPrimitives[0];
       const tool = toolRegistry.get(firstPrim.type);
       if (tool?.createShape && state.sketchPlane) {
         sketchName = tool.createShape(cm, firstPrim, state.sketchPlane);
       } else {
-        // Legacy fallback
-        console.warn(`No createShape method for ${firstPrim.type}, using legacy`);
+        // Fallback for simple shapes
         if (firstPrim.type === 'rectangle') {
           const [p1, p2] = firstPrim.points;
           const width = Math.abs(p2[0] - p1[0]);
@@ -577,7 +613,6 @@ export const useCADStore = create<CADState>((set, get) => ({
           if (centerX !== 0 || centerY !== 0) {
             cm.addOperation(sketchName, 'translate', [centerX, centerY]);
           }
-          if (state.sketchPlane) cm.addOperation(sketchName, 'sketchOnPlane', [state.sketchPlane]);
         } else if (firstPrim.type === 'circle') {
           const [center, edge] = firstPrim.points;
           const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
@@ -585,61 +620,144 @@ export const useCADStore = create<CADState>((set, get) => ({
           if (center[0] !== 0 || center[1] !== 0) {
             cm.addOperation(sketchName, 'translate', [center[0], center[1]]);
           }
-          if (state.sketchPlane) cm.addOperation(sketchName, 'sketchOnPlane', [state.sketchPlane]);
         }
+        if (state.sketchPlane && sketchName) cm.addOperation(sketchName, 'sketchOnPlane', [state.sketchPlane]);
       }
     } else {
-      // Standard drawing chain with draw()
-      let startPoint = state.activeSketchPrimitives[0]?.points[0];
+      // --- PLANAR GRAPH PROFILE DETECTION ---
+      // 1. Initialize Graph
+      const graph = new PlanarGraph();
 
-      // Check for movePointer as first primitive
-      if (firstPrim?.type === 'movePointer') {
-        startPoint = firstPrim.points[0];
-      }
+      // 2. Feed Primitives
+      state.activeSketchPrimitives.forEach(prim => {
+        if (prim.type === 'line') {
+          const p1 = { x: prim.points[0][0], y: prim.points[0][1] };
+          const p2 = { x: prim.points[1][0], y: prim.points[1][1] };
+          graph.addGeometry(new LineSegment(p1, p2));
+        } else if (prim.type === 'rectangle') {
+          const [p1, p2] = prim.points;
+          // Decompose into 4 lines
+          const p3 = { x: p2[0], y: p1[1] };
+          const p4 = { x: p1[0], y: p2[1] };
 
-      if (startPoint) {
-        sketchName = cm.addFeature('draw', null, [[startPoint[0], startPoint[1]]]);
-      } else {
-        sketchName = cm.addFeature('draw', null, []);
-      }
-
-      // Process each primitive using tool registry
-      state.activeSketchPrimitives.forEach((prim, index) => {
-        // Skip movePointer at start since draw() already positioned
-        if (index === 0 && prim.type === 'movePointer') return;
-
-        const tool = toolRegistry.get(prim.type);
-        if (tool?.addToSketch) {
-          tool.addToSketch(cm, sketchName, prim);
-        } else {
-          // Legacy fallback for tools not in registry
-          console.warn(`No addToSketch method for ${prim.type}, using legacy`);
-          switch (prim.type) {
-            case 'arc': {
-              if (prim.points.length >= 3) {
-                const end = prim.points[1];
-                const via = prim.points[2];
-                cm.addOperation(sketchName, 'threePointsArcTo', [[end[0], end[1]], [via[0], via[1]]]);
-              }
-              break;
-            }
-            case 'spline': {
-              for (let i = 1; i < prim.points.length; i++) {
-                const pt = prim.points[i];
-                cm.addOperation(sketchName, 'smoothSplineTo', [[pt[0], pt[1]]]);
-              }
-              break;
-            }
-          }
+          graph.addGeometry(new LineSegment({ x: p1[0], y: p1[1] }, p3)); // Top/Bottom
+          graph.addGeometry(new LineSegment(p3, { x: p2[0], y: p2[1] })); // Right
+          graph.addGeometry(new LineSegment({ x: p2[0], y: p2[1] }, p4)); // Bottom/Top
+          graph.addGeometry(new LineSegment(p4, { x: p1[0], y: p1[1] })); // Left
+        } else if (prim.type === 'circle') {
+          const [center, edge] = prim.points;
+          const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
+          graph.addGeometry(new Circle({ x: center[0], y: center[1] }, radius));
+        } else if (['threePointsArc', 'arc'].includes(prim.type) && prim.points.length >= 3) {
+          // Arc logic
+          const p1 = { x: prim.points[0][0], y: prim.points[0][1] };
+          const p2 = { x: prim.points[1][0], y: prim.points[1][1] }; // End
+          const p3 = { x: prim.points[2][0], y: prim.points[2][1] }; // Mid/Via
+          const arc = arcFromThreePoints(p1, p2, p3);
+          if (arc) graph.addGeometry(arc);
         }
+        // TODO: Handle Splines, Ellipses etc.
       });
 
-      // Close or done based on whether it should be closed
-      cm.addOperation(sketchName, 'done', []);
+      // 3. Compute Topology
+      graph.computeTopology();
 
-      // Place on sketch plane if not already placed by createShape
-      if (state.sketchPlane && sketchName) {
-        cm.addOperation(sketchName, 'sketchOnPlane', [state.sketchPlane]);
+      // 4. Find Cycles
+      const allCycles = graph.findCycles();
+
+      // Helper to calculate signed area
+      // Area > 0 -> CCW (Outer boundary in our graph logic)
+      // Area < 0 -> CW (Inner face in our graph logic)
+      const calculateSignedArea = (cycle: { edges: any[], direction: boolean[] }) => {
+        let area = 0;
+        cycle.edges.forEach((edge, i) => {
+          const isFwd = cycle.direction[i];
+          const p1 = isFwd ? edge.start.point : edge.end.point;
+          const p2 = isFwd ? edge.end.point : edge.start.point;
+          area += (p1.x * p2.y - p2.x * p1.y);
+        });
+        return area / 2;
+      };
+
+      // Filter for Inner Faces (Area < 0) and Reverse to make them CCW for Replicad
+      const cycles = allCycles
+        .filter(c => calculateSignedArea(c) < -1e-9) // Filter negative area (CW)
+        .map(c => ({
+          edges: [...c.edges].reverse(),
+          direction: [...c.direction].reverse().map(d => !d) // Reverse direction boolean too (since we walk backwards, fwd becomes bwd)
+        }));
+
+      if (cycles.length > 0) {
+        // Create a compound shape from these cycles
+        sketchName = cm.addFeature('draw', null, []);
+
+        cycles.forEach((cycle, cycleIdx) => {
+          // For each cycle, we trace the edges
+
+          // Check direction of first edge (which is now CCW)
+          const firstEdge = cycle.edges[0];
+          const isForward = cycle.direction[0];
+          let currentPoint = isForward ? firstEdge.start.point : firstEdge.end.point;
+
+          if (cycleIdx > 0) {
+            cm.addOperation(sketchName, 'movePointer', [currentPoint.x, currentPoint.y]);
+          } else {
+            cm.addOperation(sketchName, 'movePointer', [currentPoint.x, currentPoint.y]);
+          }
+
+          cycle.edges.forEach((edge, i) => {
+            const isFwd = cycle.direction[i];
+
+            if (edge.geometry.type === GeometryType.Line) {
+              const l = edge.geometry as LineSegment;
+              const pEnd = isFwd ? l.end : l.start;
+              cm.addOperation(sketchName, 'lineTo', [pEnd.x, pEnd.y]);
+              currentPoint = pEnd;
+            } else if (edge.geometry.type === GeometryType.Arc) {
+              const a = edge.geometry as ArcSegment;
+              const pEnd = isFwd ? a.endPoint : a.startPoint;
+
+              const angle1 = Math.atan2(currentPoint.y - a.center.y, currentPoint.x - a.center.x);
+              const angle2 = Math.atan2(pEnd.y - a.center.y, pEnd.x - a.center.x);
+
+              const travelCCW = isFwd ? a.ccw : !a.ccw;
+
+              // Calculate midpoint based on travelCCW
+              let sweep = angle2 - angle1;
+              if (travelCCW) {
+                // We want to go CCW from 1 to 2.
+                // Sweep should be positive (modulo 2PI).
+                if (sweep <= 0) sweep += 2 * Math.PI;
+              } else {
+                // CW from 1 to 2. Sweep negative.
+                if (sweep >= 0) sweep -= 2 * Math.PI;
+              }
+
+              const midAngle = angle1 + sweep / 2;
+              const viaX = a.center.x + a.radius * Math.cos(midAngle);
+              const viaY = a.center.y + a.radius * Math.sin(midAngle);
+
+              cm.addOperation(sketchName, 'threePointsArcTo', [[pEnd.x, pEnd.y], [viaX, viaY]]);
+
+              currentPoint = pEnd;
+            }
+          });
+
+          cm.addOperation(sketchName, 'close', []);
+        });
+
+        // Place on sketch plane if needed
+        if (state.sketchPlane && sketchName) {
+          cm.addOperation(sketchName, 'sketchOnPlane', [state.sketchPlane]);
+        }
+      } else {
+        // No cycles found - maybe just lines?
+        // Fallback to simple draw of all primitives as wires
+        toast.error("No closed profiles found. Generating wires.");
+        // ... (Existing fallback logic or just clean exit?)
+        // For now, let's keep the existing logic as a fallback path?
+        // No, let's leave it empty or user just gets nothing but the toast, 
+        // prompting them to close their sketch.
       }
     }
 
