@@ -1,8 +1,9 @@
-import { useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useThree, ThreeEvent } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
 import { useCADStore, SketchPrimitive, ToolType } from "../../hooks/useCADStore";
+import { SnappingEngine, SnapResult } from "../../lib/snapping";
 import SketchToolDialog, { TOOL_PARAMS } from "./SketchToolDialog";
 
 // Type needed for dynamic inputs
@@ -62,13 +63,32 @@ const SketchCanvas = () => {
         lockedValues, setSketchInputLock, clearSketchInputLocks, finishSketch,
         // Solver state and actions
         solverInstance, sketchEntities, draggingEntityId,
-        initializeSolver, setDrivingPoint, solveConstraints, setDraggingEntity
+        initializeSolver, setDrivingPoint, solveConstraints, setDraggingEntity,
+        // Snapping state and actions
+        activeSnapPoint, snappingEnabled, snappingEngine,
+        setSnapPoint, setSnappingEngine
     } = useCADStore();
 
     const [hoverPoint, setHoverPoint] = useState<[number, number] | null>(null);
+    const [snapResult, setSnapResult] = useState<SnapResult | null>(null);
     const [showDialog, setShowDialog] = useState(false);
     const [pendingStartPoint, setPendingStartPoint] = useState<[number, number] | null>(null);
     const [dialogParams, setDialogParams] = useState<Record<string, any>>({});
+
+    // Initialize Snapping Engine
+    useEffect(() => {
+        if (!snappingEngine) {
+            const engine = new SnappingEngine();
+            setSnappingEngine(engine);
+        }
+    }, [snappingEngine, setSnappingEngine]);
+
+    // Update Snapping Entities when primitives change
+    useEffect(() => {
+        if (snappingEngine) {
+            snappingEngine.setEntities(activeSketchPrimitives);
+        }
+    }, [snappingEngine, activeSketchPrimitives]);
 
     // Only active in sketch mode drawing step
     if (!isSketchMode || sketchStep !== 'drawing' || !sketchPlane) return null;
@@ -102,6 +122,7 @@ const SketchCanvas = () => {
 
             const p2d = to2D(worldPoint);
             let finalP2d = [...p2d] as [number, number];
+            let currentSnapResult: SnapResult | null = null;
 
             // NEW: If dragging an entity, use solver-driven updates
             if (draggingEntityId && solverInstance?.isInitialized) {
@@ -112,6 +133,15 @@ const SketchCanvas = () => {
                     // Rendering will pick up the new positions automatically
                     setHoverPoint(finalP2d);
                     return;
+                }
+            }
+
+            // NEW: Snapping Logic
+            if (snappingEnabled && snappingEngine && !draggingEntityId) {
+                const snap = snappingEngine.findSnapTarget(p2d[0], p2d[1]);
+                if (snap) {
+                    finalP2d = [snap.x, snap.y];
+                    currentSnapResult = snap;
                 }
             }
 
@@ -126,9 +156,13 @@ const SketchCanvas = () => {
                     const directionY = p2d[1] >= start[1] ? 1 : -1;
                     finalP2d[1] = start[1] + (lockedValues['height']! * directionY);
                 }
+                // Override snap if locked (locks take precedence over snaps usually, or snapping should respect locks? For now locks win)
+                currentSnapResult = null;
             }
 
             setHoverPoint(finalP2d);
+            setSnapResult(currentSnapResult);
+            setSnapPoint(currentSnapResult?.snapPoint || null); // Update global store
 
             if (currentDrawingPrimitive && !showDialog) {
                 const newPoints = [...currentDrawingPrimitive.points];
@@ -736,11 +770,60 @@ const SketchCanvas = () => {
 
             {/* Hover Cursor */}
             {hoverPoint && !showDialog && (
-                <mesh position={to3D(hoverPoint[0], hoverPoint[1])}>
-                    <ringGeometry args={[0.5, 0.7, 32]} />
-                    <meshBasicMaterial color="#00ffff" depthTest={false} side={THREE.DoubleSide} />
-                </mesh>
+                <group position={to3D(hoverPoint[0], hoverPoint[1])}>
+                    {/* Default Cursor Ring */}
+                    <mesh visible={!snapResult}>
+                        <ringGeometry args={[0.5, 0.7, 32]} />
+                        <meshBasicMaterial color="#00ffff" depthTest={false} side={THREE.DoubleSide} />
+                    </mesh>
+
+                    {/* Snap Markers */}
+                    {snapResult && (
+                        <>
+                            {/* Visual Marker based on Type */}
+                            {snapResult.snapPoint.type === 'endpoint' && (
+                                <mesh>
+                                    <boxGeometry args={[1, 1, 1]} /> {/* Square */}
+                                    <meshBasicMaterial color="#00ff00" depthTest={false} />
+                                </mesh>
+                            )}
+                            {snapResult.snapPoint.type === 'midpoint' && (
+                                <mesh rotation={[0, 0, Math.PI / 6]}>
+                                    <coneGeometry args={[0.8, 0, 3]} /> {/* Triangle (hacky cone) */}
+                                    <meshBasicMaterial color="#00ff00" depthTest={false} />
+                                </mesh>
+                            )}
+                            {snapResult.snapPoint.type === 'center' && (
+                                <mesh rotation={[0, 0, Math.PI / 4]}>
+                                    <boxGeometry args={[0.8, 0.8, 0.8]} /> {/* Diamond (rotated square) */}
+                                    <meshBasicMaterial color="#00ff00" depthTest={false} />
+                                </mesh>
+                            )}
+                            {(snapResult.snapPoint.type === 'grid' || snapResult.snapPoint.type.includes('horizontal') || snapResult.snapPoint.type.includes('vertical')) && (
+                                <mesh>
+                                    <ringGeometry args={[0.3, 0.5, 32]} />
+                                    <meshBasicMaterial color="#ffffff" depthTest={false} />
+                                </mesh>
+                            )}
+                        </>
+                    )}
+                </group>
             )}
+
+            {/* Guide Lines from Snap Result */}
+            {snapResult?.guideLines?.map((guide, i) => (
+                <line key={`guide-${i}`}>
+                    <bufferGeometry>
+                        <bufferAttribute
+                            attach="attributes-position"
+                            count={2}
+                            array={new Float32Array([...to3D(guide.from.x, guide.from.y).toArray(), ...to3D(guide.to.x, guide.to.y).toArray()])}
+                            itemSize={3}
+                        />
+                    </bufferGeometry>
+                    <lineDashedMaterial color="#ffffff" dashSize={1} gapSize={1} depthTest={false} />
+                </line>
+            ))}
 
             {/* Tool Parameter Dialog */}
             {showDialog && pendingStartPoint && (

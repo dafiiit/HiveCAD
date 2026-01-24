@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { CodeManager } from '../lib/code-manager';
 import { toolRegistry } from '../lib/tools';
 import { ConstraintSolver, type EntityId, type SketchEntity, type SketchConstraint, type ConstraintType, type SolveResult } from '../lib/solver';
+import type { SnapPoint, SnappingEngine } from '../lib/snapping';
 
 const DEFAULT_CODE = `
 const main = () => {
@@ -146,6 +147,12 @@ interface CADState {
   sketchConstraints: SketchConstraint[];
   draggingEntityId: EntityId | null;
 
+  // Snapping State
+  activeSnapPoint: SnapPoint | null;
+  snappingEnabled: boolean;
+  snappingEngine: SnappingEngine | null;
+
+
   // View
   currentView: ViewType;
   cameraRotation: { x: number; y: number; z: number } | null;
@@ -243,6 +250,12 @@ interface CADState {
   clearSolver: () => void;
   setDraggingEntity: (id: EntityId | null) => void;
 
+  // Actions - Snapping
+  setSnapPoint: (point: SnapPoint | null) => void;
+  toggleSnapping: () => void;
+  setSnappingEngine: (engine: SnappingEngine) => void;
+
+
   // Actions - Operations
   startOperation: (type: string) => void;
   updateOperationParams: (params: any) => void;
@@ -319,6 +332,12 @@ export const useCADStore = create<CADState>((set, get) => ({
   sketchEntities: new Map(),
   sketchConstraints: [],
   draggingEntityId: null,
+
+  // Snapping State (initial)
+  activeSnapPoint: null,
+  snappingEnabled: true,
+  snappingEngine: null,
+
 
   // Object actions
   addObject: async (type, options = {}) => {
@@ -793,6 +812,11 @@ export const useCADStore = create<CADState>((set, get) => ({
   open: () => { },
   reset: () => set({ objects: [], code: DEFAULT_CODE }),
   setFileName: (name) => set({ fileName: name }),
+
+  // Snapping Actions
+  setSnapPoint: (point) => set({ activeSnapPoint: point }),
+  toggleSnapping: () => set(state => ({ snappingEnabled: !state.snappingEnabled })),
+  setSnappingEngine: (engine) => set({ snappingEngine: engine }),
 
   // Operations
   startOperation: (type) => {

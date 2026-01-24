@@ -56,74 +56,224 @@ export const createSketchHelper = (points: [number, number][], close: boolean = 
     return drawing.sketchOnPlane("XY");
 };
 
+import { PlanarGraph } from './sketch-graph/Graph';
+import { LineSegment, ArcSegment, Circle, GeometryType, arcFromThreePoints, Point2D } from './sketch-graph/Geometry';
+
 export const createSketchFromPrimitives = (primitives: { type: string, points: [number, number][], properties?: any }[]) => {
     if (!initialized || primitives.length === 0) return null;
 
-    const drawings: any[] = [];
+    const graph = new PlanarGraph();
 
+    // 1. Convert Primitives to Graph Geometry
     primitives.forEach(prim => {
         try {
             if (prim.type === 'line') {
                 if (prim.points.length < 2) return;
-                let pen = draw(prim.points[0]);
-                for (let i = 1; i < prim.points.length; i++) {
-                    pen = pen.lineTo(prim.points[i]);
+                for (let i = 0; i < prim.points.length - 1; i++) {
+                    const p1 = { x: prim.points[i][0], y: prim.points[i][1] };
+                    const p2 = { x: prim.points[i + 1][0], y: prim.points[i + 1][1] };
+                    graph.addGeometry(new LineSegment(p1, p2));
                 }
-                drawings.push(pen.done());
             } else if (prim.type === 'rectangle') {
                 if (prim.points.length < 2) return;
-                const [p1, p2] = prim.points;
-                const width = Math.abs(p2[0] - p1[0]);
-                const height = Math.abs(p2[1] - p1[1]);
-                const centerX = (p1[0] + p2[0]) / 2;
-                const centerY = (p1[1] + p2[1]) / 2;
+                const [p1arr, p2arr] = prim.points;
+                // Axis aligned rect from p1 to p2
+                const x1 = Math.min(p1arr[0], p2arr[0]);
+                const x2 = Math.max(p1arr[0], p2arr[0]);
+                const y1 = Math.min(p1arr[1], p2arr[1]);
+                const y2 = Math.max(p1arr[1], p2arr[1]);
 
-                let rect = drawRoundedRectangle(width, height, 0);
-                rect = rect.translate(centerX, centerY);
-                drawings.push(rect);
+                const pA = { x: x1, y: y1 };
+                const pB = { x: x2, y: y1 };
+                const pC = { x: x2, y: y2 };
+                const pD = { x: x1, y: y2 };
+
+                graph.addGeometry(new LineSegment(pA, pB));
+                graph.addGeometry(new LineSegment(pB, pC));
+                graph.addGeometry(new LineSegment(pC, pD));
+                graph.addGeometry(new LineSegment(pD, pA));
             } else if (prim.type === 'circle') {
                 if (prim.points.length < 2) return;
-                const [center, edge] = prim.points;
-                const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
-
-                let circ = drawCircle(radius);
-                circ = circ.translate(center[0], center[1]);
-                drawings.push(circ);
-            } else if (prim.type === 'polygon') {
-                if (prim.points.length < 2) return;
-                const [center, edge] = prim.points;
-                const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
-                const sides = prim.properties?.sides || 6;
-
-                let poly = drawPolysides(radius, sides);
-                poly = poly.translate(center[0], center[1]);
-                drawings.push(poly);
-            } else if (prim.type === 'spline') {
-                if (prim.points.length < 2) return;
-                let pen = draw(prim.points[0]);
-                for (let i = 1; i < prim.points.length; i++) {
-                    pen = pen.smoothSplineTo(prim.points[i]);
-                }
-                drawings.push(pen.done());
+                const [c, e] = prim.points;
+                const center = { x: c[0], y: c[1] };
+                const radius = Math.sqrt(Math.pow(e[0] - c[0], 2) + Math.pow(e[1] - c[1], 2));
+                graph.addGeometry(new Circle(center, radius));
             } else if (prim.type === 'arc') {
                 if (prim.points.length < 3) return;
-                const [start, end, mid] = prim.points;
-                let arc = draw(start).threePointsArcTo(end, mid);
-                drawings.push(arc.done());
+                const start = { x: prim.points[0][0], y: prim.points[0][1] };
+                const end = { x: prim.points[1][0], y: prim.points[1][1] };
+                const mid = { x: prim.points[2][0], y: prim.points[2][1] };
+
+                const arc = arcFromThreePoints(start, end, mid);
+                if (arc) graph.addGeometry(arc);
+            } else if (prim.type === 'polygon') {
+                // Convert to N lines
+                if (prim.points.length < 2) return;
+                const [c, e] = prim.points;
+                const center = { x: c[0], y: c[1] };
+                const radius = Math.sqrt(Math.pow(e[0] - c[0], 2) + Math.pow(e[1] - c[1], 2));
+                const sides = prim.properties?.sides || 6;
+
+                const points: Point2D[] = [];
+                for (let i = 0; i < sides; i++) {
+                    const ang = (i / sides) * 2 * Math.PI;
+                    points.push({
+                        x: center.x + radius * Math.cos(ang),
+                        y: center.y + radius * Math.sin(ang)
+                    });
+                }
+
+                for (let i = 0; i < sides; i++) {
+                    const p1 = points[i];
+                    const p2 = points[(i + 1) % sides];
+                    graph.addGeometry(new LineSegment(p1, p2));
+                }
+            } else if (prim.type === 'spline') {
+                console.warn("Splines are not fully supported in Planar Graph yet. treating as simple segments if possible.");
+                if (prim.points.length < 2) return;
+                for (let i = 0; i < prim.points.length - 1; i++) {
+                    const p1 = { x: prim.points[i][0], y: prim.points[i][1] };
+                    const p2 = { x: prim.points[i + 1][0], y: prim.points[i + 1][1] };
+                    graph.addGeometry(new LineSegment(p1, p2));
+                }
             }
         } catch (e) {
-            console.error(`Failed to create primitive ${prim.type}`, e);
+            console.error(`Failed to add primitive ${prim.type} to graph`, e);
         }
     });
 
-    if (drawings.length === 0) return null;
+    // 2. Compute Topology
+    graph.computeTopology();
 
-    let compound = drawings[0];
-    for (let i = 1; i < drawings.length; i++) {
+    // 3. Find Cycles
+    const cycles = graph.findCycles();
+    if (cycles.length === 0) {
+        // Fallback or return null?
+        // If we have just lines and no cycles, maybe we want to return the wires?
+        // User asked for "Profiles" which implies closed loops.
+        // If no loops, return null or maybe a wire sketch?
+        // Let's create faces from cycles.
+        return null;
+    }
+
+    // 4. Create Replicad Geometries from Cycles
+    const faces: any[] = [];
+
+    cycles.forEach(cycleInfo => {
+        const { edges, direction } = cycleInfo;
+        // Start pen at first node of first edge
+        const startEdge = edges[0];
+        const startDir = direction[0];
+        const startPt = startDir ? startEdge.start.point : startEdge.end.point;
+
+        let pen = draw([startPt.x, startPt.y]);
+
+        for (let i = 0; i < edges.length; i++) {
+            const edge = edges[i];
+            const dir = direction[i]; // true = start->end
+
+            const targetNode = dir ? edge.end : edge.start;
+            const targetPt = targetNode.point;
+
+            if (edge.geometry.type === GeometryType.Line) {
+                pen = pen.lineTo([targetPt.x, targetPt.y]);
+            } else if (edge.geometry.type === GeometryType.Arc) {
+                const arc = edge.geometry as ArcSegment;
+                // Pen needs to go to targetPt.
+                // We need a midpoint to use threePointsArcTo (safest).
+                // Or compute tangent...
+
+                // Compute accurate mid angle
+                // logic: if ccw, traverse from start->end. if !ccw, ...
+                // BUT we are traversing the edge in `dir` (true/false).
+                // Edge geometry has inherent start/end/ccw.
+
+                // If traversing `start->end` (dir=true):
+                //   We follow the arc geometry direction (if CCW).
+                //   Wait, ArcSegment is always CCW from start to end?
+                //   My implementation: YES, start/end/ccw.
+                //   If dir=true, we move start->end. If ccw=true, we follow arc.
+                //   If dir=false, we move end->start.
+
+                // To use threePointsArcTo(end, mid):
+                // We need ANY point on the arc segment between current point and target.
+
+                let sAngle = arc.startAngle;
+                let eAngle = arc.endAngle;
+
+                // Arc definition: CCW from start to end?
+                // My ArcSegment stores `ccw`.
+                // If ccw is true, angle sweep is start -> end (CCW).
+                // If ccw is false, sweep is start -> end (CW).
+
+                // Calculate mid angle based on Geometry properties
+                let midAngle: number;
+
+                // If traversing geometric start->end?
+                if (dir) {
+                    // Moving start->end
+                    if (arc.ccw) {
+                        // Simple CCW midpoint
+                        let diff = (eAngle - sAngle);
+                        if (diff < 0) diff += 2 * Math.PI;
+                        midAngle = sAngle + diff / 2;
+                    } else {
+                        // CW midpoint
+                        let diff = (sAngle - eAngle);
+                        if (diff < 0) diff += 2 * Math.PI;
+                        // sAngle - diff/2
+                        midAngle = sAngle - diff / 2;
+                    }
+                } else {
+                    // Moving end->start (reverse traversal)
+                    // Start pt is geometry.end. End pt is geometry.start.
+                    // eAngle -> sAngle.
+                    if (arc.ccw) {
+                        // Traversal is CW (against arc)
+                        // geometry is CCW start->end.
+                        // we go end->start.
+                        let diff = (eAngle - sAngle);
+                        if (diff < 0) diff += 2 * Math.PI;
+                        midAngle = eAngle - diff / 2;
+                    } else {
+                        // Traversal is CCW (against CW arc)
+                        let diff = (sAngle - eAngle);
+                        if (diff < 0) diff += 2 * Math.PI;
+                        midAngle = eAngle + diff / 2; // ?
+                        // eAngle + something to get to sAngle?
+                        // CW from start->end means decreasing angle.
+                        // end->start means increasing angle.
+                    }
+                }
+
+                const midPt = {
+                    x: arc.center.x + arc.radius * Math.cos(midAngle),
+                    y: arc.center.y + arc.radius * Math.sin(midAngle)
+                };
+
+                pen = pen.threePointsArcTo([targetPt.x, targetPt.y], [midPt.x, midPt.y]);
+            }
+        }
+
         try {
-            compound = compound.fuse(drawings[i]);
+            const poly = pen.close();
+            // Replicad/OC might produce invalid wires if self intersecting, but our graph ensures simple cycles.
+            // Convert wire to face?
+            // sketchOnPlane returns a sketch object which has a face potentially.
+            faces.push(poly);
         } catch (e) {
-            console.warn("Fuse failed, maybe disjoint? Keeping separate (not fully supported)", e);
+            console.warn("Failed to close cycle", e);
+        }
+    });
+
+    if (faces.length === 0) return null;
+
+    let compound = faces[0];
+    for (let i = 1; i < faces.length; i++) {
+        try {
+            compound = compound.fuse(faces[i]);
+        } catch (e) {
+            console.warn("Fuse cycle failed", e);
         }
     }
 
