@@ -17,8 +17,8 @@ interface TimelineProps {
 }
 
 const Timeline = ({ items: propItems }: TimelineProps) => {
-  const { 
-    history, 
+  const {
+    history,
     historyIndex,
     skipToStart,
     skipToEnd,
@@ -76,7 +76,7 @@ const Timeline = ({ items: propItems }: TimelineProps) => {
       }
       setIsPlaying(true);
       toast("Playing history...");
-      
+
       // Auto-step through history
       const playInterval = setInterval(() => {
         const state = useCADStore.getState();
@@ -104,7 +104,7 @@ const Timeline = ({ items: propItems }: TimelineProps) => {
     <div className="cad-timeline">
       {/* Playback controls */}
       <div className="flex items-center gap-0.5 mr-4">
-        <button 
+        <button
           className={`p-1 hover:bg-secondary rounded transition-colors ${historyIndex >= 0 ? 'text-muted-foreground hover:text-foreground' : 'text-muted-foreground/30'}`}
           onClick={handleSkipToStart}
           disabled={historyIndex < 0}
@@ -112,7 +112,7 @@ const Timeline = ({ items: propItems }: TimelineProps) => {
         >
           <SkipBack className="w-3.5 h-3.5" />
         </button>
-        <button 
+        <button
           className={`p-1 hover:bg-secondary rounded transition-colors ${historyIndex >= 0 ? 'text-muted-foreground hover:text-foreground' : 'text-muted-foreground/30'}`}
           onClick={handleStepBack}
           disabled={historyIndex < 0}
@@ -120,7 +120,7 @@ const Timeline = ({ items: propItems }: TimelineProps) => {
         >
           <StepBack className="w-3.5 h-3.5" />
         </button>
-        <button 
+        <button
           className={`p-1 hover:bg-secondary rounded transition-colors ${history.length > 0 ? 'text-muted-foreground hover:text-foreground' : 'text-muted-foreground/30'}`}
           onClick={handlePlayPause}
           disabled={history.length === 0}
@@ -128,7 +128,7 @@ const Timeline = ({ items: propItems }: TimelineProps) => {
         >
           {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
         </button>
-        <button 
+        <button
           className={`p-1 hover:bg-secondary rounded transition-colors ${historyIndex < history.length - 1 ? 'text-muted-foreground hover:text-foreground' : 'text-muted-foreground/30'}`}
           onClick={handleStepForward}
           disabled={historyIndex >= history.length - 1}
@@ -136,7 +136,7 @@ const Timeline = ({ items: propItems }: TimelineProps) => {
         >
           <StepForward className="w-3.5 h-3.5" />
         </button>
-        <button 
+        <button
           className={`p-1 hover:bg-secondary rounded transition-colors ${historyIndex < history.length - 1 ? 'text-muted-foreground hover:text-foreground' : 'text-muted-foreground/30'}`}
           onClick={handleSkipToEnd}
           disabled={historyIndex >= history.length - 1}
@@ -156,22 +156,17 @@ const Timeline = ({ items: propItems }: TimelineProps) => {
 
       {/* Timeline items */}
       <div className="flex-1 flex items-center gap-1 overflow-x-auto">
-        {displayItems.length === 0 ? (
-          <div className="text-2xs text-muted-foreground">
-            No history yet - start designing!
-          </div>
-        ) : (
+        {displayItems.length === 0 ? null : (
           displayItems.map((item, index) => (
             <div
               key={item.id}
               onClick={() => handleItemClick(index)}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded text-2xs cursor-pointer transition-colors ${
-                index === historyIndex 
-                  ? 'bg-primary text-primary-foreground' 
-                  : index <= historyIndex 
-                    ? 'bg-secondary text-foreground hover:bg-secondary/80' 
+              className={`flex items-center gap-1 px-2 py-0.5 rounded text-2xs cursor-pointer transition-colors ${index === historyIndex
+                  ? 'bg-primary text-primary-foreground'
+                  : index <= historyIndex
+                    ? 'bg-secondary text-foreground hover:bg-secondary/80'
                     : 'bg-secondary/30 text-muted-foreground hover:bg-secondary/50'
-              }`}
+                }`}
             >
               <span className="opacity-60">{index + 1}</span>
               <span>{item.name}</span>
@@ -181,7 +176,7 @@ const Timeline = ({ items: propItems }: TimelineProps) => {
       </div>
 
       {/* Settings */}
-      <button 
+      <button
         className="p-1 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors ml-2"
         onClick={handleSettings}
         title="Timeline settings"

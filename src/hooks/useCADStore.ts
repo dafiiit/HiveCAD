@@ -73,6 +73,21 @@ export interface Comment {
   position?: [number, number, number];
 }
 
+export interface VersionCommit {
+  id: string;
+  message: string;
+  timestamp: number;
+  author: string;
+  branch: string;
+  parentId: string | null; // null for initial commit
+  snapshot: {
+    objects: CADObject[];
+    code: string;
+    historyIndex: number;
+  };
+}
+
+
 export interface SketchPrimitive {
   id: string;
   type: 'line'
@@ -176,6 +191,18 @@ interface CADState {
   // Comments
   comments: Comment[];
   commentsExpanded: boolean;
+
+  // Versioning
+  versions: VersionCommit[];
+  branches: Map<string, string>; // branch name -> HEAD commit id
+  currentBranch: string;
+  currentVersionId: string | null;
+  versionCompareModal: {
+    isOpen: boolean;
+    versionA: string | null;
+    versionB: string | null;
+  };
+
 
   // UI
   searchOpen: boolean;
@@ -284,6 +311,15 @@ interface CADState {
 
   // Boolean Operations
   executeOperation: (type: 'join' | 'cut' | 'intersect') => void;
+
+  // Actions - Versioning
+  createVersion: (message: string) => void;
+  createBranch: (branchName: string, fromVersionId?: string) => void;
+  checkoutVersion: (versionId: string) => void;
+  mergeBranch: (branchName: string, targetBranch: string) => void;
+  setMainBranch: (versionId: string) => void;
+  compareVersions: (versionA: string, versionB: string) => void;
+  getVersionTree: () => any;
 }
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -354,6 +390,18 @@ export const useCADStore = create<CADState>((set, get) => ({
   activeSnapPoint: null,
   snappingEnabled: true,
   snappingEngine: null,
+
+  // Versioning State (initial)
+  versions: [],
+  branches: new Map([['main', '']]), // main branch starts with no commits
+  currentBranch: 'main',
+  currentVersionId: null,
+  versionCompareModal: {
+    isOpen: false,
+    versionA: null,
+    versionB: null,
+  },
+
 
   // Macros (actions, not state, but needed for TS check if missing from initial object return type inference?)
   // Actually, actions don't need to be in the initial state object of `create`, only `set` returns them?
@@ -1337,6 +1385,14 @@ export const useCADStore = create<CADState>((set, get) => ({
     const state = get();
     if (!state.activeOperation) return;
     const { type, params } = state.activeOperation;
+
+    // For extrusion/revolve operations, ensure the selectedShape is set as the selection
+    if ((type === 'extrusion' || type === 'extrude' || type === 'revolve') && params?.selectedShape) {
+      // Temporarily update selectedIds to include the selected shape
+      const newSelectedIds = new Set([params.selectedShape]);
+      set({ selectedIds: newSelectedIds });
+    }
+
     state.addObject(type as any, { dimensions: params });
     set({ activeOperation: null });
   },
@@ -1484,5 +1540,127 @@ export const useCADStore = create<CADState>((set, get) => ({
     set({ code: cm.getCode() });
     get().runCode();
     toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} operation applied`);
+  },
+
+  // Versioning Actions
+  createVersion: (message) => {
+    const state = get();
+    const newVersion: VersionCommit = {
+      id: generateId(),
+      message,
+      timestamp: Date.now(),
+      author: 'User', // TODO: Get from user profile/settings
+      branch: state.currentBranch,
+      parentId: state.currentVersionId,
+      snapshot: {
+        objects: JSON.parse(JSON.stringify(state.objects)), // Deep copy
+        code: state.code,
+        historyIndex: state.historyIndex,
+      },
+    };
+
+    // Update branches map to point to this new commit
+    const newBranches = new Map(state.branches);
+    newBranches.set(state.currentBranch, newVersion.id);
+
+    set({
+      versions: [...state.versions, newVersion],
+      branches: newBranches,
+      currentVersionId: newVersion.id,
+    });
+  },
+
+  createBranch: (branchName, fromVersionId) => {
+    const state = get();
+    const newBranches = new Map(state.branches);
+
+    // If fromVersionId is provided, use it; otherwise use current version
+    const baseVersionId = fromVersionId || state.currentVersionId || '';
+    newBranches.set(branchName, baseVersionId);
+
+    set({
+      branches: newBranches,
+      currentBranch: branchName,
+    });
+
+    toast.success(`Branch "${branchName}" created`);
+  },
+
+  checkoutVersion: (versionId) => {
+    const state = get();
+    const version = state.versions.find(v => v.id === versionId);
+
+    if (!version) {
+      toast.error('Version not found');
+      return;
+    }
+
+    // Restore snapshot
+    set({
+      objects: JSON.parse(JSON.stringify(version.snapshot.objects)),
+      code: version.snapshot.code,
+      historyIndex: version.snapshot.historyIndex,
+      currentVersionId: versionId,
+      currentBranch: version.branch,
+    });
+
+    // Re-run the code to update geometries
+    get().runCode();
+  },
+
+  mergeBranch: (branchName, targetBranch) => {
+    const state = get();
+    const branchHeadId = state.branches.get(branchName);
+
+    if (!branchHeadId) {
+      toast.error(`Branch "${branchName}" not found`);
+      return;
+    }
+
+    const newBranches = new Map(state.branches);
+    newBranches.set(targetBranch, branchHeadId);
+
+    set({ branches: newBranches });
+    toast.success(`Merged "${branchName}" into "${targetBranch}"`);
+  },
+
+  setMainBranch: (versionId) => {
+    const state = get();
+    const version = state.versions.find(v => v.id === versionId);
+
+    if (!version) {
+      toast.error('Version not found');
+      return;
+    }
+
+    const newBranches = new Map(state.branches);
+    newBranches.set('main', versionId);
+
+    set({ branches: newBranches });
+    toast.success('Main branch updated');
+  },
+
+  compareVersions: (versionA, versionB) => {
+    set({
+      versionCompareModal: {
+        isOpen: true,
+        versionA,
+        versionB,
+      },
+    });
+  },
+
+  getVersionTree: () => {
+    const state = get();
+    // Return version data for tree visualization
+    // This would compute parent-child relationships for rendering
+    return state.versions.map(v => ({
+      id: v.id,
+      message: v.message,
+      branch: v.branch,
+      parentId: v.parentId,
+      timestamp: v.timestamp,
+      isHead: state.branches.get(v.branch) === v.id,
+    }));
   },
 }));

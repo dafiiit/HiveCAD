@@ -102,26 +102,52 @@ const SceneObjects = () => {
 };
 
 const CADObjectRenderer = ({ object }: { object: CADObject }) => {
+  const selectObject = useCADStore((state) => state.selectObject);
+  const selectedIds = useCADStore((state) => state.selectedIds);
   const isSketch = object.type === 'sketch';
+  const isSelected = selectedIds.has(object.id);
+
+  const handleClick = (e: any) => {
+    e.stopPropagation();
+    // Check if shift is held for multi-select
+    const multiSelect = e.nativeEvent?.shiftKey || false;
+    selectObject(object.id, multiSelect);
+  };
+
+  const handlePointerOver = (e: any) => {
+    e.stopPropagation();
+    document.body.style.cursor = 'pointer';
+  };
+
+  const handlePointerOut = () => {
+    document.body.style.cursor = 'default';
+  };
 
   return (
     <group position={object.position} rotation={object.rotation} scale={object.scale}>
       {object.geometry && (
-        <mesh geometry={object.geometry}>
+        <mesh
+          geometry={object.geometry}
+          onClick={handleClick}
+          onPointerOver={handlePointerOver}
+          onPointerOut={handlePointerOut}
+        >
           <meshStandardMaterial
-            color={object.color}
+            color={isSelected ? '#80c0ff' : object.color}
             metalness={0.1}
             roughness={0.8}
-            transparent={isSketch}
+            transparent={isSketch || isSelected}
             opacity={isSketch ? 0.3 : 1.0}
             side={THREE.DoubleSide}
+            emissive={isSelected ? '#4080ff' : '#000000'}
+            emissiveIntensity={isSelected ? 0.3 : 0}
           />
         </mesh>
       )}
       {object.edgeGeometry && (
         <lineSegments geometry={object.edgeGeometry}>
           <lineBasicMaterial
-            color={isSketch ? "#00ffff" : "#222222"}
+            color={isSelected ? '#80c0ff' : (isSketch ? "#00ffff" : "#222222")}
             transparent={isSketch}
             opacity={isSketch ? 0.8 : 1.0}
             depthTest={true}
@@ -131,6 +157,7 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
     </group>
   );
 };
+
 
 // Camera controller - handles camera sync between ViewCube and Viewport
 const CameraController = () => {
@@ -288,6 +315,84 @@ const PlaneSelector = () => {
   );
 };
 
+// Extrusion Preview - shows a semi-transparent preview when extrusion operation is active
+const ExtrusionPreview = () => {
+  const activeOperation = useCADStore((state) => state.activeOperation);
+  const objects = useCADStore((state) => state.objects);
+
+  // Only show preview for extrusion-type operations
+  if (!activeOperation) return null;
+  if (activeOperation.type !== 'extrusion' && activeOperation.type !== 'extrude' && activeOperation.type !== 'revolve') {
+    return null;
+  }
+
+  const { params } = activeOperation;
+  const selectedShapeId = params?.selectedShape;
+  const distance = params?.distance || 10;
+
+  if (!selectedShapeId) return null;
+
+  // Find the source object
+  const sourceObject = objects.find(obj => obj.id === selectedShapeId);
+  if (!sourceObject || !sourceObject.geometry) return null;
+
+  // For the preview, we'll create a simple extrusion visualization
+  // by displaying a scaled version of the original geometry offset along Y axis
+  // In a full implementation, this would use replicad to generate actual preview geometry
+
+  return (
+    <group position={sourceObject.position}>
+      {/* Preview mesh - semi-transparent */}
+      <mesh
+        geometry={sourceObject.geometry}
+        position={[0, distance / 2, 0]}
+        scale={[1, distance / 2, 1]}
+      >
+        <meshStandardMaterial
+          color="#80c0ff"
+          transparent
+          opacity={0.4}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Top cap indicator */}
+      <mesh
+        geometry={sourceObject.geometry}
+        position={[0, distance, 0]}
+      >
+        <meshStandardMaterial
+          color="#80c0ff"
+          transparent
+          opacity={0.6}
+          side={THREE.DoubleSide}
+          wireframe
+        />
+      </mesh>
+
+      {/* Direction arrow / indicator line */}
+      <line>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            count={2}
+            array={new Float32Array([0, 0, 0, 0, distance, 0])}
+            itemSize={3}
+          />
+        </bufferGeometry>
+        <lineBasicMaterial color="#80c0ff" linewidth={2} />
+      </line>
+
+      {/* Arrow head at the end */}
+      <mesh position={[0, distance, 0]}>
+        <coneGeometry args={[1.5, 3, 8]} />
+        <meshStandardMaterial color="#80c0ff" transparent opacity={0.8} />
+      </mesh>
+    </group>
+  );
+};
+
 // GizmoHelper + GizmoViewcube are now used instead of custom camera sync
 // They render in a HUD overlay and directly use the main camera
 
@@ -318,6 +423,9 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
 
         {/* Real CAD objects */}
         <SceneObjects />
+
+        {/* Extrusion preview */}
+        <ExtrusionPreview />
 
         {/* Controls */}
         {/* Controls */}

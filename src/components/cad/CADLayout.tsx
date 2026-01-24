@@ -4,7 +4,7 @@ import RibbonToolbar from "./RibbonToolbar";
 
 import Viewport from "./Viewport";
 import SketchPalette from "./SketchPalette";
-import Timeline from "./Timeline";
+
 import StatusBar from "./StatusBar";
 import CommentsPanel from "./CommentsPanel";
 import OperationProperties from "./OperationProperties";
@@ -133,8 +133,7 @@ const CADLayout = () => {
         <OperationProperties />
       </div>
 
-      {/* Timeline */}
-      <Timeline />
+
 
       {/* Status bar */}
       <StatusBar />

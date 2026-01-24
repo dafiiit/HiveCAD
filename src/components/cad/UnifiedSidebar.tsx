@@ -1,12 +1,13 @@
 import { useState } from "react";
 import BrowserPanel from "./BrowserPanel";
 import CodeEditorPanel from "./CodeEditorPanel";
-import { ChevronRight, Minus, Code, FolderTree } from "lucide-react";
+import VersioningPanel from "./VersioningPanel";
+import { ChevronRight, Minus, Code, FolderTree, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const UnifiedSidebar = () => {
     const [isCollapsed, setIsCollapsed] = useState(false);
-    const [activeTab, setActiveTab] = useState<'browser' | 'code'>('browser');
+    const [activeTab, setActiveTab] = useState<'browser' | 'code' | 'versioning'>('browser');
 
     const toggleCollapse = () => {
         setIsCollapsed(!isCollapsed);
@@ -52,6 +53,18 @@ const UnifiedSidebar = () => {
                                 <Code className="w-3.5 h-3.5" />
                                 <span>Code</span>
                             </button>
+                            <button
+                                onClick={() => setActiveTab('versioning')}
+                                className={cn(
+                                    "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                                    activeTab === 'versioning'
+                                        ? "bg-background shadow-sm text-foreground"
+                                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                )}
+                            >
+                                <GitBranch className="w-3.5 h-3.5" />
+                                <span>Git</span>
+                            </button>
                         </div>
 
                         <button
@@ -96,6 +109,16 @@ const UnifiedSidebar = () => {
                         >
                             <Code className="w-4 h-4" />
                         </button>
+                        <button
+                            onClick={() => { setActiveTab('versioning'); setIsCollapsed(false); }}
+                            className={cn(
+                                "p-2 rounded mb-1 transition-colors",
+                                activeTab === 'versioning' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
+                            )}
+                            title="Git"
+                        >
+                            <GitBranch className="w-4 h-4" />
+                        </button>
                     </>
                 )}
             </div>
@@ -111,6 +134,10 @@ const UnifiedSidebar = () => {
 
                 <div className={cn("absolute inset-0 flex flex-col bg-[#1e1e1e]", activeTab === 'code' ? "z-10" : "-z-10 opacity-0 pointer-events-none")}>
                     <CodeEditorPanel />
+                </div>
+
+                <div className={cn("absolute inset-0 flex flex-col", activeTab === 'versioning' ? "z-10" : "-z-10 opacity-0 pointer-events-none")}>
+                    <VersioningPanel />
                 </div>
             </div>
         </div>
