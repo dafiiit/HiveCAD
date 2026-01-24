@@ -112,8 +112,8 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
             color={object.color}
             metalness={0.1}
             roughness={0.8}
-            transparent
-            opacity={isSketch ? 0.3 : 0.85}
+            transparent={isSketch}
+            opacity={isSketch ? 0.3 : 1.0}
             side={THREE.DoubleSide}
           />
         </mesh>
@@ -132,12 +132,57 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
   );
 };
 
-// Camera controller
+// Camera controller - handles camera sync between ViewCube and Viewport
 const CameraController = () => {
   const { camera } = useThree();
+  const { sketchPlane, isSketchMode, cameraRotation, setCameraRotation } = useCADStore();
+  const lastPlaneRef = useRef<string | null>(null);
+  const lastUpdateFromCubeRef = useRef<string>("");
+  const isUserDraggingRef = useRef(false);
 
   useFrame(() => {
-    // Camera updates if needed
+    // Sketch mode camera orientation takes priority
+    if (isSketchMode && sketchPlane && sketchPlane !== lastPlaneRef.current) {
+      lastPlaneRef.current = sketchPlane;
+
+      // Move camera to face the selected plane
+      const dist = 100;
+      if (sketchPlane === 'XY') {
+        camera.position.set(0, 0, dist);
+        camera.up.set(0, 1, 0);
+      } else if (sketchPlane === 'XZ') {
+        camera.position.set(0, dist, 0);
+        camera.up.set(0, 0, -1); // Standard CAD top-down view
+      } else if (sketchPlane === 'YZ') {
+        camera.position.set(dist, 0, 0);
+        camera.up.set(0, 1, 0);
+      }
+      camera.lookAt(0, 0, 0);
+      return;
+    }
+
+    // Reset tracking when exiting sketch mode
+    if (!isSketchMode && lastPlaneRef.current) {
+      lastPlaneRef.current = null;
+    }
+
+    // Sync camera position from cameraRotation state (set by ViewCube)
+    if (cameraRotation && !isSketchMode) {
+      const rotationKey = `${cameraRotation.x.toFixed(4)},${cameraRotation.y.toFixed(4)}`;
+
+      if (rotationKey !== lastUpdateFromCubeRef.current) {
+        lastUpdateFromCubeRef.current = rotationKey;
+
+        // Convert spherical coordinates to camera position
+        const distance = camera.position.length() || 100;
+        const x = distance * Math.sin(cameraRotation.y) * Math.cos(cameraRotation.x);
+        const y = distance * Math.sin(cameraRotation.x);
+        const z = distance * Math.cos(cameraRotation.y) * Math.cos(cameraRotation.x);
+
+        camera.position.set(x, y, z);
+        camera.lookAt(0, 0, 0);
+      }
+    }
   });
 
   return null;
@@ -194,7 +239,6 @@ const PlaneSelector = () => {
 
       {/* XZ Plane - Redish - Front */}
       <mesh
-        position={[0, 20, 0]} // Just to visualize center? No center is 0.
         onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XZ'); }}
         onPointerOut={() => setHoveredPlane(null)}
         onClick={(e) => { e.stopPropagation(); handlePlaneClick('XZ'); }}
@@ -225,6 +269,36 @@ const PlaneSelector = () => {
       </mesh>
     </group>
   );
+};
+
+// Syncs the main viewport camera rotation back to the store for ViewCube sync
+const OrbitSync = () => {
+  const { camera } = useThree();
+  const setCameraRotation = useCADStore(state => state.setCameraRotation);
+  const isSketchMode = useCADStore(state => state.isSketchMode);
+  const lastRotationRef = useRef<string>("");
+
+  useFrame(() => {
+    if (isSketchMode) return; // Don't sync during sketch mode
+
+    // Calculate spherical coordinates from camera position
+    const pos = camera.position;
+    const distance = pos.length();
+    if (distance === 0) return;
+
+    const x = Math.asin(pos.y / distance);
+    const y = Math.atan2(pos.x, pos.z);
+
+    const rotationKey = `${x.toFixed(4)},${y.toFixed(4)}`;
+
+    // Only update if changed (to avoid infinite loops)
+    if (rotationKey !== lastRotationRef.current) {
+      lastRotationRef.current = rotationKey;
+      setCameraRotation({ x, y, z: 0 });
+    }
+  });
+
+  return null;
 };
 
 const Viewport = ({ isSketchMode }: ViewportProps) => {
@@ -270,6 +344,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
         <SketchCanvas />
 
         <CameraController />
+        <OrbitSync />
       </Canvas>
     </div>
   );

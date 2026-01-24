@@ -22,6 +22,8 @@ export type ToolType =
   | 'line' | 'vline' | 'hline' | 'polarline' | 'tangentline' | 'movePointer'
   // Arc tools
   | 'threePointsArc' | 'tangentArc' | 'ellipse' | 'sagittaArc'
+  // Legacy arc/spline
+  | 'arc' | 'spline'
   // Spline tools
   | 'bezier' | 'quadraticBezier' | 'cubicBezier' | 'smoothSpline'
   // Shape wrappers (Drawing helpers)
@@ -77,14 +79,44 @@ export interface SketchPrimitive {
   | 'arc' | 'spline'; // Keep legacy if needed
   points: [number, number][]; // Standardized points
   properties?: {
-    sides?: number; // For polygon
-    radius?: number; // For polarline, circle
-    angle?: number; // For polarline
-    distance?: number; // For tangentline
-    xRadius?: number; // For ellipse
-    yRadius?: number; // For ellipse
-    text?: string; // For text tool
+    // Polygon
+    sides?: number;
+    // Arc/Ellipse - sagitta
+    sagitta?: number;
+    // Circle radius
+    radius?: number;
+    // Polar line
+    angle?: number;
+    distance?: number;
+    // Line deltas
+    dx?: number;
+    dy?: number;
+    // Ellipse
+    xRadius?: number;
+    yRadius?: number;
+    rotation?: number;
+    longWay?: boolean;
+    counterClockwise?: boolean;
+    // Text
+    text?: string;
     fontSize?: number;
+    fontFamily?: string;
+    // Spline tangents
+    startTangent?: number;
+    endTangent?: number;
+    startFactor?: number;
+    endFactor?: number;
+    // Bezier control points
+    ctrlX?: number;
+    ctrlY?: number;
+    ctrlStartX?: number;
+    ctrlStartY?: number;
+    ctrlEndX?: number;
+    ctrlEndY?: number;
+    // General control points array
+    controlPoints?: [number, number][];
+    // Corner modification
+    cornerType?: 'fillet' | 'chamfer';
   };
 }
 
@@ -108,6 +140,7 @@ interface CADState {
 
   // View
   currentView: ViewType;
+  cameraRotation: { x: number; y: number; z: number } | null;
   zoom: number;
   gridVisible: boolean;
 
@@ -150,6 +183,7 @@ interface CADState {
 
   // Actions - View
   setView: (view: ViewType) => void;
+  setCameraRotation: (rotation: { x: number; y: number; z: number }) => void;
   setZoom: (zoom: number) => void;
   toggleGrid: () => void;
   fitToScreen: () => void;
@@ -201,6 +235,9 @@ interface CADState {
   code: string;
   setCode: (code: string) => void;
   runCode: () => void;
+
+  // Boolean Operations
+  executeOperation: (type: 'join' | 'cut' | 'intersect') => void;
 }
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -243,6 +280,7 @@ export const useCADStore = create<CADState>((set, get) => ({
   lockedValues: {},
   sketchPoints: [],
   currentView: 'home',
+  cameraRotation: { x: -0.4, y: -0.6, z: 0 }, // Default isometric view
   zoom: 100,
   gridVisible: true,
   history: [],
@@ -484,28 +522,46 @@ export const useCADStore = create<CADState>((set, get) => ({
 
   finishSketch: () => {
     const state = get();
-    // Generate Code for Sketch
-    const cm = new CodeManager(state.code);
+    if (state.activeSketchPrimitives.length === 0) {
+      // No primitives, just exit
+      set({
+        isSketchMode: false,
+        sketchPoints: [],
+        activeSketchPrimitives: [],
+        currentDrawingPrimitive: null,
+        sketchPlane: null,
+        activeTab: 'SOLID',
+        activeTool: 'select',
+        lockedValues: {}
+      });
+      return;
+    }
 
-    // Create new sketch variable
-    // const sketch1 = replicad.draw();
+    const cm = new CodeManager(state.code);
     let sketchName = '';
 
-    // Check if we are starting with a Shape Wrapper (Rectangle, Circle, etc. from 'draw...')
+    // Shape wrapper tools that create standalone drawings
+    const shapeWrappers = ['rectangle', 'roundedRectangle', 'circle', 'polygon', 'text'];
     const firstPrim = state.activeSketchPrimitives[0];
-    const shapeWrappers = ['rectangle', 'circle', 'roundedRectangle', 'polygon', 'text'];
 
     if (firstPrim && shapeWrappers.includes(firstPrim.type)) {
-      // These are standalone creators usually, e.g. drawRectangle(w, h)
-      // For now, let's assume if the first one is a shape wrapper, it defines the base.
-      // But replicad mix and match is tricky.
-      // Simplification: If using shape wrapper, it's the only thing or base.
+      // Handle shape wrapper primitives
       if (firstPrim.type === 'rectangle') {
         const [p1, p2] = firstPrim.points;
         const width = Math.abs(p2[0] - p1[0]);
         const height = Math.abs(p2[1] - p1[1]);
         sketchName = cm.addFeature('drawRectangle', null, [width, height]);
-        // Translate to center? drawRectangle is centered.
+        const centerX = (p1[0] + p2[0]) / 2;
+        const centerY = (p1[1] + p2[1]) / 2;
+        if (centerX !== 0 || centerY !== 0) {
+          cm.addOperation(sketchName, 'translate', [centerX, centerY]);
+        }
+      } else if (firstPrim.type === 'roundedRectangle') {
+        const [p1, p2] = firstPrim.points;
+        const width = Math.abs(p2[0] - p1[0]);
+        const height = Math.abs(p2[1] - p1[1]);
+        const radius = firstPrim.properties?.radius || 3;
+        sketchName = cm.addFeature('drawRoundedRectangle', null, [width, height, radius]);
         const centerX = (p1[0] + p2[0]) / 2;
         const centerY = (p1[1] + p2[1]) / 2;
         if (centerX !== 0 || centerY !== 0) {
@@ -518,79 +574,190 @@ export const useCADStore = create<CADState>((set, get) => ({
         if (center[0] !== 0 || center[1] !== 0) {
           cm.addOperation(sketchName, 'translate', [center[0], center[1]]);
         }
+      } else if (firstPrim.type === 'polygon') {
+        const [center, edge] = firstPrim.points;
+        const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
+        const sides = firstPrim.properties?.sides || 6;
+        const sagitta = firstPrim.properties?.sagitta || 0;
+        sketchName = cm.addFeature('drawPolysides', null, [radius, sides, sagitta]);
+        if (center[0] !== 0 || center[1] !== 0) {
+          cm.addOperation(sketchName, 'translate', [center[0], center[1]]);
+        }
+      } else if (firstPrim.type === 'text') {
+        const pos = firstPrim.points[0];
+        const text = firstPrim.properties?.text || 'Text';
+        const fontSize = firstPrim.properties?.fontSize || 16;
+        sketchName = cm.addFeature('drawText', null, [text, { startX: pos[0], startY: pos[1], fontSize }]);
       }
-      // ... implement others
     } else {
-      // Standard Drawing Chain
-      // const sketch1 = replicad.draw(startPoint?);
+      // Standard drawing chain with draw()
       let startPoint = state.activeSketchPrimitives[0]?.points[0];
-      if (state.activeSketchPrimitives[0]?.type === 'movePointer') {
-        startPoint = state.activeSketchPrimitives[0].points[0]; // Logic for movePointer
+
+      // Check for movePointer as first primitive
+      if (firstPrim?.type === 'movePointer') {
+        startPoint = firstPrim.points[0];
       }
 
       if (startPoint) {
-        sketchName = cm.addFeature('draw', null, [startPoint[0], startPoint[1]]);
+        sketchName = cm.addFeature('draw', null, [[startPoint[0], startPoint[1]]]);
       } else {
         sketchName = cm.addFeature('draw', null, []);
       }
 
-      state.activeSketchPrimitives.forEach(prim => {
-        if (prim.type === 'line') {
-          const end = prim.points[1];
-          cm.addOperation(sketchName, 'lineTo', [end[0], end[1]]);
-        } else if (prim.type === 'vline') {
-          const end = prim.points[1];
-          // Assuming vLineTo(y)
-          cm.addOperation(sketchName, 'vLineTo', [end[1]]);
-        } else if (prim.type === 'hline') {
-          const end = prim.points[1];
-          cm.addOperation(sketchName, 'hLineTo', [end[0]]);
-        } else if (prim.type === 'polarline') {
-          // Point 1 is start (implicit), Point 2 defines vector?
-          // Or properties has radius/angle.
-          // Assuming we store radius/angle in properties for polar line interaction
-          const radius = prim.properties?.radius || 10;
-          const angle = prim.properties?.angle || 0;
-          cm.addOperation(sketchName, 'polarLine', [radius, angle]);
-        } else if (prim.type === 'tangentline') {
-          const dist = prim.properties?.distance || 10;
-          cm.addOperation(sketchName, 'tangentLine', [dist]);
-        } else if (prim.type === 'threePointsArc') {
-          const [start, end, mid] = prim.points; // logic might differ on how points are stored
-          // .threePointsArcTo(end, mid)
-          cm.addOperation(sketchName, 'threePointsArcTo', [[end[0], end[1]], [mid[0], mid[1]]]);
-        } else if (prim.type === 'tangentArc') {
-          const end = prim.points[1];
-          cm.addOperation(sketchName, 'tangentArcTo', [[end[0], end[1]]]);
-        } else if (prim.type === 'ellipse') {
-          const [start, end] = prim.points;
-          const xRadius = prim.properties?.xRadius || 10;
-          const yRadius = prim.properties?.yRadius || 5;
-          // .ellipseTo([x,y], xRadius, yRadius)
-          cm.addOperation(sketchName, 'ellipseTo', [[end[0], end[1]], xRadius, yRadius]);
-        } else if (prim.type === 'smoothSpline') {
-          // points[1]
-          const end = prim.points[1];
-          // .smoothSplineTo([x,y], config?)
-          cm.addOperation(sketchName, 'smoothSplineTo', [[end[0], end[1]]]);
-        } else if (prim.type === 'bezier') {
-          // points[1] is end, points[2+] are control?
-          const end = prim.points[1];
-          const control = prim.points.slice(2);
-          // .bezierCurveTo(end, controlPoints)
-          cm.addOperation(sketchName, 'bezierCurveTo', [[end[0], end[1]], control]);
+      // Process each primitive
+      state.activeSketchPrimitives.forEach((prim, index) => {
+        // Skip movePointer at start since draw() already positioned
+        if (index === 0 && prim.type === 'movePointer') return;
+
+        switch (prim.type) {
+          // Line tools
+          case 'line': {
+            // For multi-point lines, add each segment
+            for (let i = 1; i < prim.points.length; i++) {
+              const pt = prim.points[i];
+              cm.addOperation(sketchName, 'lineTo', [[pt[0], pt[1]]]);
+            }
+            break;
+          }
+          case 'vline': {
+            const dy = prim.properties?.dy || (prim.points[1][1] - prim.points[0][1]);
+            cm.addOperation(sketchName, 'vLine', [dy]);
+            break;
+          }
+          case 'hline': {
+            const dx = prim.properties?.dx || (prim.points[1][0] - prim.points[0][0]);
+            cm.addOperation(sketchName, 'hLine', [dx]);
+            break;
+          }
+          case 'polarline': {
+            const distance = prim.properties?.distance || 10;
+            const angle = prim.properties?.angle || 0;
+            cm.addOperation(sketchName, 'polarLine', [distance, angle]);
+            break;
+          }
+          case 'tangentline': {
+            const distance = prim.properties?.distance || 10;
+            cm.addOperation(sketchName, 'tangentLine', [distance]);
+            break;
+          }
+          case 'movePointer': {
+            const pt = prim.points[0];
+            cm.addOperation(sketchName, 'movePointerTo', [[pt[0], pt[1]]]);
+            break;
+          }
+
+          // Arc tools
+          case 'threePointsArc': {
+            // points: [start, end, via]
+            if (prim.points.length >= 3) {
+              const end = prim.points[1];
+              const via = prim.points[2];
+              cm.addOperation(sketchName, 'threePointsArcTo', [[end[0], end[1]], [via[0], via[1]]]);
+            }
+            break;
+          }
+          case 'tangentArc': {
+            const end = prim.points[1];
+            cm.addOperation(sketchName, 'tangentArcTo', [[end[0], end[1]]]);
+            break;
+          }
+          case 'sagittaArc': {
+            const start = prim.points[0];
+            const end = prim.points[1];
+            const dx = end[0] - start[0];
+            const dy = end[1] - start[1];
+            const sagitta = prim.properties?.sagitta || 3;
+            cm.addOperation(sketchName, 'sagittaArc', [dx, dy, sagitta]);
+            break;
+          }
+          case 'ellipse': {
+            const end = prim.points[1];
+            const xRadius = prim.properties?.xRadius || 10;
+            const yRadius = prim.properties?.yRadius || 5;
+            const rotation = prim.properties?.rotation || 0;
+            const longWay = prim.properties?.longWay || false;
+            const counterClockwise = prim.properties?.counterClockwise || false;
+            // Full signature: ellipseTo([x,y], xRadius, yRadius, rotation?, longWay?, counter?)
+            cm.addOperation(sketchName, 'ellipseTo', [[end[0], end[1]], xRadius, yRadius, rotation, longWay, counterClockwise]);
+            break;
+          }
+
+          // Spline tools
+          case 'smoothSpline': {
+            // Multi-point spline support
+            for (let i = 1; i < prim.points.length; i++) {
+              const pt = prim.points[i];
+              const config: Record<string, any> = {};
+              if (prim.properties?.startTangent !== undefined && i === 1) {
+                config.startTangent = prim.properties.startTangent;
+              }
+              if (prim.properties?.endTangent !== undefined && i === prim.points.length - 1) {
+                config.endTangent = prim.properties.endTangent;
+              }
+              if (Object.keys(config).length > 0) {
+                cm.addOperation(sketchName, 'smoothSplineTo', [[pt[0], pt[1]], config]);
+              } else {
+                cm.addOperation(sketchName, 'smoothSplineTo', [[pt[0], pt[1]]]);
+              }
+            }
+            break;
+          }
+          case 'bezier': {
+            const end = prim.points[1];
+            const controlPoints = prim.points.slice(2).map(p => [p[0], p[1]]);
+            cm.addOperation(sketchName, 'bezierCurveTo', [[end[0], end[1]], controlPoints]);
+            break;
+          }
+          case 'quadraticBezier': {
+            const end = prim.points[1];
+            const ctrlX = prim.properties?.ctrlX || 5;
+            const ctrlY = prim.properties?.ctrlY || 5;
+            // Relative control point from start
+            const start = prim.points[0];
+            const ctrl = [start[0] + ctrlX, start[1] + ctrlY];
+            cm.addOperation(sketchName, 'quadraticBezierCurveTo', [[end[0], end[1]], ctrl]);
+            break;
+          }
+          case 'cubicBezier': {
+            const start = prim.points[0];
+            const end = prim.points[1];
+            const ctrlStartX = prim.properties?.ctrlStartX || 3;
+            const ctrlStartY = prim.properties?.ctrlStartY || 5;
+            const ctrlEndX = prim.properties?.ctrlEndX || 3;
+            const ctrlEndY = prim.properties?.ctrlEndY || 5;
+            const ctrlStart = [start[0] + ctrlStartX, start[1] + ctrlStartY];
+            const ctrlEnd = [end[0] - ctrlEndX, end[1] + ctrlEndY];
+            cm.addOperation(sketchName, 'cubicBezierCurveTo', [[end[0], end[1]], ctrlStart, ctrlEnd]);
+            break;
+          }
+
+          // Legacy support
+          case 'arc': {
+            if (prim.points.length >= 3) {
+              const end = prim.points[1];
+              const via = prim.points[2];
+              cm.addOperation(sketchName, 'threePointsArcTo', [[end[0], end[1]], [via[0], via[1]]]);
+            }
+            break;
+          }
+          case 'spline': {
+            // Legacy spline - treat as smoothSpline
+            for (let i = 1; i < prim.points.length; i++) {
+              const pt = prim.points[i];
+              cm.addOperation(sketchName, 'smoothSplineTo', [[pt[0], pt[1]]]);
+            }
+            break;
+          }
         }
       });
 
-      // Close if needed?
-      // cm.addOperation(sketchName, 'close', []);
-
-      // Ensure the DrawingPen is finished before sketching on plane
+      // Close or done based on whether it should be closed
+      // For now, use done() - close() can be added as an option
       cm.addOperation(sketchName, 'done', []);
     }
 
-    // Sketch on Plane
-    if (state.sketchPlane) {
+    // Place on sketch plane
+    if (state.sketchPlane && sketchName) {
       cm.addOperation(sketchName, 'sketchOnPlane', [state.sketchPlane]);
     }
 
@@ -639,6 +806,7 @@ export const useCADStore = create<CADState>((set, get) => ({
 
   // View actions
   setView: (view) => set({ currentView: view }),
+  setCameraRotation: (rotation) => set({ cameraRotation: rotation }),
   setZoom: (zoom) => set({ zoom }),
   toggleGrid: () => set(state => ({ gridVisible: !state.gridVisible })),
   fitToScreen: () => console.log("fitToScreen"),
@@ -780,5 +948,42 @@ export const useCADStore = create<CADState>((set, get) => ({
       console.error("Error executing code:", e);
       toast.error(`Error: ${e.message}`);
     }
+  },
+
+  executeOperation: (type) => {
+    const state = get();
+    const selectedIds = [...state.selectedIds];
+
+    if (selectedIds.length < 2) {
+      toast.error("Select at least 2 objects for this operation");
+      return;
+    }
+
+    const cm = new CodeManager(state.code);
+    const primaryId = selectedIds[0];
+    const secondaryIds = selectedIds.slice(1);
+
+    // Map tool names to Replicad methods
+    const methodMap = {
+      join: 'fuse',
+      cut: 'cut',
+      intersect: 'intersect'
+    };
+
+    const methodName = methodMap[type];
+
+    // 1. Add operation to primary object
+    secondaryIds.forEach(id => {
+      cm.addOperation(primaryId, methodName, [{ type: 'raw', content: id }]);
+    });
+
+    // 2. Consume secondary objects (remove them from being returned in main)
+    secondaryIds.forEach(id => {
+      cm.removeFeature(id);
+    });
+
+    set({ code: cm.getCode() });
+    get().runCode();
+    toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} operation applied`);
   },
 }));

@@ -50,14 +50,14 @@ const TreeItem = ({
 }: TreeItemProps) => {
   return (
     <div>
-      <div 
+      <div
         className={`cad-tree-item group ${isSelected ? 'bg-primary/20 text-primary' : ''}`}
         style={{ paddingLeft: `${8 + level * 16}px` }}
         onClick={onClick}
       >
         {hasChildren ? (
-          <button 
-            onClick={(e) => { e.stopPropagation(); onToggleExpand?.(); }} 
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleExpand?.(); }}
             className="p-0.5 hover:bg-secondary rounded"
           >
             {isExpanded ? (
@@ -69,9 +69,9 @@ const TreeItem = ({
         ) : (
           <span className="w-4" />
         )}
-        
+
         {onToggleVisibility && (
-          <button 
+          <button
             onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}
             className="p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
           >
@@ -82,12 +82,12 @@ const TreeItem = ({
             )}
           </button>
         )}
-        
+
         <span className="text-icon-default">{icon}</span>
         <span className={`flex-1 truncate ${!isVisible ? 'opacity-50' : ''}`}>{label}</span>
-        
+
         {onDelete && (
-          <button 
+          <button
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
             className="p-0.5 opacity-0 group-hover:opacity-100 hover:text-destructive transition-all"
           >
@@ -101,16 +101,31 @@ const TreeItem = ({
 };
 
 const BrowserPanel = () => {
-  const { 
-    objects, 
-    selectedIds, 
-    selectObject, 
-    updateObject, 
+  const {
+    objects,
+    selectedIds,
+    selectObject,
+    updateObject,
     deleteObject,
     fileName,
     isSaved,
-    enterSketchMode
+    enterSketchMode,
+    isSketchMode,
+    sketchStep,
+    sketchPlane,
+    setSketchPlane
   } = useCADStore();
+
+  const handlePlaneClick = (plane: 'XY' | 'XZ' | 'YZ') => {
+    if (isSketchMode && sketchStep === 'select-plane') {
+      setSketchPlane(plane);
+      toast.success(`Sketch plane set to ${plane}`);
+    } else if (isSketchMode) {
+      toast(`Sketch plane is already ${plane}`);
+    } else {
+      toast(`${plane} Plane selected`);
+    }
+  };
 
   const [expandedItems, setExpandedItems] = useState<Set<string>>(
     new Set(["document", "doc-settings", "origin", "sketches", "bodies"])
@@ -138,7 +153,7 @@ const BrowserPanel = () => {
       newVisible.add(id);
     }
     setVisibleItems(newVisible);
-    
+
     // Also toggle object visibility if it's a CAD object
     const obj = objects.find(o => o.id === id);
     if (obj) {
@@ -175,7 +190,7 @@ const BrowserPanel = () => {
   if (collapsed) {
     return (
       <div className="w-8 bg-panel border-r border-border flex flex-col items-center py-2">
-        <button 
+        <button
           onClick={handleCollapse}
           className="p-1.5 hover:bg-secondary rounded"
           title="Expand Browser"
@@ -190,7 +205,7 @@ const BrowserPanel = () => {
     <div className="cad-panel w-56 flex flex-col h-full">
       <div className="cad-panel-header">
         <span>Browser</span>
-        <button 
+        <button
           className="text-muted-foreground hover:text-foreground"
           onClick={handleCollapse}
           title="Collapse panel"
@@ -256,19 +271,22 @@ const BrowserPanel = () => {
               icon={<Box className="w-3.5 h-3.5" />}
               label="XY Plane"
               level={2}
-              onClick={() => toast("XY Plane selected")}
+              isSelected={isSketchMode && sketchPlane === 'XY'}
+              onClick={() => handlePlaneClick('XY')}
             />
             <TreeItem
               icon={<Box className="w-3.5 h-3.5" />}
               label="XZ Plane"
               level={2}
-              onClick={() => toast("XZ Plane selected")}
+              isSelected={isSketchMode && sketchPlane === 'XZ'}
+              onClick={() => handlePlaneClick('XZ')}
             />
             <TreeItem
               icon={<Box className="w-3.5 h-3.5" />}
               label="YZ Plane"
               level={2}
-              onClick={() => toast("YZ Plane selected")}
+              isSelected={isSketchMode && sketchPlane === 'YZ'}
+              onClick={() => handlePlaneClick('YZ')}
             />
           </TreeItem>
 

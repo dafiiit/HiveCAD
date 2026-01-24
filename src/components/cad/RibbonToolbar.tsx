@@ -151,27 +151,15 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
   };
 
   const handleJoin = () => {
-    if (selectedIds.size < 2) {
-      toast.error("Select at least 2 objects to join");
-      return;
-    }
-    toast("Join operation (simulated)");
+    useCADStore.getState().executeOperation('join');
   };
 
   const handleCut = () => {
-    if (selectedIds.size < 2) {
-      toast.error("Select at least 2 objects to cut");
-      return;
-    }
-    toast("Cut operation (simulated)");
+    useCADStore.getState().executeOperation('cut');
   };
 
   const handleIntersect = () => {
-    if (selectedIds.size < 2) {
-      toast.error("Select at least 2 objects to intersect");
-      return;
-    }
-    toast("Intersect operation (simulated)");
+    useCADStore.getState().executeOperation('intersect');
   };
 
   const handleMeasure = () => {
