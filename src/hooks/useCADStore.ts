@@ -5,6 +5,7 @@ import * as replicad from 'replicad';
 import { toast } from 'sonner';
 import { CodeManager } from '../lib/code-manager';
 import { toolRegistry } from '../lib/tools';
+import { ConstraintSolver, type EntityId, type SketchEntity, type SketchConstraint, type ConstraintType, type SolveResult } from '../lib/solver';
 
 const DEFAULT_CODE = `
 const main = () => {
@@ -131,13 +132,19 @@ interface CADState {
   activeTab: 'SOLID' | 'SURFACE' | 'MESH' | 'SHEET' | 'PLASTIC' | 'MANAGE' | 'UTILITIES' | 'SKETCH';
   isSketchMode: boolean;
 
-  // Sketch State
+  // Sketch State (Legacy primitives-based - will be gradually replaced)
   sketchPlane: 'XY' | 'XZ' | 'YZ' | null;
   sketchStep: 'select-plane' | 'drawing';
   activeSketchPrimitives: SketchPrimitive[];
   currentDrawingPrimitive: SketchPrimitive | null;
   lockedValues: Record<string, number | null>;
   sketchPoints: [number, number][];
+
+  // Constraint Solver State (New entity-based system)
+  solverInstance: ConstraintSolver | null;
+  sketchEntities: Map<EntityId, SketchEntity>;
+  sketchConstraints: SketchConstraint[];
+  draggingEntityId: EntityId | null;
 
   // View
   currentView: ViewType;
@@ -226,6 +233,16 @@ interface CADState {
   setSketchInputLock: (key: string, value: number | null) => void;
   clearSketchInputLocks: () => void;
 
+  // Actions - Constraint Solver
+  initializeSolver: () => Promise<void>;
+  addSolverPoint: (x: number, y: number, fixed?: boolean) => EntityId | null;
+  addSolverLine: (p1Id: EntityId, p2Id: EntityId) => EntityId | null;
+  addSolverConstraint: (type: ConstraintType, entityIds: EntityId[], value?: number) => string | null;
+  setDrivingPoint: (id: EntityId, x: number, y: number) => void;
+  solveConstraints: () => SolveResult | null;
+  clearSolver: () => void;
+  setDraggingEntity: (id: EntityId | null) => void;
+
   // Actions - Operations
   startOperation: (type: string) => void;
   updateOperationParams: (params: any) => void;
@@ -296,6 +313,12 @@ export const useCADStore = create<CADState>((set, get) => ({
   notificationsOpen: false,
   activeOperation: null,
   code: DEFAULT_CODE,
+
+  // Constraint Solver State (initial values)
+  solverInstance: null,
+  sketchEntities: new Map(),
+  sketchConstraints: [],
+  draggingEntityId: null,
 
   // Object actions
   addObject: async (type, options = {}) => {
@@ -622,6 +645,111 @@ export const useCADStore = create<CADState>((set, get) => ({
     }));
   },
   clearSketchInputLocks: () => set({ lockedValues: {} }),
+
+  // Constraint Solver Actions
+  initializeSolver: async () => {
+    const state = get();
+    if (state.solverInstance?.isInitialized) return;
+
+    const solver = new ConstraintSolver();
+    await solver.initialize();
+    set({ solverInstance: solver });
+  },
+
+  addSolverPoint: (x: number, y: number, fixed = false) => {
+    const { solverInstance } = get();
+    if (!solverInstance?.isInitialized) {
+      console.warn('Solver not initialized');
+      return null;
+    }
+
+    const id = solverInstance.addPoint(x, y, fixed);
+    const entity = solverInstance.getPoint(id);
+    if (entity) {
+      set(state => ({
+        sketchEntities: new Map(state.sketchEntities).set(id, entity)
+      }));
+    }
+    return id;
+  },
+
+  addSolverLine: (p1Id: EntityId, p2Id: EntityId) => {
+    const { solverInstance } = get();
+    if (!solverInstance?.isInitialized) {
+      console.warn('Solver not initialized');
+      return null;
+    }
+
+    const id = solverInstance.addLine(p1Id, p2Id);
+    const entity = solverInstance.getLine(id);
+    if (entity) {
+      set(state => ({
+        sketchEntities: new Map(state.sketchEntities).set(id, entity)
+      }));
+    }
+    return id;
+  },
+
+  addSolverConstraint: (type: ConstraintType, entityIds: EntityId[], value?: number) => {
+    const { solverInstance } = get();
+    if (!solverInstance?.isInitialized) {
+      console.warn('Solver not initialized');
+      return null;
+    }
+
+    const id = solverInstance.addConstraint(type, entityIds, value);
+    const constraints = solverInstance.getAllConstraints();
+    set({ sketchConstraints: constraints });
+    return id;
+  },
+
+  setDrivingPoint: (id: EntityId, x: number, y: number) => {
+    const { solverInstance } = get();
+    if (!solverInstance?.isInitialized) return;
+
+    solverInstance.setDrivingPoint(id, x, y);
+    set({ draggingEntityId: id });
+  },
+
+  solveConstraints: () => {
+    const { solverInstance } = get();
+    if (!solverInstance?.isInitialized) return null;
+
+    const result = solverInstance.solve();
+
+    if (result.success) {
+      // Update local entities from solver
+      const entities = new Map<EntityId, SketchEntity>();
+      solverInstance.getAllEntities().forEach(entity => {
+        entities.set(entity.id, entity);
+      });
+      set({ sketchEntities: entities });
+    }
+
+    return result;
+  },
+
+  clearSolver: () => {
+    const { solverInstance } = get();
+    if (solverInstance) {
+      solverInstance.clear();
+    }
+    set({
+      sketchEntities: new Map(),
+      sketchConstraints: [],
+      draggingEntityId: null
+    });
+  },
+
+  setDraggingEntity: (id: EntityId | null) => {
+    set({ draggingEntityId: id });
+    if (id === null) {
+      const { solverInstance } = get();
+      if (solverInstance) {
+        solverInstance.clearAllDrivingPoints();
+      }
+    }
+  },
 
   // Comment actions
   addComment: (text, position) => {

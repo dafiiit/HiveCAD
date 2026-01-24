@@ -59,7 +59,10 @@ const SketchCanvas = () => {
         isSketchMode, sketchStep, sketchPlane, activeTool,
         activeSketchPrimitives, currentDrawingPrimitive,
         addSketchPrimitive, updateCurrentDrawingPrimitive,
-        lockedValues, setSketchInputLock, clearSketchInputLocks, finishSketch
+        lockedValues, setSketchInputLock, clearSketchInputLocks, finishSketch,
+        // Solver state and actions
+        solverInstance, sketchEntities, draggingEntityId,
+        initializeSolver, setDrivingPoint, solveConstraints, setDraggingEntity
     } = useCADStore();
 
     const [hoverPoint, setHoverPoint] = useState<[number, number] | null>(null);
@@ -100,7 +103,19 @@ const SketchCanvas = () => {
             const p2d = to2D(worldPoint);
             let finalP2d = [...p2d] as [number, number];
 
-            // Apply locked constraints for rectangle
+            // NEW: If dragging an entity, use solver-driven updates
+            if (draggingEntityId && solverInstance?.isInitialized) {
+                setDrivingPoint(draggingEntityId, p2d[0], p2d[1]);
+                const result = solveConstraints();
+                if (result?.success) {
+                    // The store's sketchEntities is now updated with solved positions
+                    // Rendering will pick up the new positions automatically
+                    setHoverPoint(finalP2d);
+                    return;
+                }
+            }
+
+            // Legacy: Apply locked constraints for rectangle
             if (currentDrawingPrimitive && currentDrawingPrimitive.type === 'rectangle' && currentDrawingPrimitive.points.length > 0) {
                 const start = currentDrawingPrimitive.points[0];
                 if (lockedValues['width'] !== undefined && lockedValues['width'] !== null) {

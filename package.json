@@ -48,6 +48,7 @@
     "@radix-ui/react-tooltip": "^1.2.7",
     "@react-three/drei": "^9.122.0",
     "@react-three/fiber": "^8.18.0",
+    "@salusoft89/planegcs": "^1.1.7",
     "@tanstack/react-query": "^5.83.0",
     "@types/babel__core": "^7.20.5",
     "@types/babel__generator": "^7.27.0",
