@@ -99,42 +99,44 @@ const SketchCanvas = () => {
     if (!isSketchMode || sketchStep !== 'drawing' || !sketchPlane) return null;
 
     /**
-     * PLANE COORDINATE SYSTEM - Using Normal Vectors
+     * PLANE COORDINATE SYSTEM - Z-Up (Replicad/OpenCascade Convention)
      * 
-     * In Three.js Y-up, a PlaneGeometry defaults to XY plane with normal +Z.
-     * Camera positions determine what the user SEES:
+     * In Z-up, the three standard planes are:
+     * - XY Plane: horizontal ground plane at Z=0 (Top view from +Z)
+     * - XZ Plane: vertical front plane at Y=0 (Front view from -Y)
+     * - YZ Plane: vertical side plane at X=0 (Right view from +X)
      * 
-     * | Plane Name | Camera At | User Sees    | Drawing Surface | Normal Vector | Raycast Rotation |
-     * |------------|-----------|--------------|-----------------|---------------|------------------|
-     * | XY (Top)   | +Y        | XZ plane     | Y=0 horizontal  | (0, 1, 0)     | [-π/2, 0, 0]     |
-     * | XZ (Front) | +Z        | XY plane     | Z=0 vertical    | (0, 0, 1)     | [0, 0, 0]        |
-     * | YZ (Right) | +X        | YZ plane     | X=0 vertical    | (1, 0, 0)     | [0, π/2, 0]      |
+     * | Plane Name | Fixed Coord | Camera At | Screen Horizontal | Screen Vertical |
+     * |------------|-------------|-----------|-------------------|-----------------|
+     * | XY (Top)   | Z=0         | +Z        | X                 | Y               |
+     * | XZ (Front) | Y=0         | -Y        | X                 | Z               |
+     * | YZ (Right) | X=0         | +X        | Y                 | Z               |
      * 
      * 2D Sketch Coordinates: (u, v) where u=horizontal, v=vertical on screen
-     * 3D World Mapping must match what camera sees!
      */
 
     // Raycast plane rotation - rotates default XY plane to match the actual drawing surface
-    // Normal (0,0,1) → target normal via rotation
+    // PlaneGeometry defaults to XY plane with normal +Z
+    // For Z-up: XY plane needs no rotation (ground), XZ needs 90° around X, YZ needs 90° around Y
     const planeRotation: [number, number, number] =
-        sketchPlane === 'XY' ? [-Math.PI / 2, 0, 0] :  // Normal → (0,1,0), horizontal plane at Y=0
-            sketchPlane === 'XZ' ? [0, 0, 0] :              // Normal stays (0,0,1), vertical plane at Z=0
-                [0, Math.PI / 2, 0];     // Normal → (1,0,0), vertical plane at X=0
+        sketchPlane === 'XY' ? [0, 0, 0] :                         // Z=0 horizontal (ground) - no rotation
+            sketchPlane === 'XZ' ? [Math.PI / 2, 0, 0] :           // Y=0 vertical (front) - rotate around X
+                [0, Math.PI / 2, 0];                                // X=0 vertical (side) - rotate around Y
 
     // Helper to map 3D world point to 2D sketch coordinates
     // Must extract the two coordinates visible on screen for each camera view
     const to2D = (p: THREE.Vector3): [number, number] => {
-        if (sketchPlane === 'XY') return [p.x, p.z];  // Top view: X is horizontal, Z is vertical
-        if (sketchPlane === 'XZ') return [p.x, p.y];  // Front view: X is horizontal, Y is vertical
-        return [p.z, p.y];                             // Right view: Z is horizontal, Y is vertical
+        if (sketchPlane === 'XY') return [p.x, p.y];  // Top view: X is horizontal, Y is vertical
+        if (sketchPlane === 'XZ') return [p.x, p.z];  // Front view: X is horizontal, Z is vertical
+        return [p.y, p.z];                             // Right view: Y is horizontal, Z is vertical
     };
 
     // Helper to map 2D sketch coord back to 3D world
-    // The fixed coordinate is on the plane (e.g., Y=0 for horizontal XY/Top plane)
+    // The fixed coordinate is on the plane (e.g., Z=0 for horizontal XY/Top plane)
     const to3D = (u: number, v: number): THREE.Vector3 => {
-        if (sketchPlane === 'XY') return new THREE.Vector3(u, 0, v);  // Y=0 plane, u→X, v→Z
-        if (sketchPlane === 'XZ') return new THREE.Vector3(u, v, 0);  // Z=0 plane, u→X, v→Y
-        return new THREE.Vector3(0, v, u);                             // X=0 plane, u→Z, v→Y
+        if (sketchPlane === 'XY') return new THREE.Vector3(u, v, 0);  // Z=0 plane, u→X, v→Y
+        if (sketchPlane === 'XZ') return new THREE.Vector3(u, 0, v);  // Y=0 plane, u→X, v→Z
+        return new THREE.Vector3(0, u, v);                             // X=0 plane, u→Y, v→Z
     };
 
     const handlePointerMove = (e: ThreeEvent<PointerEvent>) => {

@@ -6,7 +6,6 @@ import Viewport from "./Viewport";
 import SketchPalette from "./SketchPalette";
 
 import StatusBar from "./StatusBar";
-import CommentsPanel from "./CommentsPanel";
 import OperationProperties from "./OperationProperties";
 import UnifiedSidebar from "./UnifiedSidebar";
 import { useCADStore } from "@/hooks/useCADStore";
@@ -112,18 +111,17 @@ const CADLayout = () => {
       />
 
       {/* Main content area */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         {/* Unified Sidebar (Browser & Code) */}
-        <UnifiedSidebar />
+        <div className="absolute left-0 top-0 bottom-0 z-20 h-full">
+          <UnifiedSidebar />
+        </div>
 
         {/* Center viewport */}
-        <div className="flex-1 flex flex-col relative">
-          <div className="flex-1 relative">
+        <div className="flex-1 flex flex-col relative min-w-0">
+          <div className="flex-1 relative min-w-0">
             <Viewport isSketchMode={isSketchMode} />
           </div>
-
-          {/* Comments panel */}
-          <CommentsPanel />
         </div>
 
         {/* Right sketch palette (visible in sketch mode) */}
