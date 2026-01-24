@@ -4,6 +4,7 @@ import { initCAD, replicadToThreeGeometry, replicadToThreeEdges, createSketchHel
 import * as replicad from 'replicad';
 import { toast } from 'sonner';
 import { CodeManager } from '../lib/code-manager';
+import { toolRegistry } from '../lib/tools';
 
 const DEFAULT_CODE = `
 const main = () => {
@@ -251,13 +252,13 @@ const getNextColor = () => {
 };
 
 const getDefaultDimensions = (type: string): Record<string, any> => {
+  // Use tool registry for defaults
+  const registryDefaults = toolRegistry.getDefaultParams(type);
+  if (Object.keys(registryDefaults).length > 0) {
+    return registryDefaults;
+  }
+  // Legacy fallback for types not yet in registry
   switch (type) {
-    case 'box': return { width: 10, height: 10, depth: 10 };
-    case 'cylinder': return { radius: 5, height: 15 };
-    case 'sphere': return { radius: 5 };
-    case 'torus': return { radius: 8, tube: 2 };
-    case 'coil': return { radius: 5, height: 20, turns: 5 };
-    case 'plane': return { plane: 'XY', origin: [0, 0, 0] };
     case 'extrusion': return { distance: 10, twistAngle: 0, endFactor: 1, profile: 'linear' };
     case 'revolve': return { angle: 360 };
     case 'pivot': return { angle: 45, axis: [0, 0, 1] };
@@ -306,76 +307,48 @@ export const useCADStore = create<CADState>((set, get) => ({
     }
 
     const currentState = get();
-
     const cm = new CodeManager(currentState.code);
-    let newCode = currentState.code;
 
-    if (type === 'box') {
-      const { width, height, depth } = options.dimensions || { width: 10, height: 10, depth: 10 };
-      cm.addFeature('makeBaseBox', null, [width, depth, height]); // Replicad uses x, y, z usually. makeBaseBox(x, y, z)
-    } else if (type === 'cylinder') {
-      const { radius, height } = options.dimensions || { radius: 5, height: 15 };
-      cm.addFeature('makeCylinder', null, [radius, height]);
-    } else if (type === 'sphere') {
-      const { radius } = options.dimensions || { radius: 10 };
-      cm.addFeature('makeSphere', null, [radius]);
-    } else if (type === 'torus') {
-      const { radius, tube } = options.dimensions || { radius: 10, tube: 2 };
-      // Torus via revolve
-      // drawCircle(tube).translate(radius, 0).sketchOnPlane("XZ").revolve()
-      const sketchName = cm.addFeature('drawCircle', null, [tube]);
-      cm.addOperation(sketchName, 'translate', [radius, 0]);
-      cm.addOperation(sketchName, 'sketchOnPlane', ["XZ"]);
-      cm.addOperation(sketchName, 'revolve', []);
-    } else if (type === 'coil') {
-      const { radius, height, turns } = options.dimensions || { radius: 5, height: 20, turns: 5 };
-      // Coil via twisted extrusion
-      // drawCircle(1).translate(radius, 0).sketchOnPlane("XY").extrude(height, {twistAngle: 360*turns})
-      // We assume tube radius is small, say 1 or derived. Let's create a property for tube radius or default.
-      const tubeRadius = 1;
-      const sketchName = cm.addFeature('drawCircle', null, [tubeRadius]);
-      cm.addOperation(sketchName, 'translate', [radius, 0]);
-      cm.addOperation(sketchName, 'sketchOnPlane', ["XY"]);
-      cm.addOperation(sketchName, 'extrude', [height, { twistAngle: 360 * turns }]);
-    } else if (type === 'plane') {
-      // makePlane
-      // makePlane(plane: "XY"|"XZ"|"YZ", origin)
-      const { plane } = options.dimensions || { plane: 'XY' };
-      cm.addFeature('makePlane', null, [plane]);
-    } else if (type === 'pivot') {
-      const selectedId = [...currentState.selectedIds][0];
-      if (selectedId) {
-        const { angle, axis } = options.dimensions || { angle: 45, axis: [0, 0, 1] };
-        cm.addOperation(selectedId, 'pivot', [angle, axis]);
-      } else {
-        toast.error("No plane selected for pivot");
-        return;
+    // Get tool from registry
+    const tool = toolRegistry.get(type);
+
+    if (tool) {
+      // Get params with defaults from registry merged with provided options
+      const params = { ...toolRegistry.getDefaultParams(type), ...options.dimensions };
+
+      if (tool.create) {
+        // Primitive tools that create new geometry
+        tool.create(cm, params);
+      } else if (tool.execute) {
+        // Operation tools that modify selected objects
+        const selectedIds = [...currentState.selectedIds];
+        if (selectedIds.length === 0 && ['extrusion', 'revolve', 'pivot', 'translatePlane'].includes(type)) {
+          toast.error(`No object selected for ${type}`);
+          return;
+        }
+        tool.execute(cm, selectedIds, params);
       }
-    } else if (type === 'translatePlane') {
-      const selectedId = [...currentState.selectedIds][0];
-      if (selectedId) {
-        const { x, y, z } = options.dimensions || { x: 0, y: 0, z: 0 };
-        cm.addOperation(selectedId, 'translate', [x, y, z]);
-      } else {
-        toast.error("No plane selected for translation");
-        return;
-      }
-    } else if (type === 'extrusion') {
-      const selectedId = [...currentState.selectedIds][0];
-      if (selectedId) {
-        const { distance } = options.dimensions || { distance: 10 };
-        cm.addOperation(selectedId, 'extrude', [distance]);
-      } else {
-        toast.error("No sketch selected for extrusion");
-        return;
-      }
-    } else if (type === 'revolve') {
-      const selectedId = [...currentState.selectedIds][0];
-      if (selectedId) {
-        cm.addOperation(selectedId, 'revolve', []);
-      } else {
-        toast.error("No sketch selected for revolve");
-        return;
+    } else {
+      // Legacy fallback for types not yet in registry
+      console.warn(`Tool "${type}" not found in registry, using legacy implementation`);
+
+      if (type === 'extrusion') {
+        const selectedId = [...currentState.selectedIds][0];
+        if (selectedId) {
+          const { distance } = options.dimensions || { distance: 10 };
+          cm.addOperation(selectedId, 'extrude', [distance]);
+        } else {
+          toast.error("No sketch selected for extrusion");
+          return;
+        }
+      } else if (type === 'revolve') {
+        const selectedId = [...currentState.selectedIds][0];
+        if (selectedId) {
+          cm.addOperation(selectedId, 'revolve', []);
+        } else {
+          toast.error("No sketch selected for revolve");
+          return;
+        }
       }
     }
 
@@ -545,49 +518,33 @@ export const useCADStore = create<CADState>((set, get) => ({
     const firstPrim = state.activeSketchPrimitives[0];
 
     if (firstPrim && shapeWrappers.includes(firstPrim.type)) {
-      // Handle shape wrapper primitives
-      if (firstPrim.type === 'rectangle') {
-        const [p1, p2] = firstPrim.points;
-        const width = Math.abs(p2[0] - p1[0]);
-        const height = Math.abs(p2[1] - p1[1]);
-        sketchName = cm.addFeature('drawRectangle', null, [width, height]);
-        const centerX = (p1[0] + p2[0]) / 2;
-        const centerY = (p1[1] + p2[1]) / 2;
-        if (centerX !== 0 || centerY !== 0) {
-          cm.addOperation(sketchName, 'translate', [centerX, centerY]);
+      // Use tool registry for shape wrappers
+      const tool = toolRegistry.get(firstPrim.type);
+      if (tool?.createShape && state.sketchPlane) {
+        sketchName = tool.createShape(cm, firstPrim, state.sketchPlane);
+      } else {
+        // Legacy fallback
+        console.warn(`No createShape method for ${firstPrim.type}, using legacy`);
+        if (firstPrim.type === 'rectangle') {
+          const [p1, p2] = firstPrim.points;
+          const width = Math.abs(p2[0] - p1[0]);
+          const height = Math.abs(p2[1] - p1[1]);
+          sketchName = cm.addFeature('drawRectangle', null, [width, height]);
+          const centerX = (p1[0] + p2[0]) / 2;
+          const centerY = (p1[1] + p2[1]) / 2;
+          if (centerX !== 0 || centerY !== 0) {
+            cm.addOperation(sketchName, 'translate', [centerX, centerY]);
+          }
+          if (state.sketchPlane) cm.addOperation(sketchName, 'sketchOnPlane', [state.sketchPlane]);
+        } else if (firstPrim.type === 'circle') {
+          const [center, edge] = firstPrim.points;
+          const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
+          sketchName = cm.addFeature('drawCircle', null, [radius]);
+          if (center[0] !== 0 || center[1] !== 0) {
+            cm.addOperation(sketchName, 'translate', [center[0], center[1]]);
+          }
+          if (state.sketchPlane) cm.addOperation(sketchName, 'sketchOnPlane', [state.sketchPlane]);
         }
-      } else if (firstPrim.type === 'roundedRectangle') {
-        const [p1, p2] = firstPrim.points;
-        const width = Math.abs(p2[0] - p1[0]);
-        const height = Math.abs(p2[1] - p1[1]);
-        const radius = firstPrim.properties?.radius || 3;
-        sketchName = cm.addFeature('drawRoundedRectangle', null, [width, height, radius]);
-        const centerX = (p1[0] + p2[0]) / 2;
-        const centerY = (p1[1] + p2[1]) / 2;
-        if (centerX !== 0 || centerY !== 0) {
-          cm.addOperation(sketchName, 'translate', [centerX, centerY]);
-        }
-      } else if (firstPrim.type === 'circle') {
-        const [center, edge] = firstPrim.points;
-        const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
-        sketchName = cm.addFeature('drawCircle', null, [radius]);
-        if (center[0] !== 0 || center[1] !== 0) {
-          cm.addOperation(sketchName, 'translate', [center[0], center[1]]);
-        }
-      } else if (firstPrim.type === 'polygon') {
-        const [center, edge] = firstPrim.points;
-        const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
-        const sides = firstPrim.properties?.sides || 6;
-        const sagitta = firstPrim.properties?.sagitta || 0;
-        sketchName = cm.addFeature('drawPolysides', null, [radius, sides, sagitta]);
-        if (center[0] !== 0 || center[1] !== 0) {
-          cm.addOperation(sketchName, 'translate', [center[0], center[1]]);
-        }
-      } else if (firstPrim.type === 'text') {
-        const pos = firstPrim.points[0];
-        const text = firstPrim.properties?.text || 'Text';
-        const fontSize = firstPrim.properties?.fontSize || 16;
-        sketchName = cm.addFeature('drawText', null, [text, { startX: pos[0], startY: pos[1], fontSize }]);
       }
     } else {
       // Standard drawing chain with draw()
@@ -604,161 +561,44 @@ export const useCADStore = create<CADState>((set, get) => ({
         sketchName = cm.addFeature('draw', null, []);
       }
 
-      // Process each primitive
+      // Process each primitive using tool registry
       state.activeSketchPrimitives.forEach((prim, index) => {
         // Skip movePointer at start since draw() already positioned
         if (index === 0 && prim.type === 'movePointer') return;
 
-        switch (prim.type) {
-          // Line tools
-          case 'line': {
-            // For multi-point lines, add each segment
-            for (let i = 1; i < prim.points.length; i++) {
-              const pt = prim.points[i];
-              cm.addOperation(sketchName, 'lineTo', [[pt[0], pt[1]]]);
-            }
-            break;
-          }
-          case 'vline': {
-            const dy = prim.properties?.dy || (prim.points[1][1] - prim.points[0][1]);
-            cm.addOperation(sketchName, 'vLine', [dy]);
-            break;
-          }
-          case 'hline': {
-            const dx = prim.properties?.dx || (prim.points[1][0] - prim.points[0][0]);
-            cm.addOperation(sketchName, 'hLine', [dx]);
-            break;
-          }
-          case 'polarline': {
-            const distance = prim.properties?.distance || 10;
-            const angle = prim.properties?.angle || 0;
-            cm.addOperation(sketchName, 'polarLine', [distance, angle]);
-            break;
-          }
-          case 'tangentline': {
-            const distance = prim.properties?.distance || 10;
-            cm.addOperation(sketchName, 'tangentLine', [distance]);
-            break;
-          }
-          case 'movePointer': {
-            const pt = prim.points[0];
-            cm.addOperation(sketchName, 'movePointerTo', [[pt[0], pt[1]]]);
-            break;
-          }
-
-          // Arc tools
-          case 'threePointsArc': {
-            // points: [start, end, via]
-            if (prim.points.length >= 3) {
-              const end = prim.points[1];
-              const via = prim.points[2];
-              cm.addOperation(sketchName, 'threePointsArcTo', [[end[0], end[1]], [via[0], via[1]]]);
-            }
-            break;
-          }
-          case 'tangentArc': {
-            const end = prim.points[1];
-            cm.addOperation(sketchName, 'tangentArcTo', [[end[0], end[1]]]);
-            break;
-          }
-          case 'sagittaArc': {
-            const start = prim.points[0];
-            const end = prim.points[1];
-            const dx = end[0] - start[0];
-            const dy = end[1] - start[1];
-            const sagitta = prim.properties?.sagitta || 3;
-            cm.addOperation(sketchName, 'sagittaArc', [dx, dy, sagitta]);
-            break;
-          }
-          case 'ellipse': {
-            const end = prim.points[1];
-            const xRadius = prim.properties?.xRadius || 10;
-            const yRadius = prim.properties?.yRadius || 5;
-            const rotation = prim.properties?.rotation || 0;
-            const longWay = prim.properties?.longWay || false;
-            const counterClockwise = prim.properties?.counterClockwise || false;
-            // Full signature: ellipseTo([x,y], xRadius, yRadius, rotation?, longWay?, counter?)
-            cm.addOperation(sketchName, 'ellipseTo', [[end[0], end[1]], xRadius, yRadius, rotation, longWay, counterClockwise]);
-            break;
-          }
-
-          // Spline tools
-          case 'smoothSpline': {
-            // Multi-point spline support
-            for (let i = 1; i < prim.points.length; i++) {
-              const pt = prim.points[i];
-              const config: Record<string, any> = {};
-              if (prim.properties?.startTangent !== undefined && i === 1) {
-                config.startTangent = prim.properties.startTangent;
+        const tool = toolRegistry.get(prim.type);
+        if (tool?.addToSketch) {
+          tool.addToSketch(cm, sketchName, prim);
+        } else {
+          // Legacy fallback for tools not in registry
+          console.warn(`No addToSketch method for ${prim.type}, using legacy`);
+          switch (prim.type) {
+            case 'arc': {
+              if (prim.points.length >= 3) {
+                const end = prim.points[1];
+                const via = prim.points[2];
+                cm.addOperation(sketchName, 'threePointsArcTo', [[end[0], end[1]], [via[0], via[1]]]);
               }
-              if (prim.properties?.endTangent !== undefined && i === prim.points.length - 1) {
-                config.endTangent = prim.properties.endTangent;
-              }
-              if (Object.keys(config).length > 0) {
-                cm.addOperation(sketchName, 'smoothSplineTo', [[pt[0], pt[1]], config]);
-              } else {
+              break;
+            }
+            case 'spline': {
+              for (let i = 1; i < prim.points.length; i++) {
+                const pt = prim.points[i];
                 cm.addOperation(sketchName, 'smoothSplineTo', [[pt[0], pt[1]]]);
               }
+              break;
             }
-            break;
-          }
-          case 'bezier': {
-            const end = prim.points[1];
-            const controlPoints = prim.points.slice(2).map(p => [p[0], p[1]]);
-            cm.addOperation(sketchName, 'bezierCurveTo', [[end[0], end[1]], controlPoints]);
-            break;
-          }
-          case 'quadraticBezier': {
-            const end = prim.points[1];
-            const ctrlX = prim.properties?.ctrlX || 5;
-            const ctrlY = prim.properties?.ctrlY || 5;
-            // Relative control point from start
-            const start = prim.points[0];
-            const ctrl = [start[0] + ctrlX, start[1] + ctrlY];
-            cm.addOperation(sketchName, 'quadraticBezierCurveTo', [[end[0], end[1]], ctrl]);
-            break;
-          }
-          case 'cubicBezier': {
-            const start = prim.points[0];
-            const end = prim.points[1];
-            const ctrlStartX = prim.properties?.ctrlStartX || 3;
-            const ctrlStartY = prim.properties?.ctrlStartY || 5;
-            const ctrlEndX = prim.properties?.ctrlEndX || 3;
-            const ctrlEndY = prim.properties?.ctrlEndY || 5;
-            const ctrlStart = [start[0] + ctrlStartX, start[1] + ctrlStartY];
-            const ctrlEnd = [end[0] - ctrlEndX, end[1] + ctrlEndY];
-            cm.addOperation(sketchName, 'cubicBezierCurveTo', [[end[0], end[1]], ctrlStart, ctrlEnd]);
-            break;
-          }
-
-          // Legacy support
-          case 'arc': {
-            if (prim.points.length >= 3) {
-              const end = prim.points[1];
-              const via = prim.points[2];
-              cm.addOperation(sketchName, 'threePointsArcTo', [[end[0], end[1]], [via[0], via[1]]]);
-            }
-            break;
-          }
-          case 'spline': {
-            // Legacy spline - treat as smoothSpline
-            for (let i = 1; i < prim.points.length; i++) {
-              const pt = prim.points[i];
-              cm.addOperation(sketchName, 'smoothSplineTo', [[pt[0], pt[1]]]);
-            }
-            break;
           }
         }
       });
 
       // Close or done based on whether it should be closed
-      // For now, use done() - close() can be added as an option
       cm.addOperation(sketchName, 'done', []);
-    }
 
-    // Place on sketch plane
-    if (state.sketchPlane && sketchName) {
-      cm.addOperation(sketchName, 'sketchOnPlane', [state.sketchPlane]);
+      // Place on sketch plane if not already placed by createShape
+      if (state.sketchPlane && sketchName) {
+        cm.addOperation(sketchName, 'sketchOnPlane', [state.sketchPlane]);
+      }
     }
 
     set({
