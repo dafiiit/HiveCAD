@@ -1,6 +1,28 @@
-import type { Tool, SketchPrimitiveData } from '../types';
+import React from 'react';
+import * as THREE from 'three';
+import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../types';
 import type { CodeManager } from '../../code-manager';
 import { generateToolId } from '../types';
+
+// Helper to render a line from points
+const renderLine = (
+    key: string,
+    points: THREE.Vector3[],
+    color: string
+) => {
+    if (points.length < 2) return null;
+    return React.createElement('line', { key },
+        React.createElement('bufferGeometry', null,
+            React.createElement('bufferAttribute', {
+                attach: 'attributes-position',
+                count: points.length,
+                array: new Float32Array(points.flatMap(v => [v.x, v.y, v.z])),
+                itemSize: 3
+            })
+        ),
+        React.createElement('lineBasicMaterial', { color, linewidth: 3, depthTest: false })
+    );
+};
 
 export const smoothSplineTool: Tool = {
     metadata: {
@@ -34,6 +56,41 @@ export const smoothSplineTool: Tool = {
     },
     processPoints(points: [number, number][], properties?: Record<string, any>): SketchPrimitiveData {
         return { id: generateToolId(), type: 'smoothSpline', points, properties };
+    },
+    createInitialPrimitive(startPoint: [number, number], properties?: Record<string, any>): SketchPrimitive {
+        return {
+            id: generateToolId(),
+            type: 'smoothSpline',
+            points: [startPoint, startPoint],
+            properties: {
+                startTangent: properties?.startTangent,
+                endTangent: properties?.endTangent,
+                ...properties
+            }
+        };
+    },
+    renderPreview(
+        primitive: SketchPrimitive,
+        to3D: (x: number, y: number) => THREE.Vector3,
+        isGhost: boolean = false
+    ) {
+        const color = isGhost ? "#00ffff" : "#ffff00";
+        const points = primitive.points.map(p => to3D(p[0], p[1]));
+        if (points.length < 2) return null;
+
+        const curve = new THREE.CatmullRomCurve3(points);
+        const splinePoints = curve.getPoints(50);
+
+        // Render spline curve with control point markers
+        return React.createElement('group', { key: primitive.id },
+            renderLine(`${primitive.id}-curve`, splinePoints, color),
+            ...(isGhost ? points.map((p, i) =>
+                React.createElement('mesh', { key: `${primitive.id}-pt-${i}`, position: p },
+                    React.createElement('boxGeometry', { args: [0.3, 0.3, 0.3] }),
+                    React.createElement('meshBasicMaterial', { color: '#ff00ff', depthTest: false })
+                )
+            ) : [])
+        );
     }
 };
 
@@ -54,6 +111,46 @@ export const bezierTool: Tool = {
     },
     processPoints(points: [number, number][]): SketchPrimitiveData {
         return { id: generateToolId(), type: 'bezier', points };
+    },
+    createInitialPrimitive(startPoint: [number, number], properties?: Record<string, any>): SketchPrimitive {
+        const ctrlX = properties?.ctrlX ?? startPoint[0] + 5;
+        const ctrlY = properties?.ctrlY ?? startPoint[1] + 5;
+        return {
+            id: generateToolId(),
+            type: 'bezier',
+            points: [startPoint, startPoint, [ctrlX, ctrlY]],
+            properties: properties || {}
+        };
+    },
+    renderPreview(
+        primitive: SketchPrimitive,
+        to3D: (x: number, y: number) => THREE.Vector3,
+        isGhost: boolean = false
+    ) {
+        const color = isGhost ? "#00ffff" : "#ffff00";
+        const points = primitive.points.map(p => to3D(p[0], p[1]));
+        if (points.length < 2) return null;
+
+        const start = points[0];
+        const end = points[1];
+        const ctrl = points.length > 2 ? points[2] :
+            new THREE.Vector3(
+                (start.x + end.x) / 2 + 5,
+                (start.y + end.y) / 2 + 5,
+                (start.z + end.z) / 2
+            );
+
+        const curve = new THREE.QuadraticBezierCurve3(start, ctrl, end);
+        const bezierPoints = curve.getPoints(30);
+
+        return React.createElement('group', { key: primitive.id },
+            renderLine(`${primitive.id}-curve`, bezierPoints, color),
+            // Control point marker
+            React.createElement('mesh', { position: ctrl },
+                React.createElement('sphereGeometry', { args: [0.3, 16, 16] }),
+                React.createElement('meshBasicMaterial', { color: '#ff8800', depthTest: false })
+            )
+        );
     }
 };
 
@@ -80,6 +177,22 @@ export const quadraticBezierTool: Tool = {
     },
     processPoints(points: [number, number][], properties?: Record<string, any>): SketchPrimitiveData {
         return { id: generateToolId(), type: 'quadraticBezier', points, properties };
+    },
+    createInitialPrimitive(startPoint: [number, number], properties?: Record<string, any>): SketchPrimitive {
+        return {
+            id: generateToolId(),
+            type: 'quadraticBezier',
+            points: [startPoint, startPoint],
+            properties: { ctrlX: properties?.ctrlX || 5, ctrlY: properties?.ctrlY || 5, ...properties }
+        };
+    },
+    renderPreview(
+        primitive: SketchPrimitive,
+        to3D: (x: number, y: number) => THREE.Vector3,
+        isGhost: boolean = false
+    ) {
+        // Reuse bezier rendering
+        return bezierTool.renderPreview?.(primitive, to3D, isGhost) ?? null;
     }
 };
 
@@ -111,5 +224,55 @@ export const cubicBezierTool: Tool = {
     },
     processPoints(points: [number, number][], properties?: Record<string, any>): SketchPrimitiveData {
         return { id: generateToolId(), type: 'cubicBezier', points, properties };
+    },
+    createInitialPrimitive(startPoint: [number, number], properties?: Record<string, any>): SketchPrimitive {
+        return {
+            id: generateToolId(),
+            type: 'cubicBezier',
+            points: [startPoint, startPoint],
+            properties: {
+                ctrlStartX: properties?.ctrlStartX || 3,
+                ctrlStartY: properties?.ctrlStartY || 5,
+                ctrlEndX: properties?.ctrlEndX || 3,
+                ctrlEndY: properties?.ctrlEndY || 5,
+                ...properties
+            }
+        };
+    },
+    renderPreview(
+        primitive: SketchPrimitive,
+        to3D: (x: number, y: number) => THREE.Vector3,
+        isGhost: boolean = false
+    ) {
+        const color = isGhost ? "#00ffff" : "#ffff00";
+        if (primitive.points.length < 2) return null;
+
+        const start = to3D(primitive.points[0][0], primitive.points[0][1]);
+        const end = to3D(primitive.points[1][0], primitive.points[1][1]);
+        const props = primitive.properties || {};
+        const ctrl1 = to3D(
+            primitive.points[0][0] + (props.ctrlStartX || 3),
+            primitive.points[0][1] + (props.ctrlStartY || 5)
+        );
+        const ctrl2 = to3D(
+            primitive.points[1][0] - (props.ctrlEndX || 3),
+            primitive.points[1][1] + (props.ctrlEndY || 5)
+        );
+
+        const curve = new THREE.CubicBezierCurve3(start, ctrl1, ctrl2, end);
+        const bezierPoints = curve.getPoints(30);
+
+        return React.createElement('group', { key: primitive.id },
+            renderLine(`${primitive.id}-curve`, bezierPoints, color),
+            // Control point markers
+            React.createElement('mesh', { position: ctrl1 },
+                React.createElement('sphereGeometry', { args: [0.25, 16, 16] }),
+                React.createElement('meshBasicMaterial', { color: '#ff8800', depthTest: false })
+            ),
+            React.createElement('mesh', { position: ctrl2 },
+                React.createElement('sphereGeometry', { args: [0.25, 16, 16] }),
+                React.createElement('meshBasicMaterial', { color: '#ff8800', depthTest: false })
+            )
+        );
     }
 };

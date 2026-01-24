@@ -1,4 +1,17 @@
 import type { CodeManager } from '../code-manager';
+import type * as THREE from 'three';
+import type { ReactNode } from 'react';
+
+// Re-export SketchPrimitive type for tools to use
+export type SketchPlane = 'XY' | 'XZ' | 'YZ';
+
+// Minimal SketchPrimitive type for tools (matches useCADStore.SketchPrimitive)
+export interface SketchPrimitive {
+    id: string;
+    type: string;
+    points: [number, number][];
+    properties?: Record<string, any>;
+}
 
 // Tool categories for organization and filtering
 export type ToolCategory =
@@ -96,6 +109,43 @@ export interface Tool {
      * @returns The feature ID/name created
      */
     createShape?(codeManager: CodeManager, primitive: SketchPrimitiveData, plane: string): string;
+
+    /**
+     * Render the preview geometry while drawing (replaces switch in SketchCanvas.renderPrimitive)
+     * @param primitive - The sketch primitive being drawn
+     * @param to3D - Function to convert 2D sketch coords to 3D world coords
+     * @param isGhost - Whether this is the active drawing (ghost) or committed primitive
+     * @returns React/Three.js nodes to render
+     */
+    renderPreview?(
+        primitive: SketchPrimitive,
+        to3D: (x: number, y: number) => THREE.Vector3,
+        isGhost?: boolean
+    ): ReactNode;
+
+    /**
+     * Render annotation overlays (dimensions, guides) for this tool
+     * @param primitive - The sketch primitive being annotated
+     * @param plane - The sketch plane for coordinate context
+     * @param lockedValues - Any locked dimension values from UI
+     * @returns React/Three.js nodes to render as overlays
+     */
+    renderAnnotation?(
+        primitive: SketchPrimitive,
+        plane: SketchPlane,
+        lockedValues?: Record<string, number | null>
+    ): ReactNode;
+
+    /**
+     * Create the initial primitive state when starting to draw
+     * @param startPoint - The 2D point where drawing started
+     * @param properties - Optional properties from dialog or defaults
+     * @returns A new SketchPrimitive to use as currentDrawingPrimitive
+     */
+    createInitialPrimitive?(
+        startPoint: [number, number],
+        properties?: Record<string, any>
+    ): SketchPrimitive;
 }
 
 // Helper to generate IDs

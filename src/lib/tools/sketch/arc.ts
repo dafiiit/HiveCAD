@@ -1,6 +1,28 @@
-import type { Tool, SketchPrimitiveData } from '../types';
+import React from 'react';
+import * as THREE from 'three';
+import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../types';
 import type { CodeManager } from '../../code-manager';
 import { generateToolId } from '../types';
+
+// Helper to render a line from points
+const renderLine = (
+    key: string,
+    points: THREE.Vector3[],
+    color: string
+) => {
+    if (points.length < 2) return null;
+    return React.createElement('line', { key },
+        React.createElement('bufferGeometry', null,
+            React.createElement('bufferAttribute', {
+                attach: 'attributes-position',
+                count: points.length,
+                array: new Float32Array(points.flatMap(v => [v.x, v.y, v.z])),
+                itemSize: 3
+            })
+        ),
+        React.createElement('lineBasicMaterial', { color, linewidth: 3, depthTest: false })
+    );
+};
 
 export const threePointsArcTool: Tool = {
     metadata: {
@@ -22,6 +44,40 @@ export const threePointsArcTool: Tool = {
     },
     processPoints(points: [number, number][]): SketchPrimitiveData {
         return { id: generateToolId(), type: 'threePointsArc', points };
+    },
+    createInitialPrimitive(startPoint: [number, number], properties?: Record<string, any>): SketchPrimitive {
+        return {
+            id: generateToolId(),
+            type: 'threePointsArc',
+            points: [startPoint, startPoint],
+            properties: properties || {}
+        };
+    },
+    renderPreview(
+        primitive: SketchPrimitive,
+        to3D: (x: number, y: number) => THREE.Vector3,
+        isGhost: boolean = false
+    ) {
+        const color = isGhost ? "#00ffff" : "#ffff00";
+        const points = primitive.points.map(p => to3D(p[0], p[1]));
+
+        if (points.length === 2) {
+            // Draw line for preview until third point
+            return renderLine(primitive.id, points, color);
+        }
+
+        if (points.length >= 3) {
+            // 3 points: use CatmullRom for smooth preview
+            const splineCurve = new THREE.CatmullRomCurve3([
+                points[0],
+                points[2], // via point
+                points[1]
+            ]);
+            const arcPoints = splineCurve.getPoints(20);
+            return renderLine(primitive.id, arcPoints, color);
+        }
+
+        return null;
     }
 };
 
@@ -41,6 +97,26 @@ export const tangentArcTool: Tool = {
     },
     processPoints(points: [number, number][]): SketchPrimitiveData {
         return { id: generateToolId(), type: 'tangentArc', points };
+    },
+    createInitialPrimitive(startPoint: [number, number], properties?: Record<string, any>): SketchPrimitive {
+        return {
+            id: generateToolId(),
+            type: 'tangentArc',
+            points: [startPoint, startPoint],
+            properties: properties || {}
+        };
+    },
+    renderPreview(
+        primitive: SketchPrimitive,
+        to3D: (x: number, y: number) => THREE.Vector3,
+        isGhost: boolean = false
+    ) {
+        const color = isGhost ? "#00ffff" : "#ffff00";
+        const points = primitive.points.map(p => to3D(p[0], p[1]));
+        if (points.length < 2) return null;
+
+        // Simple line preview for tangent arc
+        return renderLine(primitive.id, points, color);
     }
 };
 
@@ -66,6 +142,26 @@ export const sagittaArcTool: Tool = {
     },
     processPoints(points: [number, number][], properties?: Record<string, any>): SketchPrimitiveData {
         return { id: generateToolId(), type: 'sagittaArc', points, properties };
+    },
+    createInitialPrimitive(startPoint: [number, number], properties?: Record<string, any>): SketchPrimitive {
+        return {
+            id: generateToolId(),
+            type: 'sagittaArc',
+            points: [startPoint, startPoint],
+            properties: { sagitta: properties?.sagitta || 3, ...properties }
+        };
+    },
+    renderPreview(
+        primitive: SketchPrimitive,
+        to3D: (x: number, y: number) => THREE.Vector3,
+        isGhost: boolean = false
+    ) {
+        const color = isGhost ? "#00ffff" : "#ffff00";
+        const points = primitive.points.map(p => to3D(p[0], p[1]));
+        if (points.length < 2) return null;
+
+        // Simple line preview (sagitta arc is complex without actual curve)
+        return renderLine(primitive.id, points, color);
     }
 };
 
@@ -96,5 +192,48 @@ export const ellipseTool: Tool = {
     },
     processPoints(points: [number, number][], properties?: Record<string, any>): SketchPrimitiveData {
         return { id: generateToolId(), type: 'ellipse', points, properties };
+    },
+    createInitialPrimitive(startPoint: [number, number], properties?: Record<string, any>): SketchPrimitive {
+        return {
+            id: generateToolId(),
+            type: 'ellipse',
+            points: [startPoint, startPoint],
+            properties: {
+                xRadius: properties?.xRadius || 10,
+                yRadius: properties?.yRadius || 5,
+                rotation: properties?.rotation || 0,
+                longWay: properties?.longWay || false,
+                counterClockwise: properties?.counterClockwise || false,
+                ...properties
+            }
+        };
+    },
+    renderPreview(
+        primitive: SketchPrimitive,
+        to3D: (x: number, y: number) => THREE.Vector3,
+        isGhost: boolean = false
+    ) {
+        const color = isGhost ? "#00ffff" : "#ffff00";
+        if (primitive.points.length < 2) return null;
+
+        const startPt = primitive.points[0];
+        const endPt = primitive.points[1];
+        const xRadius = primitive.properties?.xRadius || 10;
+        const yRadius = primitive.properties?.yRadius || 5;
+        const segments = 64;
+        const ellipsePoints: THREE.Vector3[] = [];
+
+        // Simple ellipse approximation centered between start and end
+        const cx = (startPt[0] + endPt[0]) / 2;
+        const cy = (startPt[1] + endPt[1]) / 2;
+
+        for (let i = 0; i <= segments; i++) {
+            const theta = (i / segments) * Math.PI * 2;
+            const x = cx + Math.cos(theta) * xRadius;
+            const y = cy + Math.sin(theta) * yRadius;
+            ellipsePoints.push(to3D(x, y));
+        }
+
+        return renderLine(primitive.id, ellipsePoints, color);
     }
 };

@@ -4,8 +4,8 @@ import { Html } from "@react-three/drei";
 import * as THREE from "three";
 import { useCADStore, SketchPrimitive, ToolType } from "../../hooks/useCADStore";
 import { SnappingEngine, SnapResult } from "../../lib/snapping";
+import { toolRegistry } from "../../lib/tools";
 import SketchToolDialog, { TOOL_PARAMS } from "./SketchToolDialog";
-import { LineAnnotation, CircleAnnotation, RectangleAnnotation } from "./SketchAnnotations";
 
 // Type needed for dynamic inputs
 interface DynamicInputProps {
@@ -208,6 +208,20 @@ const SketchCanvas = () => {
     };
 
     const startPrimitive = (p2d: [number, number], tool: ToolType, props?: Record<string, any>) => {
+        // Try to use tool registry first
+        const toolDef = toolRegistry.get(tool);
+        if (toolDef?.createInitialPrimitive) {
+            const primitive = toolDef.createInitialPrimitive(p2d, props) as SketchPrimitive;
+            // Special case: movePointer and text are added immediately
+            if (tool === 'movePointer' || tool === 'text') {
+                addSketchPrimitive(primitive);
+            } else {
+                updateCurrentDrawingPrimitive(primitive);
+            }
+            return;
+        }
+
+        // Fallback for tools not yet in registry (box/sphere aliases)
         const baseProps = {
             id: Math.random().toString(),
             points: [p2d, p2d],
@@ -215,124 +229,20 @@ const SketchCanvas = () => {
         };
 
         switch (tool) {
-            case 'line':
-            case 'vline':
-            case 'hline':
-                updateCurrentDrawingPrimitive({ ...baseProps, type: tool });
-                break;
-            case 'polarline':
-                updateCurrentDrawingPrimitive({
-                    ...baseProps,
-                    type: 'polarline',
-                    properties: { distance: props?.distance || 10, angle: props?.angle || 0 }
-                });
-                break;
-            case 'tangentline':
-                updateCurrentDrawingPrimitive({
-                    ...baseProps,
-                    type: 'tangentline',
-                    properties: { distance: props?.distance || 10 }
-                });
-                break;
-            case 'movePointer':
-                // movePointer just relocates, add directly
-                addSketchPrimitive({ ...baseProps, type: 'movePointer', points: [p2d] });
-                break;
-            case 'rectangle':
             case 'box':
                 updateCurrentDrawingPrimitive({ ...baseProps, type: 'rectangle' });
                 break;
-            case 'roundedRectangle':
-                updateCurrentDrawingPrimitive({
-                    ...baseProps,
-                    type: 'roundedRectangle',
-                    properties: { radius: props?.radius || 3 }
-                });
-                break;
-            case 'circle':
             case 'sphere':
                 updateCurrentDrawingPrimitive({ ...baseProps, type: 'circle' });
                 break;
-            case 'polygon':
-                updateCurrentDrawingPrimitive({
-                    ...baseProps,
-                    type: 'polygon',
-                    properties: { sides: props?.sides || 6, sagitta: props?.sagitta || 0 }
-                });
-                break;
-            case 'threePointsArc':
             case 'arc':
                 updateCurrentDrawingPrimitive({ ...baseProps, type: 'threePointsArc' });
                 break;
-            case 'tangentArc':
-                updateCurrentDrawingPrimitive({ ...baseProps, type: 'tangentArc' });
-                break;
-            case 'sagittaArc':
-                updateCurrentDrawingPrimitive({
-                    ...baseProps,
-                    type: 'sagittaArc',
-                    properties: { sagitta: props?.sagitta || 3 }
-                });
-                break;
-            case 'ellipse':
-                updateCurrentDrawingPrimitive({
-                    ...baseProps,
-                    type: 'ellipse',
-                    properties: {
-                        xRadius: props?.xRadius || 10,
-                        yRadius: props?.yRadius || 5,
-                        rotation: props?.rotation || 0,
-                        longWay: props?.longWay || false,
-                        counterClockwise: props?.counterClockwise || false
-                    }
-                });
-                break;
-            case 'smoothSpline':
             case 'spline':
-                updateCurrentDrawingPrimitive({
-                    ...baseProps,
-                    type: 'smoothSpline',
-                    properties: {
-                        startTangent: props?.startTangent,
-                        endTangent: props?.endTangent
-                    }
-                });
-                break;
-            case 'bezier':
-                updateCurrentDrawingPrimitive({
-                    ...baseProps,
-                    type: 'bezier',
-                    points: [p2d, p2d, [props?.ctrlX || p2d[0] + 5, props?.ctrlY || p2d[1] + 5]]
-                });
-                break;
-            case 'quadraticBezier':
-                updateCurrentDrawingPrimitive({
-                    ...baseProps,
-                    type: 'quadraticBezier',
-                    properties: { ctrlX: props?.ctrlX || 5, ctrlY: props?.ctrlY || 5 }
-                });
-                break;
-            case 'cubicBezier':
-                updateCurrentDrawingPrimitive({
-                    ...baseProps,
-                    type: 'cubicBezier',
-                    properties: {
-                        ctrlStartX: props?.ctrlStartX || 3,
-                        ctrlStartY: props?.ctrlStartY || 5,
-                        ctrlEndX: props?.ctrlEndX || 7,
-                        ctrlEndY: props?.ctrlEndY || 5
-                    }
-                });
-                break;
-            case 'text':
-                addSketchPrimitive({
-                    id: Math.random().toString(),
-                    type: 'text',
-                    points: [p2d],
-                    properties: { text: props?.text || 'Text', fontSize: props?.fontSize || 16 }
-                });
+                updateCurrentDrawingPrimitive({ ...baseProps, type: 'smoothSpline', properties: { startTangent: props?.startTangent, endTangent: props?.endTangent } });
                 break;
             default:
+                // Default fallback: use line with solver
                 const lineData = addSolverLineMacro(p2d, p2d);
                 updateCurrentDrawingPrimitive({
                     ...baseProps,
@@ -415,361 +325,44 @@ const SketchCanvas = () => {
         }
     };
 
-    // Rendering Helpers
+    // Rendering helper - delegates to tool registry
     const renderPrimitive = (prim: SketchPrimitive, isGhost: boolean = false) => {
+        // Look up tool in registry and use its renderPreview if available
+        const toolDef = toolRegistry.get(prim.type);
+        if (toolDef?.renderPreview) {
+            return toolDef.renderPreview(
+                prim as any, // Cast to tool's SketchPrimitive type
+                to3D,
+                isGhost
+            );
+        }
+
+        // Fallback: render as simple line for any unregistered primitives
         const color = isGhost ? "#00ffff" : "#ffff00";
         const points = prim.points.map(p => to3D(p[0], p[1]));
+        if (points.length < 2) return null;
 
-        // Line types
-        if (['line', 'vline', 'hline', 'polarline', 'tangentline'].includes(prim.type)) {
-            return (
-                <line key={prim.id}>
-                    <bufferGeometry>
-                        <bufferAttribute
-                            attach="attributes-position"
-                            count={points.length}
-                            array={new Float32Array(points.flatMap(v => [v.x, v.y, v.z]))}
-                            itemSize={3}
-                        />
-                    </bufferGeometry>
-                    <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
-                </line>
-            );
+        return (
+            <line key={prim.id}>
+                <bufferGeometry>
+                    <bufferAttribute
+                        attach="attributes-position"
+                        count={points.length}
+                        array={new Float32Array(points.flatMap(v => [v.x, v.y, v.z]))}
+                        itemSize={3}
+                    />
+                </bufferGeometry>
+                <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
+            </line>
+        );
+    };
+
+    // Render annotation overlay - delegates to tool registry
+    const renderAnnotation = (prim: SketchPrimitive) => {
+        const toolDef = toolRegistry.get(prim.type);
+        if (toolDef?.renderAnnotation) {
+            return toolDef.renderAnnotation(prim as any, sketchPlane!, lockedValues as any);
         }
-
-        // Rectangle
-        if (prim.type === 'rectangle' || prim.type === 'roundedRectangle') {
-            if (points.length < 2) return null;
-            const u1 = prim.points[0];
-            const u2 = prim.points[1];
-            const rectPoints2D = [u1, [u2[0], u1[1]], u2, [u1[0], u2[1]], u1];
-            const displayPoints = rectPoints2D.map(p => to3D(p[0], p[1]));
-
-            const width = Math.abs(u2[0] - u1[0]);
-            const height = Math.abs(u2[1] - u1[1]);
-            const cx = (u1[0] + u2[0]) / 2;
-            const cy = (u1[1] + u2[1]) / 2;
-            const isDrawing = currentDrawingPrimitive?.id === prim.id;
-
-            return (
-                <group key={prim.id}>
-                    <line>
-                        <bufferGeometry>
-                            <bufferAttribute
-                                attach="attributes-position"
-                                count={displayPoints.length}
-                                array={new Float32Array(displayPoints.flatMap(v => [v.x, v.y, v.z]))}
-                                itemSize={3}
-                            />
-                        </bufferGeometry>
-                        <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
-                    </line>
-                    {isDrawing && (
-                        <>
-                            <DynamicInputOverlay
-                                position={to3D(cx, Math.max(u1[1], u2[1]) + 4).toArray()}
-                                value={lockedValues['width'] ?? parseFloat(width.toFixed(2))}
-                                label="Width"
-                                showLabel
-                                autoFocus={!lockedValues['width']}
-                                onChange={(val) => setSketchInputLock('width', val)}
-                                onLock={() => { }}
-                            />
-                            <DynamicInputOverlay
-                                position={to3D(Math.min(u1[0], u2[0]) - 4, cy).toArray()}
-                                value={lockedValues['height'] ?? parseFloat(height.toFixed(2))}
-                                label="Height"
-                                showLabel
-                                onChange={(val) => setSketchInputLock('height', val)}
-                                onLock={() => { }}
-                            />
-                        </>
-                    )}
-                </group>
-            );
-        }
-
-        // Circle
-        if (prim.type === 'circle') {
-            if (points.length < 2) return null;
-            const center = points[0];
-            const edge = points[1];
-            const radius = center.distanceTo(edge);
-            const segments = 64;
-            const circlePoints: THREE.Vector3[] = [];
-            const c2d = prim.points[0];
-
-            for (let i = 0; i <= segments; i++) {
-                const theta = (i / segments) * Math.PI * 2;
-                const x = c2d[0] + Math.cos(theta) * radius;
-                const y = c2d[1] + Math.sin(theta) * radius;
-                circlePoints.push(to3D(x, y));
-            }
-
-            return (
-                <line key={prim.id}>
-                    <bufferGeometry>
-                        <bufferAttribute
-                            attach="attributes-position"
-                            count={circlePoints.length}
-                            array={new Float32Array(circlePoints.flatMap(v => [v.x, v.y, v.z]))}
-                            itemSize={3}
-                        />
-                    </bufferGeometry>
-                    <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
-                </line>
-            );
-        }
-
-        // Polygon
-        if (prim.type === 'polygon') {
-            if (points.length < 2) return null;
-            const center = points[0];
-            const edge = points[1];
-            const radius = center.distanceTo(edge);
-            const sides = prim.properties?.sides || 6;
-            const polyPoints: THREE.Vector3[] = [];
-            const dx = prim.points[1][0] - prim.points[0][0];
-            const dy = prim.points[1][1] - prim.points[0][1];
-            const startAngle = Math.atan2(dy, dx);
-
-            for (let i = 0; i <= sides; i++) {
-                const theta = startAngle + (i / sides) * Math.PI * 2;
-                const x = prim.points[0][0] + Math.cos(theta) * radius;
-                const y = prim.points[0][1] + Math.sin(theta) * radius;
-                polyPoints.push(to3D(x, y));
-            }
-
-            return (
-                <line key={prim.id}>
-                    <bufferGeometry>
-                        <bufferAttribute
-                            attach="attributes-position"
-                            count={polyPoints.length}
-                            array={new Float32Array(polyPoints.flatMap(v => [v.x, v.y, v.z]))}
-                            itemSize={3}
-                        />
-                    </bufferGeometry>
-                    <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
-                </line>
-            );
-        }
-
-        // Ellipse
-        if (prim.type === 'ellipse') {
-            if (points.length < 2) return null;
-            const startPt = prim.points[0];
-            const endPt = prim.points[1];
-            const xRadius = prim.properties?.xRadius || 10;
-            const yRadius = prim.properties?.yRadius || 5;
-            const segments = 64;
-            const ellipsePoints: THREE.Vector3[] = [];
-
-            // Simple ellipse approximation centered between start and end
-            const cx = (startPt[0] + endPt[0]) / 2;
-            const cy = (startPt[1] + endPt[1]) / 2;
-
-            for (let i = 0; i <= segments; i++) {
-                const theta = (i / segments) * Math.PI * 2;
-                const x = cx + Math.cos(theta) * xRadius;
-                const y = cy + Math.sin(theta) * yRadius;
-                ellipsePoints.push(to3D(x, y));
-            }
-
-            return (
-                <line key={prim.id}>
-                    <bufferGeometry>
-                        <bufferAttribute
-                            attach="attributes-position"
-                            count={ellipsePoints.length}
-                            array={new Float32Array(ellipsePoints.flatMap(v => [v.x, v.y, v.z]))}
-                            itemSize={3}
-                        />
-                    </bufferGeometry>
-                    <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
-                </line>
-            );
-        }
-
-        // Spline / smoothSpline
-        if (['spline', 'smoothSpline'].includes(prim.type)) {
-            if (points.length < 2) return null;
-            const curve = new THREE.CatmullRomCurve3(points);
-            const splinePoints = curve.getPoints(50);
-
-            return (
-                <group key={prim.id}>
-                    <line>
-                        <bufferGeometry>
-                            <bufferAttribute
-                                attach="attributes-position"
-                                count={splinePoints.length}
-                                array={new Float32Array(splinePoints.flatMap(v => [v.x, v.y, v.z]))}
-                                itemSize={3}
-                            />
-                        </bufferGeometry>
-                        <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
-                    </line>
-                    {isGhost && points.map((p, i) => (
-                        <mesh key={i} position={p}>
-                            <boxGeometry args={[0.3, 0.3, 0.3]} />
-                            <meshBasicMaterial color="#ff00ff" depthTest={false} />
-                        </mesh>
-                    ))}
-                </group>
-            );
-        }
-
-        // Arcs (threePointsArc, tangentArc, sagittaArc)
-        if (['threePointsArc', 'tangentArc', 'sagittaArc', 'arc'].includes(prim.type)) {
-            if (points.length < 2) return null;
-
-            if (points.length === 2) {
-                // Draw line for preview
-                return (
-                    <line key={prim.id}>
-                        <bufferGeometry>
-                            <bufferAttribute
-                                attach="attributes-position"
-                                count={2}
-                                array={new Float32Array([...points[0].toArray(), ...points[1].toArray()])}
-                                itemSize={3}
-                            />
-                        </bufferGeometry>
-                        <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
-                    </line>
-                );
-            }
-
-            // 3 points: use CatmullRom for smooth preview
-            const splineCurve = new THREE.CatmullRomCurve3([
-                points[0],
-                points.length > 2 ? points[2] : points[1], // via point
-                points[1]
-            ]);
-            const arcPoints = splineCurve.getPoints(20);
-
-            return (
-                <line key={prim.id}>
-                    <bufferGeometry>
-                        <bufferAttribute
-                            attach="attributes-position"
-                            count={arcPoints.length}
-                            array={new Float32Array(arcPoints.flatMap(v => [v.x, v.y, v.z]))}
-                            itemSize={3}
-                        />
-                    </bufferGeometry>
-                    <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
-                </line>
-            );
-        }
-
-        // Bezier curves
-        if (['bezier', 'quadraticBezier'].includes(prim.type)) {
-            if (points.length < 2) return null;
-            const start = points[0];
-            const end = points[1];
-            const ctrl = points.length > 2 ? points[2] :
-                new THREE.Vector3(
-                    (start.x + end.x) / 2 + (prim.properties?.ctrlY || 5),
-                    (start.y + end.y) / 2 + (prim.properties?.ctrlX || 5),
-                    (start.z + end.z) / 2
-                );
-
-            const curve = new THREE.QuadraticBezierCurve3(start, ctrl, end);
-            const bezierPoints = curve.getPoints(30);
-
-            return (
-                <group key={prim.id}>
-                    <line>
-                        <bufferGeometry>
-                            <bufferAttribute
-                                attach="attributes-position"
-                                count={bezierPoints.length}
-                                array={new Float32Array(bezierPoints.flatMap(v => [v.x, v.y, v.z]))}
-                                itemSize={3}
-                            />
-                        </bufferGeometry>
-                        <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
-                    </line>
-                    {/* Control point marker */}
-                    <mesh position={ctrl}>
-                        <sphereGeometry args={[0.3, 16, 16]} />
-                        <meshBasicMaterial color="#ff8800" depthTest={false} />
-                    </mesh>
-                </group>
-            );
-        }
-
-        // Cubic Bezier
-        if (prim.type === 'cubicBezier') {
-            if (points.length < 2) return null;
-            const start = points[0];
-            const end = points[1];
-            const props = prim.properties || {};
-            const ctrl1 = to3D(
-                prim.points[0][0] + (props.ctrlStartX || 3),
-                prim.points[0][1] + (props.ctrlStartY || 5)
-            );
-            const ctrl2 = to3D(
-                prim.points[1][0] - (props.ctrlEndX || 3),
-                prim.points[1][1] + (props.ctrlEndY || 5)
-            );
-
-            const curve = new THREE.CubicBezierCurve3(start, ctrl1, ctrl2, end);
-            const bezierPoints = curve.getPoints(30);
-
-            return (
-                <group key={prim.id}>
-                    <line>
-                        <bufferGeometry>
-                            <bufferAttribute
-                                attach="attributes-position"
-                                count={bezierPoints.length}
-                                array={new Float32Array(bezierPoints.flatMap(v => [v.x, v.y, v.z]))}
-                                itemSize={3}
-                            />
-                        </bufferGeometry>
-                        <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
-                    </line>
-                    {/* Control point markers */}
-                    <mesh position={ctrl1}>
-                        <sphereGeometry args={[0.25, 16, 16]} />
-                        <meshBasicMaterial color="#ff8800" depthTest={false} />
-                    </mesh>
-                    <mesh position={ctrl2}>
-                        <sphereGeometry args={[0.25, 16, 16]} />
-                        <meshBasicMaterial color="#ff8800" depthTest={false} />
-                    </mesh>
-                </group>
-            );
-        }
-
-        // Text (show as marker for now)
-        if (prim.type === 'text') {
-            const pos = points[0];
-            return (
-                <group key={prim.id}>
-                    <Html position={pos} center>
-                        <div className="text-white bg-slate-800/80 px-2 py-1 rounded text-xs">
-                            {prim.properties?.text || 'Text'}
-                        </div>
-                    </Html>
-                </group>
-            );
-        }
-
-        // Move pointer marker
-        if (prim.type === 'movePointer') {
-            const pos = points[0];
-            return (
-                <mesh key={prim.id} position={pos}>
-                    <ringGeometry args={[0.3, 0.5, 32]} />
-                    <meshBasicMaterial color="#00ff00" depthTest={false} side={THREE.DoubleSide} />
-                </mesh>
-            );
-        }
-
         return null;
     };
 
@@ -854,40 +447,8 @@ const SketchCanvas = () => {
             {/* Render Current Drawing Primitive */}
             {currentDrawingPrimitive && renderPrimitive(currentDrawingPrimitive, true)}
 
-            {/* Line Drawing Overlay - Visual feedback for line tool */}
-            {currentDrawingPrimitive &&
-                ['line', 'vline', 'hline', 'polarline', 'tangentline'].includes(currentDrawingPrimitive.type) &&
-                currentDrawingPrimitive.points.length >= 2 && (
-                    <LineAnnotation
-                        start={{ x: currentDrawingPrimitive.points[0][0], y: currentDrawingPrimitive.points[0][1] }}
-                        end={{ x: currentDrawingPrimitive.points[currentDrawingPrimitive.points.length - 1][0], y: currentDrawingPrimitive.points[currentDrawingPrimitive.points.length - 1][1] }}
-                        plane={sketchPlane!}
-                        lockedLength={lockedValues['length']}
-                        lockedAngle={lockedValues['angle']}
-                    />
-                )}
-
-            {/* Circle Drawing Overlay */}
-            {currentDrawingPrimitive &&
-                currentDrawingPrimitive.type === 'circle' &&
-                currentDrawingPrimitive.points.length >= 2 && (
-                    <CircleAnnotation
-                        center={{ x: currentDrawingPrimitive.points[0][0], y: currentDrawingPrimitive.points[0][1] }}
-                        edge={{ x: currentDrawingPrimitive.points[1][0], y: currentDrawingPrimitive.points[1][1] }}
-                        plane={sketchPlane!}
-                    />
-                )}
-
-            {/* Rectangle Drawing Overlay */}
-            {currentDrawingPrimitive &&
-                ['rectangle', 'roundedRectangle'].includes(currentDrawingPrimitive.type) &&
-                currentDrawingPrimitive.points.length >= 2 && (
-                    <RectangleAnnotation
-                        corner1={{ x: currentDrawingPrimitive.points[0][0], y: currentDrawingPrimitive.points[0][1] }}
-                        corner2={{ x: currentDrawingPrimitive.points[1][0], y: currentDrawingPrimitive.points[1][1] }}
-                        plane={sketchPlane!}
-                    />
-                )}
+            {/* Drawing Annotations - delegates to tool registry */}
+            {currentDrawingPrimitive && currentDrawingPrimitive.points.length >= 2 && renderAnnotation(currentDrawingPrimitive)}
 
             {/* Hover Cursor */}
             {hoverPoint && !showDialog && (
