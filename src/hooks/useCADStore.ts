@@ -10,10 +10,8 @@ import type { SnapPoint, SnappingEngine } from '../lib/snapping';
 import { PlanarGraph } from '../lib/sketch-graph/Graph';
 import { GeometryType, LineSegment, ArcSegment, Circle, arcFromThreePoints } from '../lib/sketch-graph/Geometry';
 
-const DEFAULT_CODE = `
-const main = () => {
-  const sphere = replicad.makeSphere(10);
-  return sphere;
+const DEFAULT_CODE = `const main = () => {
+  return;
 };`;
 
 const shapeRegistry = new Map<string, any>(); // Stores WASM objects
@@ -255,6 +253,7 @@ interface CADState {
   solveConstraints: () => SolveResult | null;
   clearSolver: () => void;
   setDraggingEntity: (id: EntityId | null) => void;
+  applyConstraintToSelection: (type: ConstraintType) => void;
   // Macros
   addSolverLineMacro: (p1: [number, number], p2: [number, number]) => { p1Id: EntityId, p2Id: EntityId, lineId: EntityId } | null;
   addSolverRectangleMacro: (p1: [number, number], p2: [number, number]) => { pointIds: EntityId[], lineIds: EntityId[] } | null;

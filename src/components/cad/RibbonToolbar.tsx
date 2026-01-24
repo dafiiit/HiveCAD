@@ -388,22 +388,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Quick access buttons for common ones */}
-            <ToolButton
-              icon={<AlignHorizontalSpaceAround className="w-5 h-5" />}
-              label="Horiz"
-              onClick={() => applyConstraintToSelection('horizontal')}
-            />
-            <ToolButton
-              icon={<AlignVerticalSpaceAround className="w-5 h-5" />}
-              label="Vert"
-              onClick={() => applyConstraintToSelection('vertical')}
-            />
-            <ToolButton
-              icon={<GitCommit className="w-5 h-5" />}
-              label="Coinc"
-              onClick={() => applyConstraintToSelection('coincident')}
-            />
+
           </ToolGroup>
 
           <ToolGroup label="INSERT">
