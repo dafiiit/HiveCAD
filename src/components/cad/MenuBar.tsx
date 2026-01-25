@@ -1,5 +1,4 @@
 import {
-  Save,
   FolderOpen,
   Undo2,
   Redo2,
@@ -8,10 +7,13 @@ import {
   HelpCircle,
   User,
   Bell,
-  Search
+  Search,
+  RefreshCw
 } from "lucide-react";
 import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
+import { CloudConnectionsDialog } from "@/components/ui/CloudConnectionsDialog";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -20,7 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useState } from "react";
+
 
 interface MenuBarProps {
   fileName: string;
@@ -48,10 +50,10 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
   } = useCADStore();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [cloudConnectionsOpen, setCloudConnectionsOpen] = useState(false);
 
   const handleSave = () => {
-    save();
-    toast.success("Project saved successfully");
+    setCloudConnectionsOpen(true);
   };
 
   const handleOpen = () => {
@@ -88,12 +90,29 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
     }
   };
 
+  // Shortcut handler for Ctrl+S
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        save(); // Keep Ctrl+S functionality
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [save]);
+
   const filteredObjects = objects.filter(obj =>
     obj.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
     <>
+      <CloudConnectionsDialog
+        open={cloudConnectionsOpen}
+        onOpenChange={setCloudConnectionsOpen}
+      />
+
       <div className="h-8 bg-background flex items-center justify-between px-2 border-b border-border text-xs">
         {/* Left section - App controls */}
         <div className="flex items-center gap-1">
@@ -107,9 +126,9 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           <button
             className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
             onClick={handleSave}
-            title="Save (Ctrl+S)"
+            title="Sync / Storage Connections"
           >
-            <Save className="w-4 h-4" />
+            <RefreshCw className={`w-4 h-4 ${!isSaved ? 'text-yellow-500' : ''}`} />
           </button>
 
           <button

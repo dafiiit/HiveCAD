@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ConstraintSolver, EntityId, SketchEntity, SketchConstraint, ConstraintType, SolveResult } from '../lib/solver';
 import { SnapPoint, SnappingEngine } from '../lib/snapping';
+import { AssemblyState, AssemblyComponent, AssemblyMate, ComponentId, MateId, MateType } from '../lib/assembly/types';
 
 export type ToolType =
     | 'select' | 'pan' | 'orbit'
@@ -268,4 +269,19 @@ export interface SnappingSlice {
     setSnappingEngine: (engine: SnappingEngine) => void;
 }
 
-export type CADState = ObjectSlice & ViewSlice & VersioningSlice & SolverSlice & SketchSlice & SnappingSlice;
+export interface AssemblySlice {
+    assemblyState: AssemblyState;
+
+    addComponent: (partId: string, name?: string) => ComponentId;
+    removeComponent: (id: ComponentId) => void;
+    updateComponentTransform: (id: ComponentId, transform: THREE.Matrix4) => void;
+    setComponentFixed: (id: ComponentId, fixed: boolean) => void;
+
+    addMate: (mate: Omit<AssemblyMate, 'id'>) => MateId;
+    removeMate: (id: MateId) => void;
+    updateMate: (id: MateId, updates: Partial<AssemblyMate>) => void;
+
+    solveAssembly: () => void;
+}
+
+export type CADState = ObjectSlice & ViewSlice & VersioningSlice & SolverSlice & SketchSlice & SnappingSlice & AssemblySlice;

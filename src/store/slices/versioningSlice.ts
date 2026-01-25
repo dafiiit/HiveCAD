@@ -38,9 +38,45 @@ export const createVersioningSlice: StateCreator<
     stepBack: () => { },
     stepForward: () => { },
 
-    save: () => set({ isSaved: true }),
+    save: async () => {
+        const state = get();
+        // Prevent concurrent saves
+        /* if (state.isSaving) return; */
+
+        try {
+            // We'll need to update the slice to track saving state properly later
+            // For now, let's just use the adapter
+            const { StorageManager } = await import('@/lib/storage/StorageManager');
+            const adapter = StorageManager.getInstance().currentAdapter;
+
+            toast.loading(`Saving to ${adapter.name}...`, { id: 'save-toast' });
+
+            // Prepare data to save - this would ideally be more structured
+            const projectData = {
+                fileName: state.fileName,
+                objects: state.objects,
+                code: state.code,
+                versions: state.versions,
+                branches: state.branches,
+                currentBranch: state.currentBranch,
+                currentVersionId: state.currentVersionId
+            };
+
+            await adapter.save(state.fileName, projectData);
+
+            set({ isSaved: true });
+            toast.success(`Saved to ${adapter.name}`, { id: 'save-toast' });
+        } catch (error) {
+            console.error("Save failed:", error);
+            toast.error(`Save failed: ${error}`, { id: 'save-toast' });
+        }
+    },
     saveAs: (name) => set({ fileName: name, isSaved: true }),
-    open: () => { },
+    open: async () => {
+        const { StorageManager } = await import('@/lib/storage/StorageManager');
+        const adapter = StorageManager.getInstance().currentAdapter;
+        toast.info(`Open from ${adapter.name} not fully implemented yet`);
+    },
     reset: () => {
         // This is tricky because it affects other slices
         // But since createObjectSlice sets default code, maybe we just reset objects/code
