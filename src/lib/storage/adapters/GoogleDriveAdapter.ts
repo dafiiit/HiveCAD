@@ -37,4 +37,16 @@ export class GoogleDriveAdapter implements StorageAdapter {
         }
         return null;
     }
+
+    async delete(_projectId: string): Promise<void> {
+        // Implement delete
+    }
+
+    async rename(_projectId: string, _newName: string): Promise<void> {
+        // Implement rename
+    }
+
+    async updateMetadata(_projectId: string, _updates: any): Promise<void> {
+        // Implement updateMetadata
+    }
 }

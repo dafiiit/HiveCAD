@@ -15,7 +15,7 @@ export interface ProjectData {
     files: any;   // Using any for now to match current structure
     version: string;
     lastModified: number;
-    labels?: string[];
+    tags?: string[];
     deletedAt?: number;
     sha?: string;
     lastOpenedAt?: number;
@@ -36,7 +36,7 @@ export interface StorageAdapter {
     load(projectId: string, owner?: string, repo?: string): Promise<any>;
     delete(projectId: string): Promise<void>;
     rename(projectId: string, newName: string): Promise<void>;
-    updateMetadata(projectId: string, updates: Partial<Pick<ProjectData, 'labels' | 'deletedAt' | 'name' | 'lastOpenedAt'>>): Promise<void>;
+    updateMetadata(projectId: string, updates: Partial<Pick<ProjectData, 'tags' | 'deletedAt' | 'name' | 'lastOpenedAt'>>): Promise<void>;
 
     // Discovery
     listProjects?(): Promise<ProjectData[]>;

@@ -39,10 +39,11 @@ export function ProjectDashboard() {
     const [userProjects, setUserProjects] = useState<ProjectData[]>([]);
     const [loading, setLoading] = useState(false);
     const [tags, setTags] = useState<{ name: string, color: string }[]>([]);
-    const [activeLabel, setActiveLabel] = useState<string | null>(null);
+    const [activeTags, setActiveTags] = useState<string[]>([]);
     const [contextMenuProject, setContextMenuProject] = useState<string | null>(null);
     const [showRenameDialog, setShowRenameDialog] = useState<ProjectData | null>(null);
-    const [showLabelDialog, setShowLabelDialog] = useState<ProjectData | null>(null);
+    const [renameInput, setRenameInput] = useState("");
+    const [showTagDialog, setShowTagDialog] = useState<ProjectData | null>(null);
     const [tagNameInput, setTagNameInput] = useState("");
     const [tagColorInput, setTagColorInput] = useState("#fbbf24");
     const [showSettingsMenu, setShowSettingsMenu] = useState(false);
@@ -159,27 +160,29 @@ export function ProjectDashboard() {
     };
 
     const handleRenameProject = async (projectId: string, newName: string) => {
+        if (!newName.trim()) return;
         try {
             const { StorageManager } = await import('@/lib/storage/StorageManager');
             const adapter = StorageManager.getInstance().currentAdapter;
-            await adapter.rename(projectId, newName);
+            await adapter.rename(projectId, newName.trim());
             toast.success("Project renamed successfully");
             setShowRenameDialog(null);
+            setRenameInput("");
             await refreshProjects();
         } catch (error) {
             toast.error("Failed to rename project");
         }
     };
 
-    const handleUpdateLabels = async (projectId: string, labels: string[]) => {
+    const handleUpdateTags = async (projectId: string, tags: string[]) => {
         try {
             const { StorageManager } = await import('@/lib/storage/StorageManager');
             const adapter = StorageManager.getInstance().currentAdapter;
-            await adapter.updateMetadata(projectId, { labels });
-            toast.success("Labels updated");
+            await adapter.updateMetadata(projectId, { tags });
+            toast.success("Tags updated");
             await refreshProjects();
         } catch (error) {
-            toast.error("Failed to update labels");
+            toast.error("Failed to update tags");
         }
     };
 
@@ -197,6 +200,34 @@ export function ProjectDashboard() {
             }
         } catch (error) {
             toast.error("Failed to create tag");
+        }
+    };
+
+    const handleDeleteTag = async (tagName: string) => {
+        const newTags = tags.filter(t => t.name !== tagName);
+        try {
+            const { StorageManager } = await import('@/lib/storage/StorageManager');
+            const adapter = StorageManager.getInstance().currentAdapter;
+            if (adapter.saveTags) {
+                await adapter.saveTags(newTags);
+                setTags(newTags);
+
+                // Update all projects to remove this tag
+                const projectsToUpdate = userProjects.filter(p => p.tags?.includes(tagName));
+                for (const project of projectsToUpdate) {
+                    const updatedTags = project.tags?.filter(t => t !== tagName) || [];
+                    await adapter.updateMetadata(project.id, { tags: updatedTags });
+                }
+
+                if (activeTags.includes(tagName)) {
+                    setActiveTags(prev => prev.filter(t => t !== tagName));
+                }
+
+                toast.success(`Tag "${tagName}" deleted`);
+                await refreshProjects();
+            }
+        } catch (error) {
+            toast.error("Failed to delete tag");
         }
     };
 
@@ -286,7 +317,7 @@ export function ProjectDashboard() {
         { icon: User, label: 'Created by me' },
         { icon: Star, label: 'Starred' },
         { icon: Users, label: 'Shared with me' },
-        { icon: Tag, label: 'Labels' },
+        { icon: Tag, label: 'Tags' },
         { icon: Globe, label: 'Public' },
         { icon: Trash2, label: 'Trash' },
     ];
@@ -391,9 +422,9 @@ export function ProjectDashboard() {
                                         key={item.label}
                                         onClick={() => {
                                             setActiveNav(item.label);
-                                            setActiveLabel(null);
+                                            setActiveTags([]);
                                         }}
-                                        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${activeNav === item.label && !activeLabel
+                                        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${activeNav === item.label && activeTags.length === 0
                                             ? 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.2)]'
                                             : 'bg-zinc-800/30 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'
                                             }`}
@@ -404,45 +435,37 @@ export function ProjectDashboard() {
                                 ))}
                             </div>
 
-                            {activeNav === 'Labels' && (
+                            {activeNav === 'Tags' && (
                                 <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-800/50 mt-4">
-                                    {tags.map(tag => (
-                                        <button
-                                            key={tag.name}
-                                            onClick={() => setActiveLabel(tag.name)}
-                                            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black transition-all border ${activeLabel === tag.name
-                                                ? 'bg-white/10 border-white text-white shadow-lg'
-                                                : 'bg-zinc-800/30 border-zinc-800 text-zinc-500 hover:text-zinc-300'
-                                                }`}
-                                            style={{ borderColor: activeLabel === tag.name ? tag.color : undefined }}
-                                        >
-                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: tag.color }} />
-                                            {tag.name.toUpperCase()}
-                                        </button>
-                                    ))}
-                                    <div className="flex items-center gap-1 ml-2">
-                                        <input
-                                            value={tagNameInput}
-                                            onChange={e => setTagNameInput(e.target.value)}
-                                            placeholder="New Tag..."
-                                            className="bg-transparent border-b border-zinc-700 text-[10px] w-20 px-1 focus:outline-none focus:border-primary"
-                                        />
-                                        <input
-                                            type="color"
-                                            value={tagColorInput}
-                                            onChange={e => setTagColorInput(e.target.value)}
-                                            className="w-4 h-4 bg-transparent border-none cursor-pointer"
-                                        />
-                                        <button onClick={handleCreateTag} className="text-primary hover:text-white transition-colors">
-                                            <Plus className="w-3 h-3" />
-                                        </button>
-                                    </div>
+                                    {tags.map(tag => {
+                                        const isSelected = activeTags.includes(tag.name);
+                                        return (
+                                            <button
+                                                key={tag.name}
+                                                onClick={() => {
+                                                    setActiveTags(prev =>
+                                                        isSelected
+                                                            ? prev.filter(t => t !== tag.name)
+                                                            : [...prev, tag.name]
+                                                    );
+                                                }}
+                                                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black transition-all border ${isSelected
+                                                    ? 'bg-white/10 border-white text-white shadow-lg'
+                                                    : 'bg-zinc-800/30 border-zinc-800 text-zinc-500 hover:text-zinc-300'
+                                                    }`}
+                                                style={{ borderColor: isSelected ? tag.color : undefined }}
+                                            >
+                                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                                                {tag.name.toUpperCase()}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
 
                         {/* Recent Section - Filtered to non-deleted */}
-                        {activeNav === 'Created by me' && !activeLabel && searchQuery === '' && (
+                        {activeNav === 'Created by me' && activeTags.length === 0 && searchQuery === '' && (
                             <section>
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-semibold flex items-center gap-2 text-zinc-400 uppercase tracking-wider">
@@ -487,8 +510,14 @@ export function ProjectDashboard() {
                                                 onAction={() => project.type === 'user' ? setContextMenuProject(project.id === contextMenuProject ? null : project.id) : null}
                                                 showMenu={contextMenuProject === project.id}
                                                 onDelete={() => handleDeleteProject(project.id)}
-                                                onRename={() => setShowRenameDialog(project)}
-                                                onManageLabels={() => setShowLabelDialog(project)}
+                                                onRename={() => {
+                                                    setShowRenameDialog(project);
+                                                    setRenameInput(project.name);
+                                                }}
+                                                onManageTags={() => {
+                                                    setShowTagDialog(project);
+                                                    setTagNameInput(""); // Reset creation input in dialog
+                                                }}
                                                 tags={tags}
                                                 projectThumbnails={projectThumbnails}
                                             />
@@ -501,7 +530,7 @@ export function ProjectDashboard() {
                         {/* Filtered Grid Section */}
                         <section>
                             <h3 className="text-sm font-semibold flex items-center gap-2 mb-4 text-zinc-400 uppercase tracking-wider">
-                                <ListIcon className="w-4 h-4" /> {activeLabel ? `LABEL: ${activeLabel}` : activeNav}
+                                <ListIcon className="w-4 h-4" /> {activeTags.length > 0 ? `TAGS: ${activeTags.join(' + ')}` : activeNav}
                             </h3>
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                                 {!loading && [
@@ -517,14 +546,17 @@ export function ProjectDashboard() {
                                         if (activeNav === 'Trash') return !!isDeleted;
                                         if (isDeleted) return false;
 
-                                        // Ensure p.labels is handled for both user and example projects
-                                        const projectLabels = (p as any).labels || [];
-                                        if (activeLabel) return projectLabels.includes(activeLabel);
+                                        // Ensure p.tags is handled for both user and example projects
+                                        const projectTags = (p as any).tags || [];
+                                        if (activeTags.length > 0) {
+                                            // Intersection: project must have ALL select tags
+                                            return activeTags.every(t => projectTags.includes(t));
+                                        }
                                         const isStarred = starredProjects.includes(p.name);
                                         if (activeNav === 'Starred') return isStarred;
                                         if (activeNav === 'Created by me') return p.type === 'user' || p.ownerId === 'Example Project';
                                         if (activeNav === 'Shared with me') return false;
-                                        if (activeNav === 'Labels') return (p.type === 'user' || p.ownerId === 'Example Project') && projectLabels.length > 0;
+                                        if (activeNav === 'Tags') return (p.type === 'user' || p.ownerId === 'Example Project') && projectTags.length > 0;
                                         if (activeNav === 'Public') return true;
                                         return true;
                                     })
@@ -538,8 +570,14 @@ export function ProjectDashboard() {
                                             onAction={() => setContextMenuProject(project.id === contextMenuProject ? null : project.id)}
                                             showMenu={contextMenuProject === project.id}
                                             onDelete={() => handleDeleteProject(project.id)}
-                                            onRename={() => setShowRenameDialog(project)}
-                                            onManageLabels={() => setShowLabelDialog(project)}
+                                            onRename={() => {
+                                                setShowRenameDialog(project);
+                                                setRenameInput(project.name);
+                                            }}
+                                            onManageTags={() => {
+                                                setShowTagDialog(project);
+                                                setTagNameInput(""); // Reset creation input in dialog
+                                            }}
                                             tags={tags}
                                             projectThumbnails={projectThumbnails}
                                         />
@@ -609,9 +647,10 @@ export function ProjectDashboard() {
                     <div className="bg-[#2a2a2a] border border-zinc-800 rounded-xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
                         <h4 className="text-xl font-bold text-white mb-4">Rename Project</h4>
                         <input
-                            defaultValue={showRenameDialog.name}
+                            value={renameInput}
+                            onChange={(e) => setRenameInput(e.target.value)}
                             onKeyDown={e => {
-                                if (e.key === 'Enter') handleRenameProject(showRenameDialog.id, (e.target as HTMLInputElement).value);
+                                if (e.key === 'Enter') handleRenameProject(showRenameDialog.id, renameInput);
                                 if (e.key === 'Escape') setShowRenameDialog(null);
                             }}
                             autoFocus
@@ -619,7 +658,7 @@ export function ProjectDashboard() {
                         />
                         <div className="flex justify-end gap-3">
                             <Button variant="ghost" onClick={() => setShowRenameDialog(null)}>Cancel</Button>
-                            <Button onClick={() => handleRenameProject(showRenameDialog.id, (document.querySelector('input[autoFocus]') as HTMLInputElement).value)}>
+                            <Button onClick={() => handleRenameProject(showRenameDialog.id, renameInput)}>
                                 Save Changes
                             </Button>
                         </div>
@@ -627,42 +666,91 @@ export function ProjectDashboard() {
                 </div>
             )}
 
-            {showLabelDialog && (
+            {showTagDialog && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#2a2a2a] border border-zinc-800 rounded-xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
-                        <h4 className="text-xl font-bold text-white mb-1">Manage Labels</h4>
-                        <p className="text-zinc-500 text-xs mb-6 font-medium uppercase tracking-widest">For: {showLabelDialog.name}</p>
-                        <div className="grid grid-cols-2 gap-2 mb-8 max-h-[40vh] overflow-y-auto pr-2">
-                            {tags.map(tag => {
-                                const isSelected = showLabelDialog.labels?.includes(tag.name);
-                                return (
-                                    <button
-                                        key={tag.name}
-                                        onClick={() => {
-                                            const currentLabels = showLabelDialog.labels || [];
-                                            const newLabels = isSelected
-                                                ? currentLabels.filter(l => l !== tag.name)
-                                                : [...currentLabels, tag.name];
-                                            setShowLabelDialog({ ...showLabelDialog, labels: newLabels });
-                                        }}
-                                        className={`flex items-center gap-3 px-4 py-3 rounded-lg border text-sm font-bold transition-all ${isSelected
-                                            ? 'bg-zinc-800 border-primary text-white'
-                                            : 'bg-[#1a1a1a] border-zinc-800 text-zinc-500 hover:border-zinc-700'
-                                            }`}
+                    <div className="bg-[#2a2a2a] border border-zinc-800 rounded-xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+                        <h4 className="text-xl font-bold text-white mb-1">Manage Tags</h4>
+                        <p className="text-zinc-500 text-xs mb-6 font-medium uppercase tracking-widest">For: {showTagDialog.name}</p>
+
+                        <div className="flex-1 overflow-y-auto space-y-6 pr-2 custom-scrollbar">
+                            {/* Create New Tag Section */}
+                            <div className="bg-[#1a1a1a] p-4 rounded-xl border border-zinc-800/50 space-y-4">
+                                <h5 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Create New Tag</h5>
+                                <div className="flex gap-2">
+                                    <div className="flex-1 relative">
+                                        <input
+                                            value={tagNameInput}
+                                            onChange={e => setTagNameInput(e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && handleCreateTag()}
+                                            placeholder="Tag name..."
+                                            className="w-full bg-[#222] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:ring-1 focus:ring-primary outline-none"
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-[#222] border border-zinc-800 rounded-lg px-2">
+                                        <input
+                                            type="color"
+                                            value={tagColorInput}
+                                            onChange={e => setTagColorInput(e.target.value)}
+                                            className="w-6 h-6 bg-transparent border-none cursor-pointer"
+                                        />
+                                    </div>
+                                    <Button
+                                        onClick={handleCreateTag}
+                                        className="h-9 w-9 p-0 bg-primary/20 hover:bg-primary text-primary hover:text-white"
                                     >
-                                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: tag.color }} />
-                                        <span className="truncate uppercase tracking-tight">{tag.name}</span>
-                                    </button>
-                                );
-                            })}
+                                        <Plus className="w-5 h-5" />
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {/* Existing Tags List */}
+                            <div className="space-y-3">
+                                <h5 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Select Tags</h5>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {tags.map(tag => {
+                                        const isSelected = showTagDialog.tags?.includes(tag.name);
+                                        return (
+                                            <div key={tag.name} className="relative group/tag">
+                                                <button
+                                                    onClick={() => {
+                                                        const currentTags = showTagDialog.tags || [];
+                                                        const newTags = isSelected
+                                                            ? currentTags.filter(l => l !== tag.name)
+                                                            : [...currentTags, tag.name];
+                                                        setShowTagDialog({ ...showTagDialog, tags: newTags });
+                                                    }}
+                                                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg border text-sm font-bold transition-all ${isSelected
+                                                        ? 'bg-zinc-800/50 border-primary text-white shadow-[0_0_15px_rgba(var(--primary),0.1)]'
+                                                        : 'bg-[#1a1a1a] border-zinc-800 text-zinc-500 hover:border-zinc-700'
+                                                        }`}
+                                                >
+                                                    <div className="w-3 h-3 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: tag.color }} />
+                                                    <span className="truncate uppercase tracking-tight">{tag.name}</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteTag(tag.name)}
+                                                    className="absolute top-1 right-1 p-1 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-md opacity-0 group-hover/tag:opacity-100 transition-all z-10"
+                                                    title="Delete Tag"
+                                                >
+                                                    <Trash2 className="w-3 h-3" />
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
                         </div>
-                        <div className="flex justify-end gap-3">
-                            <Button variant="ghost" onClick={() => setShowLabelDialog(null)}>Cancel</Button>
-                            <Button onClick={() => {
-                                handleUpdateLabels(showLabelDialog.id, showLabelDialog.labels || []);
-                                setShowLabelDialog(null);
-                            }}>
-                                Apply Labels
+
+                        <div className="flex justify-end gap-3 pt-6 border-t border-zinc-800 mt-6 bg-[#2a2a2a]">
+                            <Button variant="ghost" onClick={() => setShowTagDialog(null)}>Cancel</Button>
+                            <Button
+                                className="bg-primary hover:bg-primary/90 text-white font-bold px-6"
+                                onClick={() => {
+                                    handleUpdateTags(showTagDialog.id, showTagDialog.tags || []);
+                                    setShowTagDialog(null);
+                                }}
+                            >
+                                Apply Changes
                             </Button>
                         </div>
                     </div>
@@ -718,7 +806,7 @@ export function ProjectDashboard() {
     );
 }
 
-function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showMenu, onDelete, onRename, onManageLabels, tags, projectThumbnails }: any) {
+function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showMenu, onDelete, onRename, onManageTags, tags, projectThumbnails }: any) {
     const isExample = project.type === 'example';
     const thumbnail = project.thumbnail || projectThumbnails[project.name];
     // Ensure project.deletedAt is handled for both user and example projects
@@ -738,15 +826,15 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
 
                 {/* Badges */}
                 <div className="absolute top-2 left-2 flex flex-wrap gap-1 max-w-[70%]">
-                    {/* Ensure project.labels is handled for both user and example projects */}
-                    {(project.labels || []).map((label: string) => {
-                        const tag = tags.find((t: any) => t.name === label);
+                    {/* Ensure project.tags is handled for both user and example projects */}
+                    {(project.tags || []).map((tagName: string) => {
+                        const tag = tags.find((t: any) => t.name === tagName);
                         return (
                             <div
-                                key={label}
+                                key={tagName}
                                 className="w-2 h-2 rounded-full border border-black/50 shadow-sm"
                                 style={{ backgroundColor: tag?.color || '#ccc' }}
-                                title={label}
+                                title={tagName}
                             />
                         );
                     })}
@@ -790,8 +878,8 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
                         <button onClick={(e) => { e.stopPropagation(); onRename(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3">
                             <Info className="w-3.5 h-3.5" /> RENAME PROJECT
                         </button>
-                        <button onClick={(e) => { e.stopPropagation(); onManageLabels(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3">
-                            <Tag className="w-3.5 h-3.5 text-primary" /> MANAGE LABELS
+                        <button onClick={(e) => { e.stopPropagation(); onManageTags(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3">
+                            <Tag className="w-3.5 h-3.5 text-primary" /> MANAGE TAGS
                         </button>
                         <div className="h-px bg-zinc-800 my-1.5" />
                         <button onClick={(e) => { e.stopPropagation(); onDelete(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 flex items-center gap-3">

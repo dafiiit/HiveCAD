@@ -39,4 +39,22 @@ export class PublicAdapter implements StorageAdapter {
         const data = localStorage.getItem(`hivecad_public_${projectId}`);
         return data ? JSON.parse(data) : null;
     }
+
+    async delete(projectId: string): Promise<void> {
+        localStorage.removeItem(`hivecad_public_${projectId}`);
+    }
+
+    async rename(projectId: string, newName: string): Promise<void> {
+        const data = await this.load(projectId);
+        if (data) {
+            await this.save(projectId, { ...data, name: newName });
+        }
+    }
+
+    async updateMetadata(projectId: string, updates: any): Promise<void> {
+        const data = await this.load(projectId);
+        if (data) {
+            await this.save(projectId, { ...data, ...updates });
+        }
+    }
 }

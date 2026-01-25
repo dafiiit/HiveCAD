@@ -141,7 +141,7 @@ export class GitHubAdapter implements StorageAdapter {
             files: data.files || data,
             version: data.version || '1.0.0',
             lastModified: Date.now(),
-            labels: data.labels || [],
+            tags: data.tags || [],
             deletedAt: data.deletedAt,
             thumbnail: data.thumbnail,
         };
@@ -245,7 +245,7 @@ export class GitHubAdapter implements StorageAdapter {
         await this.updateMetadata(projectId, { name: newName });
     }
 
-    async updateMetadata(projectId: string, updates: Partial<Pick<ProjectData, 'labels' | 'deletedAt' | 'name' | 'lastOpenedAt'>>): Promise<void> {
+    async updateMetadata(projectId: string, updates: Partial<Pick<ProjectData, 'tags' | 'deletedAt' | 'name' | 'lastOpenedAt'>>): Promise<void> {
         const data = await this.load(projectId);
         if (!data) throw new Error('Project not found');
 
