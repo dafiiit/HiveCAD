@@ -78,6 +78,10 @@ const SketchCanvas = () => {
     const [pendingStartPoint, setPendingStartPoint] = useState<[number, number] | null>(null);
     const [dialogParams, setDialogParams] = useState<Record<string, any>>({});
 
+    // Drag detection state
+    const dragStartRef = useRef<{ x: number, y: number, time: number } | null>(null);
+    const IS_CLICK_THRESHOLD = 5; // Pixels
+
     // Initialize Snapping Engine
     useEffect(() => {
         if (!snappingEngine) {
@@ -277,8 +281,36 @@ const SketchCanvas = () => {
         return closestEntityId;
     };
 
+
     const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
+        // Record potential start of interaction
+        if (e.button === 0) {
+            dragStartRef.current = {
+                x: e.clientX,
+                y: e.clientY,
+                time: Date.now()
+            };
+        }
+    };
+
+    const handlePointerUp = (e: ThreeEvent<PointerEvent>) => {
         if (e.button !== 0 || !hoverPoint || showDialog) return;
+
+        // Drag Check: If moved too much, it's a view drag (orbit/pan), not a click
+        if (dragStartRef.current) {
+            const dx = e.clientX - dragStartRef.current.x;
+            const dy = e.clientY - dragStartRef.current.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            // Clear ref
+            dragStartRef.current = null;
+
+            if (dist > IS_CLICK_THRESHOLD) {
+                // It was a drag, ignore as click
+                return;
+            }
+        }
+
         e.stopPropagation();
 
         const p2d = hoverPoint;
@@ -610,6 +642,7 @@ const SketchCanvas = () => {
                 visible={false}
                 onPointerMove={handlePointerMove}
                 onPointerDown={handlePointerDown}
+                onPointerUp={handlePointerUp}
                 onDoubleClick={handleDoubleClick}
                 rotation={planeRotation}
                 position={[0, 0, 0]}

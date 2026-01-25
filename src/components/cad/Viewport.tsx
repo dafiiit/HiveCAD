@@ -100,8 +100,32 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
   const isSketch = object.type === 'sketch';
   const isSelected = selectedIds.has(object.id);
 
-  const handleClick = (e: any) => {
+  const dragStartRef = useRef<{ x: number, y: number } | null>(null);
+  const IS_CLICK_THRESHOLD = 5;
+
+  const handlePointerDown = (e: any) => {
+    // Record start position
+    if (e.button === 0) {
+      dragStartRef.current = {
+        x: e.clientX,
+        y: e.clientY
+      };
+    }
+  };
+
+  const handlePointerUp = (e: any) => {
     e.stopPropagation();
+
+    // Check click validity
+    if (dragStartRef.current) {
+      const dx = e.clientX - dragStartRef.current.x;
+      const dy = e.clientY - dragStartRef.current.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      dragStartRef.current = null;
+
+      if (dist > IS_CLICK_THRESHOLD) return;
+    }
+
     // Check if shift is held for multi-select
     const multiSelect = e.nativeEvent?.shiftKey || false;
     selectObject(object.id, multiSelect);
@@ -121,7 +145,8 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
       {object.geometry && (
         <mesh
           geometry={object.geometry}
-          onClick={handleClick}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
           onPointerOver={handlePointerOver}
           onPointerOut={handlePointerOut}
         >
@@ -156,7 +181,7 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
 // Camera positions are in Y-up (Three.js) space, content is rotated to Z-up
 const CameraController = ({ controlsRef }: { controlsRef: React.RefObject<ArcballControlsImpl | null> }) => {
   const { camera } = useThree();
-  const { sketchPlane, isSketchMode } = useCADStore();
+  const { sketchPlane, isSketchMode, sketchOptions } = useCADStore();
   const lastPlaneRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -164,31 +189,39 @@ const CameraController = ({ controlsRef }: { controlsRef: React.RefObject<Arcbal
     if (!isSketchMode || !sketchPlane || sketchPlane === lastPlaneRef.current) return;
     lastPlaneRef.current = sketchPlane;
 
+    if (!sketchOptions.lookAt) return;
+
     const controls = controlsRef.current;
     if (!controls) return;
-
-    // Disable controls while we reposition
-    const wasEnabled = controls.enabled;
-    controls.enabled = false;
 
     // Position camera in Y-up space to view Z-up planes (content is rotated)
     // After Z_UP_ROTATION: XY (Z-up ground) becomes XZ (Y-up ground)
     const dist = 100;
+
+    // We need to update the camera position AND the target
+    // controls.reset() resets to default target (0,0,0) and default camera pos? No, to initial.
+    // We want to force a specific view.
+
     if (sketchPlane === 'XY') {
       // XY in Z-up is the ground plane -> look from above (Y+ in Y-up)
       camera.position.set(0, dist, 0);
+      camera.up.set(0, 0, -1); // Rotate so "Top" is readable
     } else if (sketchPlane === 'XZ') {
       // XZ in Z-up is front plane -> after rotation becomes XY in Y-up -> look from Z+
       camera.position.set(0, 0, dist);
+      camera.up.set(0, 1, 0);
     } else if (sketchPlane === 'YZ') {
       // YZ in Z-up is right plane -> look from X+
       camera.position.set(dist, 0, 0);
+      camera.up.set(0, 1, 0);
     }
 
-    // Reset controls to capture new camera state
-    controls.reset();
-    controls.enabled = wasEnabled;
-  }, [isSketchMode, sketchPlane, controlsRef, camera]);
+    // Ensure we are looking at the center
+    camera.lookAt(0, 0, 0);
+    controls.target.set(0, 0, 0);
+    controls.update();
+
+  }, [isSketchMode, sketchPlane, controlsRef, camera, sketchOptions.lookAt]);
 
   // Reset tracking when exiting sketch mode
   useEffect(() => {

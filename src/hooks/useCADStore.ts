@@ -312,6 +312,11 @@ interface CADState {
   // Boolean Operations
   executeOperation: (type: 'join' | 'cut' | 'intersect') => void;
 
+  // Sketch Options
+  sketchOptions: {
+    lookAt: boolean;
+  };
+  setSketchOption: (key: 'lookAt', value: boolean) => void;
   // Actions - Versioning
   createVersion: (message: string) => void;
   createBranch: (branchName: string, fromVersionId?: string) => void;
@@ -628,6 +633,14 @@ export const useCADStore = create<CADState>((set, get) => ({
 
   setCameraQuaternion: (quaternion) => set({ cameraQuaternion: quaternion }),
   toggleFullscreen: () => set(state => ({ isFullscreen: !state.isFullscreen })),
+
+  // Sketch Options
+  sketchOptions: {
+    lookAt: true,
+  },
+  setSketchOption: (key, value) => set(state => ({
+    sketchOptions: { ...state.sketchOptions, [key]: value }
+  })),
 
   // Sketch Actions
   setSketchPlane: (plane) => set({ sketchPlane: plane, sketchStep: 'drawing' }),

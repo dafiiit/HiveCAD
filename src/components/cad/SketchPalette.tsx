@@ -36,12 +36,24 @@ const OptionRow = ({ label, checked, onChange, icon }: OptionRowProps) => (
 );
 
 const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
-  const { exitSketchMode, finishSketch, activeTool, setActiveTool, toggleGrid, gridVisible, sketchPlane, setSketchPlane, sketchStep } = useCADStore();
+  const {
+    exitSketchMode,
+    finishSketch,
+    activeTool,
+    setActiveTool,
+    toggleGrid,
+    gridVisible,
+    sketchPlane,
+    setSketchPlane,
+    sketchStep,
+    sketchOptions,
+    setSketchOption
+  } = useCADStore();
 
   const [optionsExpanded, setOptionsExpanded] = useState(true);
   const [planeDropdownOpen, setPlaneDropdownOpen] = useState(false);
   const [options, setOptions] = useState({
-    lookAt: true,
+    // lookAt moved to global store
     sketchGrid: true,
     snap: false,
     slice: true,
@@ -56,7 +68,13 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
 
   if (!isVisible) return null;
 
-  const updateOption = (key: keyof typeof options) => (checked: boolean) => {
+  const updateOption = (key: string) => (checked: boolean) => {
+    if (key === 'lookAt') {
+      setSketchOption('lookAt', checked);
+      toast(`lookAt: ${checked ? 'enabled' : 'disabled'}`);
+      return;
+    }
+
     setOptions(prev => ({ ...prev, [key]: checked }));
 
     // Handle specific options
@@ -209,7 +227,7 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
 
               <OptionRow
                 label="Look At"
-                checked={options.lookAt}
+                checked={sketchOptions.lookAt}
                 onChange={updateOption("lookAt")}
               />
               <OptionRow
