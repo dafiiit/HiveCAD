@@ -318,17 +318,22 @@ const ExtrusionPreview = () => {
   const sourceObject = objects.find(obj => obj.id === selectedShapeId);
   if (!sourceObject || !sourceObject.geometry) return null;
 
+  console.log('[ExtrusionPreview] Source:', sourceObject.id, 'Rotation:', sourceObject.rotation);
+
   // For the preview, we'll create a simple extrusion visualization
   // by displaying a scaled version of the original geometry offset along Y axis
   // In a full implementation, this would use replicad to generate actual preview geometry
 
   return (
-    <group position={sourceObject.position}>
-      {/* Preview mesh - semi-transparent */}
+    <group position={sourceObject.position} rotation={sourceObject.rotation}>
+      {/* Preview mesh - semi-transparent
+          Note: For flat 2D shapes (Z=0), scaling Z won't create volume, 
+          but it will correctly position the "top" due to the position offset. 
+      */}
       <mesh
         geometry={sourceObject.geometry}
-        position={[0, distance / 2, 0]}
-        scale={[1, distance / 2, 1]}
+        position={[0, 0, distance / 2]}
+        scale={[1, 1, distance / 2]}
       >
         <meshStandardMaterial
           color="#80c0ff"
@@ -342,7 +347,7 @@ const ExtrusionPreview = () => {
       {/* Top cap indicator */}
       <mesh
         geometry={sourceObject.geometry}
-        position={[0, distance, 0]}
+        position={[0, 0, distance]}
       >
         <meshStandardMaterial
           color="#80c0ff"
@@ -353,21 +358,26 @@ const ExtrusionPreview = () => {
         />
       </mesh>
 
-      {/* Direction arrow / indicator line */}
+      {/* Direction arrow / indicator line - Along Z (Normal) */}
       <line>
         <bufferGeometry>
           <bufferAttribute
             attach="attributes-position"
             count={2}
-            array={new Float32Array([0, 0, 0, 0, distance, 0])}
+            array={new Float32Array([0, 0, 0, 0, 0, distance])}
             itemSize={3}
           />
         </bufferGeometry>
         <lineBasicMaterial color="#80c0ff" linewidth={2} />
       </line>
+      <mesh position={[0, 0, distance]} rotation={[Math.PI / 2, 0, 0]}>
+        <coneGeometry args={[1.5, 3, 8]} />
+        <meshStandardMaterial color="#80c0ff" transparent opacity={0.8} />
+      </mesh>
+
 
       {/* Arrow head at the end */}
-      <mesh position={[0, distance, 0]}>
+      <mesh position={[0, 0, distance]} rotation={[Math.PI / 2, 0, 0]}>
         <coneGeometry args={[1.5, 3, 8]} />
         <meshStandardMaterial color="#80c0ff" transparent opacity={0.8} />
       </mesh>
