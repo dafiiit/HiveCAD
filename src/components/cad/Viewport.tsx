@@ -1,19 +1,25 @@
-import { useRef, useState } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { useRef, useState, useEffect } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
 import { ArcballControls, Grid, PerspectiveCamera, GizmoHelper, GizmoViewcube } from "@react-three/drei";
 import * as THREE from "three";
 import { useCADStore, CADObject } from "../../hooks/useCADStore";
 import SketchCanvas from "./SketchCanvas";
+import type { ArcballControls as ArcballControlsImpl } from "three-stdlib";
 
 interface ViewportProps {
   isSketchMode: boolean;
 }
 
+// Z-up to Y-up rotation: -90° around X axis
+// This allows Replicad Z-up geometry to display correctly while keeping ArcballControls stable
+const Z_UP_ROTATION: [number, number, number] = [-Math.PI / 2, 0, 0];
+
 // Grid helper component
+// Grid is defined in Z-up coordinates (XY is ground), rotation applied by parent ZUpContainer
 const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
   return (
     <>
-      {/* Main grid */}
+      {/* Main grid - on XY plane (ground in Z-up) */}
       <Grid
         args={[200, 200]}
         cellSize={5}
@@ -26,9 +32,10 @@ const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
         fadeStrength={1}
         infiniteGrid
         position={[0, 0, 0]}
+        rotation={[Math.PI / 2, 0, 0]}
       />
 
-      {/* Axis lines */}
+      {/* Axis lines - Z-up coordinate system (Z is up, XY is ground) */}
       <group>
         {/* X axis - Red */}
         <line>
@@ -56,7 +63,7 @@ const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
           <lineBasicMaterial color="#55e055" linewidth={2} />
         </line>
 
-        {/* Z axis - Blue */}
+        {/* Z axis - Blue (UP in Replicad/CAD) */}
         <line>
           <bufferGeometry>
             <bufferAttribute
@@ -81,8 +88,7 @@ const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
           sectionThickness={0.6}
           sectionColor="#5a7090"
           fadeDistance={200}
-          position={[0, 0.01, 0]}
-          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, 0, 0.01]}
         />
       )}
     </>
@@ -159,108 +165,69 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
 };
 
 
-// Camera controller - handles camera sync between ViewCube and Viewport
-const CameraController = () => {
+// Camera controller - handles sketch mode camera orientation only
+// Camera positions are in Y-up (Three.js) space, content is rotated to Z-up
+const CameraController = ({ controlsRef }: { controlsRef: React.RefObject<ArcballControlsImpl | null> }) => {
   const { camera } = useThree();
-  const { sketchPlane, isSketchMode, cameraRotation, setCameraRotation } = useCADStore();
+  const { sketchPlane, isSketchMode } = useCADStore();
   const lastPlaneRef = useRef<string | null>(null);
-  const lastUpdateFromCubeRef = useRef<string>("");
-  const isUserDraggingRef = useRef(false);
 
-  useFrame(() => {
-    // Sketch mode camera orientation takes priority
-    if (isSketchMode && sketchPlane && sketchPlane !== lastPlaneRef.current) {
-      lastPlaneRef.current = sketchPlane;
+  useEffect(() => {
+    // Only run when sketch mode + plane changes
+    if (!isSketchMode || !sketchPlane || sketchPlane === lastPlaneRef.current) return;
+    lastPlaneRef.current = sketchPlane;
 
-      // Move camera to face the selected plane
-      const dist = 100;
-      if (sketchPlane === 'XY') {
-        // XY is Top View (Red/Green axes)
-        camera.position.set(0, dist, 0);
-        camera.up.set(0, 0, -1);
-      } else if (sketchPlane === 'XZ') {
-        // XZ is Front View (Red/Blue axes)
-        camera.position.set(0, 0, dist);
-        camera.up.set(0, 1, 0);
-      } else if (sketchPlane === 'YZ') {
-        // YZ is Right View (Green/Blue axes)
-        camera.position.set(dist, 0, 0);
-        camera.up.set(0, 1, 0);
-      }
-      camera.lookAt(0, 0, 0);
-      return;
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    // Disable controls while we reposition
+    const wasEnabled = controls.enabled;
+    controls.enabled = false;
+
+    // Position camera in Y-up space to view Z-up planes (content is rotated)
+    // After Z_UP_ROTATION: XY (Z-up ground) becomes XZ (Y-up ground)
+    const dist = 100;
+    if (sketchPlane === 'XY') {
+      // XY in Z-up is the ground plane -> look from above (Y+ in Y-up)
+      camera.position.set(0, dist, 0);
+    } else if (sketchPlane === 'XZ') {
+      // XZ in Z-up is front plane -> after rotation becomes XY in Y-up -> look from Z+
+      camera.position.set(0, 0, dist);
+    } else if (sketchPlane === 'YZ') {
+      // YZ in Z-up is right plane -> look from X+
+      camera.position.set(dist, 0, 0);
     }
 
-    // Reset tracking when exiting sketch mode
+    // Reset controls to capture new camera state
+    controls.reset();
+    controls.enabled = wasEnabled;
+  }, [isSketchMode, sketchPlane, controlsRef, camera]);
+
+  // Reset tracking when exiting sketch mode
+  useEffect(() => {
     if (!isSketchMode && lastPlaneRef.current) {
       lastPlaneRef.current = null;
     }
-
-    // Sync camera position from cameraRotation state (set by ViewCube)
-    if (cameraRotation) {
-      const rotationKey = `${cameraRotation.x.toFixed(4)},${cameraRotation.y.toFixed(4)}`;
-
-      if (rotationKey !== lastUpdateFromCubeRef.current) {
-        lastUpdateFromCubeRef.current = rotationKey;
-
-        // Convert spherical coordinates to camera position
-        const distance = camera.position.length() || 100;
-        const x = distance * Math.sin(cameraRotation.y) * Math.cos(cameraRotation.x);
-        const y = distance * Math.sin(cameraRotation.x);
-        const z = distance * Math.cos(cameraRotation.y) * Math.cos(cameraRotation.x);
-
-        camera.position.set(x, y, z);
-        camera.lookAt(0, 0, 0);
-      }
-    }
-  });
+  }, [isSketchMode]);
 
   return null;
 };
 
+// Plane selector - planes are in Z-up coordinates, parent ZUpContainer applies rotation
 const PlaneSelector = () => {
   const { sketchStep, setSketchPlane, isSketchMode } = useCADStore();
   const [hoveredPlane, setHoveredPlane] = useState<string | null>(null);
-  const { camera } = useThree();
 
-  // Only show plane selector when in sketch mode AND at the select-plane step
-  // This prevents planes from appearing on initial load (where sketchStep defaults to 'select-plane')
   if (!isSketchMode || sketchStep !== 'select-plane') return null;
 
   const handlePlaneClick = (plane: 'XY' | 'XZ' | 'YZ') => {
-    // setSketchPlane(plane);
-    // For now, keep simple plane selection. The Arcball will eventually adapt.
     setSketchPlane(plane);
-
-    // Animate camera to look at the plane
-    // This is a simple instantaneous move for now, animation can be added with useFrame
-    const dist = 100;
-    if (plane === 'XY') {
-      // Top
-      camera.position.set(0, dist, 0);
-      camera.up.set(0, 0, -1);
-    } else if (plane === 'XZ') {
-      // Front
-      camera.position.set(0, 0, dist);
-      camera.up.set(0, 1, 0);
-    } else if (plane === 'YZ') {
-      // Right
-      camera.position.set(dist, 0, 0);
-      camera.up.set(0, 1, 0);
-    }
-    camera.lookAt(0, 0, 0);
   };
 
   return (
     <group>
-      {/* XY Plane (Front in standard Z-up, but usually XY is Top in math? 
-          Standard CAD: Z is up. XY is ground. XZ is Front. YZ is Right. 
-          Replicad/OCCT default: Z is up.
-      */}
-
-      {/* XY Plane - Blueish - Ground */}
+      {/* XY Plane - ground in Z-up (Blue) */}
       <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
         onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XY'); }}
         onPointerOut={() => setHoveredPlane(null)}
         onClick={(e) => { e.stopPropagation(); handlePlaneClick('XY'); }}
@@ -274,15 +241,9 @@ const PlaneSelector = () => {
         />
       </mesh>
 
-      {/* 
-        Visual Plane Selector - Normal Vector Reference:
-        - XY (Top):   Y=0 horizontal plane, normal (0,1,0), rotation [-π/2,0,0]
-        - XZ (Front): Z=0 vertical plane, normal (0,0,1), NO rotation needed
-        - YZ (Right): X=0 vertical plane, normal (1,0,0), rotation [0,π/2,0]
-      */}
-
-      {/* XZ Plane - Red - Front (vertical, normal +Z, no rotation needed) */}
+      {/* XZ Plane - front in Z-up (Red) */}
       <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
         onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XZ'); }}
         onPointerOut={() => setHoveredPlane(null)}
         onClick={(e) => { e.stopPropagation(); handlePlaneClick('XZ'); }}
@@ -296,7 +257,7 @@ const PlaneSelector = () => {
         />
       </mesh>
 
-      {/* YZ Plane - Greenish - Right */}
+      {/* YZ Plane - right in Z-up (Green) */}
       <mesh
         rotation={[0, Math.PI / 2, 0]}
         onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('YZ'); }}
@@ -393,59 +354,58 @@ const ExtrusionPreview = () => {
   );
 };
 
-// GizmoHelper + GizmoViewcube are now used instead of custom camera sync
-// They render in a HUD overlay and directly use the main camera
+
 
 const Viewport = ({ isSketchMode }: ViewportProps) => {
+  const controlsRef = useRef<ArcballControlsImpl>(null);
+
   return (
     <div className="cad-viewport w-full h-full">
       <Canvas
         gl={{ antialias: true, alpha: false }}
         style={{ background: "hsl(210, 30%, 16%)" }}
       >
+        {/* Camera - stays Y-up for stable ArcballControls */}
         <PerspectiveCamera
           makeDefault
-          position={[50, 40, 50]}
+          position={[50, 50, 50]}
           fov={45}
           near={0.1}
           far={2000}
         />
 
-        <PlaneSelector />
-
-        {/* Lighting */}
+        {/* Lighting - outside rotation group for consistent lighting */}
         <ambientLight intensity={0.4} />
         <directionalLight position={[50, 50, 25]} intensity={0.8} />
         <directionalLight position={[-30, -30, -30]} intensity={0.3} />
 
-        {/* Grid */}
-        <CADGrid isSketchMode={isSketchMode} />
+        {/* Z-up content container - rotates Z-up content to display in Y-up Three.js */}
+        <group rotation={Z_UP_ROTATION}>
+          <CADGrid isSketchMode={isSketchMode} />
+          <PlaneSelector />
+          <SceneObjects />
+          <ExtrusionPreview />
+          <SketchCanvas />
+        </group>
 
-        {/* Real CAD objects */}
-        <SceneObjects />
-
-        {/* Extrusion preview */}
-        <ExtrusionPreview />
-
-        {/* Controls */}
-        {/* Controls */}
+        {/* Controls - Y-up compatible */}
         <ArcballControls
+          ref={controlsRef}
           makeDefault
-          dampingFactor={100} // High damping to simulate no inertia
           cursorZoom={true}
           minDistance={5}
           maxDistance={500}
         />
 
-        <SketchCanvas />
+        {/* Camera controller for sketch mode */}
+        <CameraController controlsRef={controlsRef} />
 
-        {/* ViewCube using drei's GizmoHelper - renders in HUD overlay with smooth animations */}
+        {/* ViewCube - outside rotation for correct orientation labels */}
         <GizmoHelper
           alignment="top-right"
           margin={[80, 80]}
         >
           <GizmoViewcube
-            faces={['Right', 'Left', 'Top', 'Bottom', 'Front', 'Back']}
             color="#1a1a2e"
             hoverColor="#80c0ff"
             textColor="#ffffff"
