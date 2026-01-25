@@ -10,6 +10,21 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
         loadSession();
     }, [loadSession]);
 
+    // Auto-connect to Storage if PAT is present
+    useEffect(() => {
+        const connectStorage = async () => {
+            if (user?.pat) {
+                const { StorageManager } = await import('@/lib/storage/StorageManager');
+                const githubAdapter = StorageManager.getInstance().getAdapter('github');
+                if (githubAdapter && !githubAdapter.isAuthenticated()) {
+                    console.log('[AuthGateway] Auto-connecting GitHub storage...');
+                    await githubAdapter.connect(user.pat);
+                }
+            }
+        };
+        if (authLoaded && user) connectStorage();
+    }, [authLoaded, user]);
+
     // Autosave effect
     useEffect(() => {
         if (isAutosaveEnabled && user && fileName !== 'Untitled') {

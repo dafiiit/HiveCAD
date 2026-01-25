@@ -8,7 +8,8 @@ import {
   User,
   Bell,
   Search,
-  RefreshCw
+  RefreshCw,
+  AlertCircle
 } from "lucide-react";
 import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
@@ -46,7 +47,9 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
     toggleSettings,
     toggleHelp,
     toggleNotifications,
-    objects
+    objects,
+    user,
+    code
   } = useCADStore();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -127,9 +130,14 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           <button
             className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
             onClick={handleSave}
-            title="Sync / Storage Connections"
+            title={!user?.pat ? "GitHub Sync Disabled - Link your PAT in Settings" : "Sync / Storage Connections"}
           >
-            <RefreshCw className={`w-4 h-4 ${!isSaved ? 'text-yellow-500' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${!isSaved && user?.pat ? 'text-yellow-500' : ''}`} />
+            {!user?.pat && (
+              <div className="absolute -top-1 -right-1">
+                <AlertCircle className="w-3 h-3 text-red-500 animate-pulse" />
+              </div>
+            )}
           </button>
 
           <button

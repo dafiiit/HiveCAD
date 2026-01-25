@@ -1,8 +1,10 @@
-import { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { ArcballControls, Grid, PerspectiveCamera, GizmoHelper, GizmoViewcube } from "@react-three/drei";
 import * as THREE from "three";
 import { useCADStore, CADObject } from "../../hooks/useCADStore";
+import { toast } from "sonner";
+import { GitHubTokenDialog } from "../ui/GitHubTokenDialog";
 import SketchCanvas from "./SketchCanvas";
 import type { ArcballControls as ArcballControlsImpl } from "three-stdlib";
 
@@ -433,44 +435,69 @@ const OperationPreview = () => {
 
 
 
-const ThumbnailCapturer = () => {
-  const { gl, scene, camera } = useThree();
-  const { fileName, updateThumbnail, closeProject } = useCADStore();
+const ThumbnailCapturer = forwardRef<any, { onShowExitDialog: () => void }>((props, ref) => {
+  const { gl } = useThree();
+  const { fileName, updateThumbnail, closeProject, code, objects, user, save } = useCADStore();
 
-  // We use a ref to detect when we want to "exit"
-  // But actually, we want to trigger capture BEFORE state resets.
-  // We'll use a custom window event or a store trigger.
+  // Define the core exit logic
+  const finalizeExit = useCallback((shouldSave: boolean) => {
+    if (shouldSave) {
+      console.log('[ThumbnailCapturer] Finalizing exit with save');
+      const screenshot = gl.domElement.toDataURL('image/jpeg', 0.5);
+      updateThumbnail(fileName, screenshot);
+      save();
+    } else {
+      console.log('[ThumbnailCapturer] Finalizing exit with DISCARD');
+    }
+    closeProject();
+  }, [gl, fileName, updateThumbnail, save, closeProject]);
+
+  useImperativeHandle(ref, () => ({
+    finalizeExit
+  }));
 
   useEffect(() => {
     const handleExit = () => {
       if (fileName === 'Untitled') return;
 
-      // Render the scene to capture a fresh frame if needed
-      // gl.render(scene, camera);
+      const isDefaultCode = code.trim() === 'const main = () => { return; };';
+      const isEmpty = objects.length === 0 && isDefaultCode;
 
-      const screenshot = gl.domElement.toDataURL('image/jpeg', 0.5); // Low res jpg
-      updateThumbnail(fileName, screenshot);
-      closeProject();
+      if (isEmpty) {
+        finalizeExit(false);
+        return;
+      }
+
+      // If non-empty but NO PAT, trigger parent to show dialog
+      if (!user?.pat) {
+        props.onShowExitDialog();
+        return;
+      }
+
+      // Standard exit with auto-save
+      finalizeExit(true);
     };
 
     window.addEventListener('hivecad-exit-project', handleExit);
     return () => window.removeEventListener('hivecad-exit-project', handleExit);
-  }, [gl, fileName, updateThumbnail, closeProject]);
+  }, [fileName, code, objects.length, user?.pat, props, finalizeExit]);
 
   return null;
-};
+});
 
 const Viewport = ({ isSketchMode }: ViewportProps) => {
   const controlsRef = useRef<ArcballControlsImpl>(null);
+  const capturerRef = useRef<any>(null);
+  const [showExitDialog, setShowExitDialog] = useState(false);
 
   return (
-    <div className="cad-viewport w-full h-full">
+    <div className="cad-viewport w-full h-full relative">
       <Canvas
         gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
         style={{ background: "hsl(210, 30%, 16%)" }}
         onPointerMissed={() => useCADStore.getState().clearSelection()}
       >
-        <ThumbnailCapturer />
+        <ThumbnailCapturer ref={capturerRef} onShowExitDialog={() => setShowExitDialog(true)} />
         {/* Camera - stays Y-up for stable ArcballControls */}
         <PerspectiveCamera
           makeDefault
@@ -519,6 +546,14 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
           />
         </GizmoHelper>
       </Canvas>
+
+      <GitHubTokenDialog
+        open={showExitDialog}
+        onOpenChange={setShowExitDialog}
+        mode="exit"
+        onConfirm={() => capturerRef.current?.finalizeExit(true)}
+        onSecondaryAction={() => capturerRef.current?.finalizeExit(false)}
+      />
     </div>
   );
 };

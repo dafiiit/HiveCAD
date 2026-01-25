@@ -5,19 +5,43 @@ import { Input } from '../ui/input';
 import {
     Plus, Search, Clock, User, Users, Tag, Globe, Trash2,
     MoreVertical, Grid, List as ListIcon, Folder, ChevronDown,
-    Bell, HelpCircle, UserCircle, LayoutGrid, Info
+    Bell, HelpCircle, UserCircle, LayoutGrid, Info, Star
 } from 'lucide-react';
 import { EXAMPLES } from '@/lib/data/examples';
 import { toast } from 'sonner';
+import { GitHubTokenDialog } from '../ui/GitHubTokenDialog';
+
+type DashboardMode = 'workspace' | 'discover';
+
+const DISCOVER_PROJECTS = [
+    { id: 'd1', name: 'Precision Drone Frame', author: 'sky_builder', likes: 124, forks: 45, thumbnail: null },
+    { id: 'd2', name: 'Gridfinity 4x4 Base', author: 'organizer_pro', likes: 89, forks: 21, thumbnail: null },
+    { id: 'd3', name: 'Minimalist Pot', author: 'industrial_box', likes: 210, forks: 12, thumbnail: null },
+    { id: 'd4', name: 'M3 Bolt Assortment', author: 'mech_man', likes: 56, forks: 8, thumbnail: null },
+    { id: 'd5', name: 'Parametric Hinge', author: 'hinge_king', likes: 167, forks: 34, thumbnail: null },
+    { id: 'd6', name: 'Custom Keyboard Case', author: 'clack_master', likes: 312, forks: 67, thumbnail: null },
+];
 
 export function ProjectDashboard() {
     const { user, logout, setFileName, setCode, projectThumbnails, reset } = useCADStore();
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-    const [activeNav, setActiveNav] = useState('Recently opened');
+    const [dashboardMode, setDashboardMode] = useState<DashboardMode>('workspace');
+    const [activeNav, setActiveNav] = useState('Created by me');
     const [folders, setFolders] = useState<string[]>([]);
+    const [starredProjects, setStarredProjects] = useState<string[]>([]);
+    const [showTokenDialog, setShowTokenDialog] = useState(false);
 
     const handleCreateProject = () => {
+        if (!user?.pat) {
+            setShowTokenDialog(true);
+            return;
+        }
+
+        createProject();
+    };
+
+    const createProject = () => {
         const existingNames = Object.keys(projectThumbnails);
         let name = 'Unnamed';
         let counter = 1;
@@ -46,9 +70,19 @@ export function ProjectDashboard() {
         toast.success(`Opened ${example.name}`);
     };
 
+    const handleToggleStar = (e: React.MouseEvent, projectName: string) => {
+        e.stopPropagation();
+        setStarredProjects(prev =>
+            prev.includes(projectName)
+                ? prev.filter(p => p !== projectName)
+                : [...prev, projectName]
+        );
+        toast.success(starredProjects.includes(projectName) ? `Removed from Starred` : `Added to Starred`);
+    };
+
     const navItems = [
-        { icon: Clock, label: 'Recently opened' },
         { icon: User, label: 'Created by me' },
+        { icon: Star, label: 'Starred' },
         { icon: Users, label: 'Shared with me' },
         { icon: Tag, label: 'Labels' },
         { icon: Globe, label: 'Public' },
@@ -57,165 +91,285 @@ export function ProjectDashboard() {
 
 
     return (
-        <div className="flex h-screen w-screen bg-[#1a1a1a] text-zinc-300 overflow-hidden font-sans">
-            {/* Sidebar */}
-            <div className="w-64 border-r border-zinc-800 flex flex-col shrink-0">
-                <div className="p-4 border-b border-zinc-800 flex items-center gap-2">
+        <div className="flex h-screen w-screen bg-[#1a1a1a] text-zinc-300 overflow-hidden font-sans flex-col">
+            {/* Main Header */}
+            <header className="h-14 border-b border-zinc-800 flex items-center justify-between px-6 bg-[#222] shrink-0">
+                <div className="flex items-center gap-3 w-64">
                     <img src="/favicon.ico" alt="HiveCAD Logo" className="w-8 h-8 rounded-md" />
                     <span className="font-bold text-white text-lg tracking-tight">HiveCAD</span>
                 </div>
-
-
-                <nav className="flex-1 px-2 space-y-0.5">
-                    {navItems.map((item) => (
+                <div className="flex-1 flex justify-center">
+                    <div className="bg-[#1a1a1a] p-1 rounded-lg flex border border-zinc-800">
                         <button
-                            key={item.label}
-                            onClick={() => setActiveNav(item.label)}
-                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${activeNav === item.label
-                                ? 'bg-[#2d2d2d] text-white'
-                                : 'hover:bg-[#252525] text-zinc-400'
-                                }`}
+                            onClick={() => setDashboardMode('workspace')}
+                            className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${dashboardMode === 'workspace' ? 'bg-primary text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
                         >
-                            <item.icon className={`w-4 h-4 ${activeNav === item.label ? 'text-primary' : ''}`} />
-                            {item.label}
+                            MY WORKSPACE
                         </button>
-                    ))}
-                </nav>
-
-                <div className="p-4 border-t border-zinc-800 space-y-4">
-                    {/* Bottom sidebar info if needed */}
+                        <button
+                            onClick={() => setDashboardMode('discover')}
+                            className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${dashboardMode === 'discover' ? 'bg-primary text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
+                        >
+                            DISCOVER
+                        </button>
+                    </div>
                 </div>
-            </div>
 
-            {/* Main Content */}
-            <div className="flex-1 flex flex-col min-w-0">
-                {/* Header */}
-                <header className="h-14 border-b border-zinc-800 flex items-center justify-between px-6 bg-[#222]">
-                    <div className="flex-1 max-w-2xl px-4 relative">
-                        <Search className="absolute left-7 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-                        <Input
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search in HiveCAD"
-                            className="bg-[#1a1a1a] border-zinc-700 pl-10 h-9 focus:ring-primary focus:border-zinc-500"
-                        />
-                    </div>
-
-                    <div className="flex items-center gap-4 text-zinc-400">
-                        <Bell className="w-5 h-5 hover:text-white cursor-pointer" />
-                        <LayoutGrid className="w-5 h-5 hover:text-white cursor-pointer" />
-                        <HelpCircle className="w-5 h-5 hover:text-white cursor-pointer" />
-                        <div className="flex items-center gap-2 pl-2 border-l border-zinc-700 ml-2">
-                            <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs text-white">
-                                {user?.email[0].toUpperCase()}
-                            </div>
-                            <span className="text-sm hidden sm:inline whitespace-nowrap">{user?.email}</span>
-                            <button onClick={logout} className="text-xs hover:text-white underline">Logout</button>
+                <div className="flex items-center gap-4 text-zinc-400 w-64 justify-end">
+                    <Bell className="w-5 h-5 hover:text-white cursor-pointer" />
+                    <HelpCircle className="w-5 h-5 hover:text-white cursor-pointer" />
+                    <div className="flex items-center gap-2 pl-2 border-l border-zinc-700 ml-2">
+                        <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs text-white">
+                            {user?.email[0].toUpperCase()}
                         </div>
+                        <span className="text-sm hidden sm:inline whitespace-nowrap">{user?.email}</span>
+                        <button onClick={logout} className="text-xs hover:text-white underline">Logout</button>
                     </div>
-                </header>
+                </div>
+            </header>
 
-                {/* Dashboard Scroll Area */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-[#1a1a1a]">
-                    {/* Recently Opened */}
-                    <section>
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-sm font-semibold flex items-center gap-2 text-zinc-400 uppercase tracking-wider">
-                                <Clock className="w-4 h-4" /> Last opened by me
-                            </h3>
-                            <div className="flex items-center bg-[#2d2d2d] rounded-md p-1 border border-zinc-800">
-                                <button
-                                    onClick={() => setViewMode('list')}
-                                    className={`p-1 rounded ${viewMode === 'list' ? 'bg-zinc-700 text-white' : ''}`}
-                                >
-                                    <ListIcon className="w-4 h-4" />
-                                </button>
-                                <button
-                                    onClick={() => setViewMode('grid')}
-                                    className={`p-1 rounded ${viewMode === 'grid' ? 'bg-zinc-700 text-white' : ''}`}
-                                >
-                                    <Grid className="w-4 h-4" />
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                            {/* New Project Card */}
-                            <div
-                                onClick={handleCreateProject}
-                                className="bg-primary/5 rounded-md overflow-hidden border border-primary/20 border-dashed hover:border-primary hover:bg-primary/10 cursor-pointer group transition-all hover:translate-y-[-4px] shadow-lg flex flex-col ring-1 ring-primary/10 hover:ring-primary/30"
-                            >
-                                <div className="h-32 bg-primary/10 flex items-center justify-center overflow-hidden relative shrink-0">
-                                    <div className="text-primary group-hover:scale-110 transition-transform duration-300">
-                                        <Plus className="w-12 h-12" />
-                                    </div>
-                                    <div className="absolute inset-0 bg-gradient-to-t from-primary/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                                </div>
-                                <div className="p-3 bg-[#2d2d2d] border-t border-zinc-800 flex-1 flex flex-col justify-center">
-                                    <div className="font-bold text-primary group-hover:text-white transition-colors truncate text-sm tracking-tight">+ New Project</div>
-                                    <div className="text-[10px] text-zinc-500 mt-1 uppercase tracking-widest font-black opacity-60">Create Space</div>
-                                </div>
+            {/* Dashboard Scroll Area */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-[#1a1a1a]">
+                {dashboardMode === 'workspace' ? (
+                    <>
+                        {/* Search and Navigation Tags */}
+                        <div className="space-y-4">
+                            <div className="max-w-xl relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                                <Input
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder={`Search in my HiveCAD...`}
+                                    className="bg-[#222] border-zinc-800 pl-10 h-10 focus:ring-primary focus:border-zinc-700"
+                                />
                             </div>
 
-                            {EXAMPLES.map((example) => {
-                                const thumbnail = projectThumbnails[example.name];
-                                return (
-                                    <div
-                                        key={example.id}
-                                        onClick={() => handleOpenExample(example)}
-                                        className="bg-[#2d2d2d] rounded-md overflow-hidden border border-zinc-800 hover:border-primary/50 cursor-pointer group transition-all hover:translate-y-[-2px] shadow-lg flex flex-col"
+                            <div className="flex flex-wrap gap-2">
+                                {navItems.map((item) => (
+                                    <button
+                                        key={item.label}
+                                        onClick={() => setActiveNav(item.label)}
+                                        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${activeNav === item.label
+                                            ? 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.2)]'
+                                            : 'bg-zinc-800/30 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'
+                                            }`}
                                     >
-                                        <div className="h-32 bg-[#252525] flex items-center justify-center overflow-hidden relative shrink-0">
-                                            {thumbnail ? (
-                                                <img
-                                                    src={thumbnail}
-                                                    className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                                                    alt={example.name}
-                                                />
-                                            ) : (
-                                                <div className="text-primary opacity-20 group-hover:opacity-40 transition-opacity">
-                                                    <div className="bg-primary/20 p-4 rounded-full">
-                                                        <LayoutGrid className="w-12 h-12" />
+                                        <item.icon className="w-3 h-3" />
+                                        {item.label.toUpperCase()}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Recently Opened */}
+                        <section>
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-sm font-semibold flex items-center gap-2 text-zinc-400 uppercase tracking-wider">
+                                    <Clock className="w-4 h-4" /> Last opened by me
+                                </h3>
+                                <div className="flex items-center bg-[#2d2d2d] rounded-md p-1 border border-zinc-800">
+                                    <button
+                                        onClick={() => setViewMode('list')}
+                                        className={`p-1 rounded ${viewMode === 'list' ? 'bg-zinc-700 text-white' : ''}`}
+                                    >
+                                        <ListIcon className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => setViewMode('grid')}
+                                        className={`p-1 rounded ${viewMode === 'grid' ? 'bg-zinc-700 text-white' : ''}`}
+                                    >
+                                        <Grid className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                                {/* New Project Card */}
+                                <div
+                                    onClick={handleCreateProject}
+                                    className="bg-primary/5 rounded-md overflow-hidden border border-primary/20 border-dashed hover:border-primary hover:bg-primary/10 cursor-pointer group transition-all hover:translate-y-[-4px] shadow-lg flex flex-col ring-1 ring-primary/10 hover:ring-primary/30"
+                                >
+                                    <div className="h-32 bg-primary/10 flex items-center justify-center overflow-hidden relative shrink-0">
+                                        <div className="text-primary group-hover:scale-110 transition-transform duration-300">
+                                            <Plus className="w-12 h-12" />
+                                        </div>
+                                        <div className="absolute inset-0 bg-gradient-to-t from-primary/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    </div>
+                                    <div className="p-3 bg-[#2d2d2d] border-t border-zinc-800 flex-1 flex flex-col justify-center">
+                                        <div className="font-bold text-primary group-hover:text-white transition-colors truncate text-sm tracking-tight">+ New Project</div>
+                                        <div className="text-[10px] text-zinc-500 mt-1 uppercase tracking-widest font-black opacity-60">Create Space</div>
+                                    </div>
+                                </div>
+
+                                {EXAMPLES.map((example) => {
+                                    const thumbnail = projectThumbnails[example.name];
+                                    const isStarred = starredProjects.includes(example.name);
+                                    return (
+                                        <div
+                                            key={example.id}
+                                            onClick={() => handleOpenExample(example)}
+                                            className="bg-[#2d2d2d] rounded-md overflow-hidden border border-zinc-800 hover:border-primary/50 cursor-pointer group transition-all hover:translate-y-[-2px] shadow-lg flex flex-col relative"
+                                        >
+                                            <div className="h-32 bg-[#252525] flex items-center justify-center overflow-hidden relative shrink-0">
+                                                {thumbnail ? (
+                                                    <img
+                                                        src={thumbnail}
+                                                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                                                        alt={example.name}
+                                                    />
+                                                ) : (
+                                                    <div className="text-primary opacity-20 group-hover:opacity-40 transition-opacity">
+                                                        <div className="bg-primary/20 p-4 rounded-full">
+                                                            <LayoutGrid className="w-12 h-12" />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                <div className="absolute top-2 right-2 flex gap-1">
+                                                    <button
+                                                        onClick={(e) => handleToggleStar(e, example.name)}
+                                                        className={`p-1.5 rounded-md backdrop-blur-md transition-all ${isStarred ? 'bg-primary/20 text-primary' : 'bg-black/50 text-zinc-400 opacity-0 group-hover:opacity-100'}`}
+                                                    >
+                                                        <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-primary' : ''}`} />
+                                                    </button>
+                                                    <div className="bg-black/50 p-1.5 rounded-md backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <Info className="w-3.5 h-3.5 text-zinc-400" />
                                                     </div>
                                                 </div>
-                                            )}
-                                            <div className="absolute top-2 right-2 bg-black/50 p-1 rounded backdrop-blur-sm">
-                                                <Info className="w-3 h-3 text-zinc-400" />
+                                            </div>
+                                            <div className="p-3 bg-[#2d2d2d] border-t border-zinc-800 flex-1 flex flex-col justify-center">
+                                                <div className="font-medium text-white truncate text-sm">{example.name}</div>
+                                                <div className="text-[10px] text-zinc-500 mt-1 uppercase tracking-tighter font-bold opacity-60">Example Project</div>
                                             </div>
                                         </div>
-                                        <div className="p-3 bg-[#2d2d2d] border-t border-zinc-800 flex-1 flex flex-col justify-center">
-                                            <div className="font-medium text-white truncate text-sm">{example.name}</div>
-                                            <div className="text-[10px] text-zinc-500 mt-1 uppercase tracking-tighter font-bold opacity-60">Example Project</div>
+                                    );
+                                })}
+                            </div>
+                        </section>
+
+                        {/* Dynamic Projects Filtered Section */}
+                        <section>
+                            <h3 className="text-sm font-semibold flex items-center gap-2 mb-4 text-zinc-400 uppercase tracking-wider">
+                                <ListIcon className="w-4 h-4" /> {activeNav}
+                            </h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                                {/* Filtering logic: normally this would be dynamic, but for now we filter EXAMPLES or your own stuff */}
+                                {EXAMPLES
+                                    .filter(e => e.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                                    .filter(e => {
+                                        if (activeNav === 'Starred') return starredProjects.includes(e.name);
+                                        if (activeNav === 'Created by me') return false;
+                                        if (activeNav === 'Shared with me') return true;
+                                        if (activeNav === 'Public') return true;
+                                        if (activeNav === 'Trash') return false;
+                                        if (activeNav === 'Labels') return false;
+                                        return true;
+                                    })
+                                    .map((example) => {
+                                        const thumbnail = projectThumbnails[example.name];
+                                        const isStarred = starredProjects.includes(example.name);
+                                        return (
+                                            <div
+                                                key={`filtered-${example.id}`}
+                                                onClick={() => handleOpenExample(example)}
+                                                className="bg-[#2d2d2d] rounded-md overflow-hidden border border-zinc-800 hover:border-primary/50 cursor-pointer group transition-all hover:translate-y-[-2px] shadow-lg flex flex-col relative"
+                                            >
+                                                <div className="h-40 bg-[#252525] flex items-center justify-center overflow-hidden relative shrink-0">
+                                                    {thumbnail ? (
+                                                        <img src={thumbnail} className="w-full h-full object-cover" alt={example.name} />
+                                                    ) : (
+                                                        <LayoutGrid className="w-10 h-10 text-zinc-700" />
+                                                    )}
+                                                    <div className="absolute top-2 right-2">
+                                                        <button
+                                                            onClick={(e) => handleToggleStar(e, example.name)}
+                                                            className={`p-1.5 rounded-md backdrop-blur-md transition-all ${isStarred ? 'bg-primary/20 text-primary' : 'bg-black/50 text-zinc-400 opacity-0 group-hover:opacity-100'}`}
+                                                        >
+                                                            <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-primary' : ''}`} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div className="p-3">
+                                                    <div className="font-medium text-white truncate text-sm">{example.name}</div>
+                                                    <div className="text-[10px] text-zinc-500 mt-1 uppercase tracking-tighter">Modified 2d ago</div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+
+                                {EXAMPLES.filter(e => {
+                                    if (activeNav === 'Starred') return starredProjects.includes(e.name);
+                                    if (activeNav === 'Created by me') return false;
+                                    if (activeNav === 'Shared with me') return true;
+                                    if (activeNav === 'Public') return true;
+                                    if (activeNav === 'Trash') return false;
+                                    if (activeNav === 'Labels') return false;
+                                    return true;
+                                }).length === 0 && (
+                                        <div className="col-span-full py-20 text-center space-y-3">
+                                            <div className="w-16 h-16 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto text-zinc-600">
+                                                <Search className="w-8 h-8" />
+                                            </div>
+                                            <div className="text-zinc-500 font-medium">No projects found in {activeNav}</div>
+                                            <p className="text-zinc-600 text-sm">Try exploring the community in Discover mode or create a new project.</p>
+                                        </div>
+                                    )}
+                            </div>
+                        </section>
+                    </>
+                ) : (
+                    /* Discover Mode - Community Section */
+                    <div className="space-y-6">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-2xl font-bold text-white tracking-tight">Community Discover</h2>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-zinc-500">Trending</span>
+                                <ChevronDown className="w-4 h-4 text-zinc-500" />
+                            </div>
+                        </div>
+
+                        {/* Pinterest-style Staggered Grid (approximated with columns) */}
+                        <div className="columns-1 sm:columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
+                            {DISCOVER_PROJECTS.map((item) => (
+                                <div
+                                    key={item.id}
+                                    className="break-inside-avoid bg-[#222] rounded-xl overflow-hidden border border-zinc-800 hover:border-primary/40 transition-all cursor-pointer group shadow-xl"
+                                >
+                                    <div
+                                        className="w-full bg-zinc-800/50 flex items-center justify-center"
+                                        style={{ height: `${150 + (parseInt(item.id[1]) * 40)}px` }}
+                                    >
+                                        <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                                            <LayoutGrid className="w-8 h-8" />
                                         </div>
                                     </div>
-                                );
-                            })}
-                        </div>
-                    </section>
-
-                    {/* Folders */}
-                    <section>
-                        <h3 className="text-sm font-semibold flex items-center gap-2 mb-4 text-zinc-400 uppercase tracking-wider">
-                            <Folder className="w-4 h-4" /> Folders
-                        </h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                            <div
-                                onClick={handleAddFolder}
-                                className="bg-[#222] p-4 rounded-md flex items-center gap-3 border border-zinc-800 border-dashed hover:border-primary hover:bg-[#252525] cursor-pointer transition-all group"
-                            >
-                                <Plus className="w-5 h-5 text-zinc-500 group-hover:text-primary transition-colors" />
-                                <span className="text-sm font-medium text-zinc-500 group-hover:text-zinc-300">New Folder</span>
-                            </div>
-                            {folders.map((folder) => (
-                                <div key={folder} className="bg-[#383838] p-4 rounded-md flex items-center gap-3 border border-zinc-700 hover:bg-[#404040] cursor-pointer transition-colors shadow-sm">
-                                    <Folder className="w-5 h-5 text-primary" fill="currentColor" fillOpacity={0.2} />
-                                    <span className="text-sm font-medium text-zinc-200">{folder}</span>
+                                    <div className="p-4 space-y-3">
+                                        <div className="font-bold text-white text-sm leading-tight group-hover:text-primary transition-colors">{item.name}</div>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-5 h-5 rounded-full bg-zinc-700 flex items-center justify-center text-[8px] text-white">
+                                                    {item.author[0].toUpperCase()}
+                                                </div>
+                                                <span className="text-[10px] text-zinc-500 font-medium">@{item.author}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 text-[10px] text-zinc-500">
+                                                <div className="flex items-center gap-0.5"><Clock className="w-3 h-3" /> {item.forks}</div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             ))}
                         </div>
-                    </section>
-                </div>
+                    </div>
+                )}
             </div>
+
+            <GitHubTokenDialog
+                open={showTokenDialog}
+                onOpenChange={setShowTokenDialog}
+                mode="create"
+                onConfirm={createProject}
+                onSecondaryAction={createProject} // "Skip" still creates project
+            />
         </div>
     );
 }
