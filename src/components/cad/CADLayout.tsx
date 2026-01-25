@@ -121,11 +121,11 @@ const CADLayout = () => {
         <div className="flex-1 flex flex-col relative min-w-0">
           <div className="flex-1 relative min-w-0">
             <Viewport isSketchMode={isSketchMode} />
+
+            {/* Right sketch palette (overlay in sketch mode) */}
+            <SketchPalette isVisible={isSketchMode} />
           </div>
         </div>
-
-        {/* Right sketch palette (visible in sketch mode) */}
-        <SketchPalette isVisible={isSketchMode} />
 
         {/* Operation Properties (Floating) */}
         <OperationProperties />

@@ -2,9 +2,11 @@ import { useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Minus,
   Pencil,
-  ArrowUpRight
+  ArrowUpRight,
+  PencilRuler
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useCADStore } from "@/hooks/useCADStore";
@@ -66,6 +68,8 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
     sketch3D: false,
   });
 
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
   if (!isVisible) return null;
 
   const updateOption = (key: string) => (checked: boolean) => {
@@ -115,20 +119,49 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
     'YZ': '#55e055'
   };
 
+  // Styles for the container
+  const containerClass = `absolute right-4 bottom-4 h-2/3 z-20 shadow-lg rounded-lg overflow-hidden border border-border flex flex-col bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-all duration-300 ease-in-out ${isCollapsed ? "w-12 h-auto" : "w-64"
+    }`;
+
+  if (isCollapsed) {
+    return (
+      <div className={containerClass}>
+        <div className="flex flex-col items-center py-2 space-y-2">
+          <button
+            onClick={() => setIsCollapsed(false)}
+            className="p-1.5 hover:bg-secondary rounded transition-colors"
+            title="Expand Palette"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          <div className="w-full h-[1px] bg-border my-1" />
+
+          <div
+            className="p-2 text-muted-foreground select-none cursor-default"
+            title="Sketch Palette"
+          >
+            <PencilRuler className="w-4 h-4" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="cad-sketch-palette flex flex-col">
-      <div className="cad-panel-header">
+    <div className={containerClass}>
+      <div className="cad-panel-header shrink-0">
         <span>Sketch Palette</span>
         <button
           className="text-muted-foreground hover:text-foreground"
-          onClick={handleFinishSketch}
-          title="Close palette"
+          onClick={() => setIsCollapsed(true)}
+          title="Collapse palette"
         >
           <Minus className="w-3 h-3" />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar">
         {/* Sketch Plane Selection */}
         <div className="px-3 py-2 border-b border-border">
           <div className="text-2xs text-muted-foreground mb-1">Sketch Plane</div>
@@ -140,24 +173,24 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
                 : 'border-border bg-secondary/50 hover:bg-secondary'
                 }`}
             >
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-2 overflow-hidden">
                 {sketchPlane ? (
                   <>
                     <span
-                      className="w-2.5 h-2.5 rounded-sm"
+                      className="w-2.5 h-2.5 rounded-sm shrink-0"
                       style={{ backgroundColor: planeColors[sketchPlane] }}
                     />
-                    <span className="font-medium">{planeLabels[sketchPlane]} ({sketchPlane})</span>
+                    <span className="font-medium truncate">{planeLabels[sketchPlane]} ({sketchPlane})</span>
                   </>
                 ) : (
-                  <span className="text-muted-foreground italic">Select a plane...</span>
+                  <span className="text-muted-foreground italic truncate">Select a plane...</span>
                 )}
               </span>
-              <ChevronDown className={`w-3 h-3 transition-transform ${planeDropdownOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-3 h-3 transition-transform shrink-0 ${planeDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {planeDropdownOpen && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-panel border border-border rounded shadow-lg z-50">
+              <div className="absolute top-full left-0 right-0 mt-1 bg-popover border border-border rounded shadow-lg z-50">
                 {(['XY', 'XZ', 'YZ'] as const).map(plane => (
                   <button
                     key={plane}
@@ -166,7 +199,7 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
                       }`}
                   >
                     <span
-                      className="w-2.5 h-2.5 rounded-sm"
+                      className="w-2.5 h-2.5 rounded-sm shrink-0"
                       style={{ backgroundColor: planeColors[plane] }}
                     />
                     <span>{planeLabels[plane]} ({plane})</span>
@@ -283,15 +316,6 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
             </div>
           )}
         </div>
-      </div>
-
-      <div className="p-2 border-t border-border">
-        <button
-          onClick={handleFinishSketch}
-          className="w-full py-1.5 px-3 text-xs bg-primary hover:bg-primary/90 text-primary-foreground rounded transition-colors font-medium"
-        >
-          Finish Sketch
-        </button>
       </div>
     </div>
   );
