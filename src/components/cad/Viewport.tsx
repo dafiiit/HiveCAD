@@ -318,22 +318,30 @@ const ExtrusionPreview = () => {
   const sourceObject = objects.find(obj => obj.id === selectedShapeId);
   if (!sourceObject || !sourceObject.geometry) return null;
 
-  console.log('[ExtrusionPreview] Source:', sourceObject.id, 'Rotation:', sourceObject.rotation);
+  // Determine extrusion direction based on sketch plane
+  // Replicad Normals (Z-up): XY -> Z, XZ -> Y, YZ -> X
+  const sketchPlane = sourceObject.dimensions?.sketchPlane || 'XY';
 
-  // For the preview, we'll create a simple extrusion visualization
-  // by displaying a scaled version of the original geometry offset along Y axis
-  // In a full implementation, this would use replicad to generate actual preview geometry
+  let dir: [number, number, number] = [0, 0, 1]; // Default to Z (XY plane)
+  let coneRotation: [number, number, number] = [Math.PI / 2, 0, 0];
+
+  if (sketchPlane === 'XZ') {
+    dir = [0, 1, 0];
+    coneRotation = [0, 0, 0];
+  } else if (sketchPlane === 'YZ') {
+    dir = [1, 0, 0];
+    coneRotation = [0, 0, -Math.PI / 2];
+  }
+
+  const offsetHalf = [dir[0] * distance / 2, dir[1] * distance / 2, dir[2] * distance / 2] as [number, number, number];
+  const offsetFull = [dir[0] * distance, dir[1] * distance, dir[2] * distance] as [number, number, number];
 
   return (
     <group position={sourceObject.position} rotation={sourceObject.rotation}>
-      {/* Preview mesh - semi-transparent
-          Note: For flat 2D shapes (Z=0), scaling Z won't create volume, 
-          but it will correctly position the "top" due to the position offset. 
-      */}
+      {/* Preview mesh - semi-transparent */}
       <mesh
         geometry={sourceObject.geometry}
-        position={[0, 0, distance / 2]}
-        scale={[1, 1, distance / 2]}
+        position={offsetHalf}
       >
         <meshStandardMaterial
           color="#80c0ff"
@@ -347,7 +355,7 @@ const ExtrusionPreview = () => {
       {/* Top cap indicator */}
       <mesh
         geometry={sourceObject.geometry}
-        position={[0, 0, distance]}
+        position={offsetFull}
       >
         <meshStandardMaterial
           color="#80c0ff"
@@ -358,26 +366,21 @@ const ExtrusionPreview = () => {
         />
       </mesh>
 
-      {/* Direction arrow / indicator line - Along Z (Normal) */}
+      {/* Direction arrow / indicator line */}
       <line>
         <bufferGeometry>
           <bufferAttribute
             attach="attributes-position"
             count={2}
-            array={new Float32Array([0, 0, 0, 0, 0, distance])}
+            array={new Float32Array([0, 0, 0, ...offsetFull])}
             itemSize={3}
           />
         </bufferGeometry>
         <lineBasicMaterial color="#80c0ff" linewidth={2} />
       </line>
-      <mesh position={[0, 0, distance]} rotation={[Math.PI / 2, 0, 0]}>
-        <coneGeometry args={[1.5, 3, 8]} />
-        <meshStandardMaterial color="#80c0ff" transparent opacity={0.8} />
-      </mesh>
-
 
       {/* Arrow head at the end */}
-      <mesh position={[0, 0, distance]} rotation={[Math.PI / 2, 0, 0]}>
+      <mesh position={offsetFull} rotation={coneRotation}>
         <coneGeometry args={[1.5, 3, 8]} />
         <meshStandardMaterial color="#80c0ff" transparent opacity={0.8} />
       </mesh>

@@ -284,6 +284,13 @@ export const createObjectSlice: StateCreator<
                     else if (lastOpName.includes('revolve')) type = 'revolve';
                     else if (lastOpName.includes('draw') || lastOpName.includes('sketch')) type = 'sketch';
                     else if (lastOpName.includes('plane')) type = 'plane';
+
+                }
+
+                const dimensions = { ...(existing?.dimensions || {}) };
+                const featurePlaneOp = feature?.operations.find(op => op.name === 'sketchOnPlane');
+                if (featurePlaneOp && featurePlaneOp.args.length > 0 && featurePlaneOp.args[0].type === 'StringLiteral') {
+                    dimensions.sketchPlane = featurePlaneOp.args[0].value;
                 }
 
                 return {
@@ -293,7 +300,7 @@ export const createObjectSlice: StateCreator<
                     position: [0, 0, 0] as [number, number, number],
                     rotation: [0, 0, 0] as [number, number, number],
                     scale: [1, 1, 1] as [number, number, number],
-                    dimensions: existing?.dimensions || {},
+                    dimensions: dimensions,
                     color: existing?.color || getNextColor(),
                     visible: true,
                     selected: existing?.selected || false,
