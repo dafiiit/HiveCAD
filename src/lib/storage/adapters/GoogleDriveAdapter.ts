@@ -31,7 +31,7 @@ export class GoogleDriveAdapter implements StorageAdapter {
         console.log(`[DriveAdapter] Upload complete.`);
     }
 
-    async load(projectId: string): Promise<any> {
+    async load(projectId: string, _owner?: string, _repo?: string): Promise<any> {
         if (!this.isAuthenticated()) {
             throw new Error('Not authenticated with Google Drive');
         }

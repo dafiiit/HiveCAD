@@ -32,7 +32,7 @@ export class PublicAdapter implements StorageAdapter {
         console.log(`[PublicAdapter] Saved successfully.`);
     }
 
-    async load(projectId: string): Promise<any> {
+    async load(projectId: string, _owner?: string, _repo?: string): Promise<any> {
         console.log(`[PublicAdapter] Loading project ${projectId}...`);
         await new Promise(resolve => setTimeout(resolve, 500));
 

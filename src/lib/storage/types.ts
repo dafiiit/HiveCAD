@@ -22,13 +22,16 @@ export interface StorageAdapter {
     readonly name: string;
 
     // Authentication
-    connect(): Promise<boolean>;
+    connect(token?: string): Promise<boolean>;
     disconnect(): Promise<void>;
     isAuthenticated(): boolean;
 
     // Persistence
     save(projectId: string, data: any): Promise<void>;
-    load(projectId: string): Promise<any>;
+    load(projectId: string, owner?: string, repo?: string): Promise<any>;
+
+    // Discovery
+    searchCommunityProjects?(query: string): Promise<any[]>;
 
     // Versioning (Optional / Future)
     listVersions?(projectId: string): Promise<any[]>;

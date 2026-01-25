@@ -1,7 +1,5 @@
 import { StorageAdapter, StorageType } from './types';
-import { PublicAdapter } from './adapters/PublicAdapter';
 import { GitHubAdapter } from './adapters/GitHubAdapter';
-import { GoogleDriveAdapter } from './adapters/GoogleDriveAdapter';
 
 export class StorageManager {
     private static instance: StorageManager;
@@ -9,13 +7,11 @@ export class StorageManager {
     private _currentAdapter: StorageAdapter;
 
     private constructor() {
-        // Register default adapters
-        this.registerAdapter(new PublicAdapter());
+        // Only GitHub is used in the federated architecture
         this.registerAdapter(new GitHubAdapter());
-        this.registerAdapter(new GoogleDriveAdapter());
 
         // Set default
-        this._currentAdapter = this.adapters.get('public')!;
+        this._currentAdapter = this.adapters.get('github')!;
     }
 
     static getInstance(): StorageManager {
@@ -39,6 +35,16 @@ export class StorageManager {
 
     get currentAdapter(): StorageAdapter {
         return this._currentAdapter;
+    }
+
+    async openExternalProject(owner: string, repo: string, projectId: string) {
+        const githubAdapter = this.getAdapter('github') as GitHubAdapter;
+        if (!githubAdapter) {
+            throw new Error('GitHub adapter not found');
+        }
+
+        // We don't check for 'current user' here as load handles external repos
+        return githubAdapter.load(projectId, owner, repo);
     }
 
     setAdapter(type: StorageType) {
