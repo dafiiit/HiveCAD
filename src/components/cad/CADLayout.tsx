@@ -11,6 +11,7 @@ import UnifiedSidebar from "./UnifiedSidebar";
 import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
 import { Maximize2, Minimize2 } from "lucide-react";
+import { GitHubTokenDialog } from "../ui/GitHubTokenDialog";
 
 const CADLayout = () => {
   const {
@@ -28,7 +29,9 @@ const CADLayout = () => {
     deleteObject,
     selectedIds,
     isFullscreen,
-    toggleFullscreen
+    toggleFullscreen,
+    showPATDialog,
+    setShowPATDialog
   } = useCADStore();
 
   // Keyboard shortcuts

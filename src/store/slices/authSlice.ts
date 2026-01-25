@@ -5,6 +5,7 @@ import { AuthService } from '../../lib/auth/AuthService';
 export const createAuthSlice: StateCreator<CADState, [], [], AuthSlice> = (set, get) => ({
     user: null,
     isAutosaveEnabled: false,
+    showPATDialog: false,
     authLoaded: false,
 
     loadSession: () => {
@@ -27,11 +28,25 @@ export const createAuthSlice: StateCreator<CADState, [], [], AuthSlice> = (set, 
         set({ user: null, isAutosaveEnabled: false });
     },
 
+    setShowPATDialog: (show) => set({ showPATDialog: show }),
+
     setPAT: async (pat) => {
         const user = get().user;
-        if (user) {
-            await AuthService.updatePAT(user.email, pat);
-            set({ user: { ...user, pat }, isAutosaveEnabled: !!pat });
+        if (!user) return;
+
+        if (pat) {
+            // Verify token before saving
+            const { StorageManager } = await import('../../lib/storage/StorageManager');
+            const githubAdapter = StorageManager.getInstance().getAdapter('github');
+            if (githubAdapter) {
+                const connected = await githubAdapter.connect(pat);
+                if (!connected) {
+                    throw new Error('Invalid GitHub token');
+                }
+            }
         }
+
+        await AuthService.updatePAT(user.email, pat);
+        set({ user: { ...user, pat }, isAutosaveEnabled: !!pat });
     },
 });

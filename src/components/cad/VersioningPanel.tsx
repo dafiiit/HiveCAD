@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useCADStore } from "@/hooks/useCADStore";
-import { GitBranch, GitCommit, Plus, GitCompare, Search, ChevronDown, GitFork, Star, GitMerge, MoreVertical } from "lucide-react";
+import { GitBranch, GitCommit, Plus, GitCompare, Search, ChevronDown, GitFork, Star, GitMerge, MoreVertical, Github, Link as LinkIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -16,6 +16,9 @@ const VersioningPanel = () => {
         setMainBranch,
         mergeBranch,
         compareVersions,
+        user,
+        showPATDialog,
+        setShowPATDialog
     } = useCADStore();
 
     const [searchQuery, setSearchQuery] = useState("");
@@ -142,7 +145,48 @@ const VersioningPanel = () => {
                     >
                         <GitCompare className="w-4 h-4" />
                     </button>
+                    <button
+                        onClick={() => setShowPATDialog(true)}
+                        className={cn(
+                            "p-1.5 rounded transition-colors hover:bg-secondary text-muted-foreground hover:text-foreground",
+                            user?.pat ? "text-primary" : ""
+                        )}
+                        title={user?.pat ? "Update GitHub Token" : "Link GitHub Account"}
+                    >
+                        <Github className="w-4 h-4" />
+                    </button>
                 </div>
+            </div>
+
+            {/* GitHub Status Section */}
+            <div className="px-3 py-2 border-b border-border bg-muted/20">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <div className={cn(
+                            "w-2 h-2 rounded-full",
+                            user?.pat ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" : "bg-zinc-600"
+                        )} />
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                            {user?.pat ? "Cloud Sync Active" : "Local Mode"}
+                        </span>
+                    </div>
+                    {!user?.pat && (
+                        <button
+                            onClick={() => setShowPATDialog(true)}
+                            className="flex items-center gap-1 text-[10px] font-bold text-primary hover:underline uppercase tracking-wider"
+                        >
+                            <LinkIcon className="w-3 h-3" />
+                            Link GitHub
+                        </button>
+                    )}
+                </div>
+                {user?.pat && (
+                    <div className="mt-1 flex items-center justify-between">
+                        <p className="text-2xs text-muted-foreground truncate max-w-[180px]">
+                            Connected as <span className="text-foreground font-medium">{user.email}</span>
+                        </p>
+                    </div>
+                )}
             </div>
 
             {/* Compare Mode Banner */}

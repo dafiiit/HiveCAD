@@ -73,9 +73,16 @@ export const createVersioningSlice: StateCreator<
 
             set({ isSaved: true });
             toast.success(`Saved to ${adapter.name}`, { id: 'save-toast' });
-        } catch (error) {
+        } catch (error: any) {
             console.error("Save failed:", error);
-            toast.error(`Save failed: ${error}`, { id: 'save-toast' });
+            const message = error.message || String(error);
+
+            if (message.includes('Not authenticated')) {
+                toast.error("GitHub account not linked. Please link your account to save.", { id: 'save-toast' });
+                set({ showPATDialog: true });
+            } else {
+                toast.error(`Save failed: ${message}`, { id: 'save-toast' });
+            }
         }
     },
     saveAs: (name) => set({ fileName: name, isSaved: true }),

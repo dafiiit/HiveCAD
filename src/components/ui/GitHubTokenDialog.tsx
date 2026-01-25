@@ -104,7 +104,7 @@ export function GitHubTokenDialog({ open, onOpenChange, mode, onConfirm, onSecon
                             }}
                             className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
                         >
-                            Skip for now
+                            Skip (Local Only)
                         </Button>
                     ) : (
                         <Button

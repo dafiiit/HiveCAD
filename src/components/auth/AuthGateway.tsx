@@ -2,9 +2,10 @@ import React, { useEffect } from 'react';
 import { useCADStore } from '@/hooks/useCADStore';
 import { AuthDialog } from './AuthDialog';
 import { ProjectDashboard } from '../project/ProjectDashboard';
+import { GitHubTokenDialog } from '../ui/GitHubTokenDialog';
 
 export function AuthGateway({ children }: { children: React.ReactNode }) {
-    const { user, fileName, loadSession, authLoaded, isAutosaveEnabled, save, code, objects } = useCADStore();
+    const { user, fileName, loadSession, authLoaded, isAutosaveEnabled, save, code, objects, showPATDialog, setShowPATDialog } = useCADStore();
 
     useEffect(() => {
         loadSession();
@@ -43,10 +44,17 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
         return <AuthDialog />;
     }
 
-    // If user is logged in but hasn't picked a project yet
-    if (fileName === 'Untitled') {
-        return <ProjectDashboard />;
-    }
+    // Determine what to render based on fileName
+    const content = fileName === 'Untitled' ? <ProjectDashboard /> : children;
 
-    return <>{children}</>;
+    return (
+        <>
+            {content}
+            <GitHubTokenDialog
+                open={showPATDialog}
+                onOpenChange={setShowPATDialog}
+                mode="create"
+            />
+        </>
+    );
 }

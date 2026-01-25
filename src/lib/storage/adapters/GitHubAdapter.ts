@@ -15,15 +15,7 @@ export class GitHubAdapter implements StorageAdapter {
 
         let finalToken = token;
         if (!finalToken) {
-            // Use a small delay to ensure the UI has settled (especially if called from a Dialog)
-            await new Promise(resolve => setTimeout(resolve, 100));
-            finalToken = window.prompt('Please enter your GitHub Personal Access Token (PAT):') || undefined;
-        }
-
-        console.log('[GitHubAdapter] final token derived:', finalToken ? 'Token provided' : 'No token');
-
-        if (!finalToken) {
-            console.log('[GitHubAdapter] Connection cancelled by user (or prompt blocked)');
+            console.log('[GitHubAdapter] No token provided to connect()');
             return false;
         }
 
@@ -77,11 +69,11 @@ export class GitHubAdapter implements StorageAdapter {
             return true;
         } catch (error: any) {
             if (error.status === 404) {
-                const create = window.confirm(`Repository '${repo}' not found. Would you like to create it?`);
-                if (create) {
+                console.log(`[GitHubAdapter] Repository ${owner}/${repo} not found. Attempting to create...`);
+                try {
                     await this.octokit.rest.repos.createForAuthenticatedUser({
                         name: repo,
-                        description: 'HiveCAD Projects',
+                        description: 'HiveCAD Projects (Decentralized Storage)',
                         private: false,
                     });
 
@@ -92,7 +84,14 @@ export class GitHubAdapter implements StorageAdapter {
                         names: ['hivecad-project'],
                     });
 
+                    console.log(`[GitHubAdapter] Repository ${owner}/${repo} created successfully.`);
                     return true;
+                } catch (createError: any) {
+                    console.error('[GitHubAdapter] Failed to create repository:', createError);
+                    if (createError.status === 403 || createError.status === 401) {
+                        throw new Error(`Failed to create repository '${repo}'. Your GitHub PAT might be missing the 'repo' scope.`);
+                    }
+                    throw createError;
                 }
             }
             throw error;
@@ -108,10 +107,19 @@ export class GitHubAdapter implements StorageAdapter {
             throw new Error('Can only save to repositories owned by the authenticated user');
         }
 
-        const owner = this.currentOwner!;
-        const repo = this.currentRepo!;
-
         await this.ensureRepoExists(owner, repo);
+
+        // Ensure repository is public and has the correct topic
+        try {
+            await this.octokit.rest.repos.update({
+                owner,
+                repo,
+                private: false,
+                description: 'HiveCAD Projects (Decentralized Storage)',
+            });
+        } catch (error) {
+            console.warn('[GitHubAdapter] Failed to update repository visibility:', error);
+        }
 
         const path = `hivecad/${projectId}.json`;
         const content = btoa(JSON.stringify(data, null, 2));
@@ -177,6 +185,38 @@ export class GitHubAdapter implements StorageAdapter {
             return null;
         } catch (error: any) {
             if (error.status === 404) return null;
+            throw error;
+        }
+    }
+
+    async listProjects(): Promise<any[]> {
+        if (!this.octokit || !this.authenticatedUser) throw new Error('Not authenticated with GitHub');
+
+        const owner = this.currentOwner!;
+        const repo = this.currentRepo!;
+
+        try {
+            await this.ensureRepoExists(owner, repo);
+            const { data: contents } = await this.octokit.rest.repos.getContent({
+                owner,
+                repo,
+                path: 'hivecad',
+            });
+
+            if (Array.isArray(contents)) {
+                return contents
+                    .filter(item => item.name.endsWith('.json'))
+                    .map(item => ({
+                        id: item.name.replace('.json', ''),
+                        name: item.name.replace('.json', ''),
+                        url: item.html_url,
+                        sha: item.sha,
+                        path: item.path,
+                    }));
+            }
+            return [];
+        } catch (error: any) {
+            if (error.status === 404) return [];
             throw error;
         }
     }

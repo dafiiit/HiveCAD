@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useCADStore } from '@/hooks/useCADStore';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { EXAMPLES } from '@/lib/data/examples';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { GitHubTokenDialog } from '../ui/GitHubTokenDialog';
 
 type DashboardMode = 'workspace' | 'discover';
@@ -23,22 +24,63 @@ const DISCOVER_PROJECTS = [
 ];
 
 export function ProjectDashboard() {
-    const { user, logout, setFileName, setCode, projectThumbnails, reset } = useCADStore();
+    const { user, logout, setFileName, setCode, projectThumbnails, reset, showPATDialog, setShowPATDialog } = useCADStore();
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [dashboardMode, setDashboardMode] = useState<DashboardMode>('workspace');
     const [activeNav, setActiveNav] = useState('Created by me');
     const [folders, setFolders] = useState<string[]>([]);
     const [starredProjects, setStarredProjects] = useState<string[]>([]);
-    const [showTokenDialog, setShowTokenDialog] = useState(false);
+    const [userProjects, setUserProjects] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        const fetchProjects = async () => {
+            if (user?.pat && dashboardMode === 'workspace') {
+                setLoading(true);
+                try {
+                    const { StorageManager } = await import('@/lib/storage/StorageManager');
+                    const adapter = StorageManager.getInstance().currentAdapter;
+                    if (adapter.listProjects) {
+                        const projects = await adapter.listProjects();
+                        setUserProjects(projects);
+                    }
+                } catch (error) {
+                    console.error("Failed to fetch projects:", error);
+                } finally {
+                    setLoading(false);
+                }
+            }
+        };
+        fetchProjects();
+    }, [user, dashboardMode]);
 
     const handleCreateProject = () => {
         if (!user?.pat) {
-            setShowTokenDialog(true);
+            setShowPATDialog(true);
             return;
         }
 
         createProject();
+    };
+
+    const handleOpenProject = async (project: any) => {
+        setLoading(true);
+        try {
+            const { StorageManager } = await import('@/lib/storage/StorageManager');
+            const adapter = StorageManager.getInstance().currentAdapter;
+            const data = await adapter.load(project.id);
+            if (data) {
+                setFileName(data.fileName || project.name);
+                setCode(data.code);
+                // We'd need a more complete state restoration here ideally
+                toast.success(`Opened project: ${project.name}`);
+            }
+        } catch (error) {
+            toast.error("Failed to open project");
+        } finally {
+            setLoading(false);
+        }
     };
 
     const createProject = () => {
@@ -201,6 +243,38 @@ export function ProjectDashboard() {
                                     </div>
                                 </div>
 
+                                {loading && (
+                                    <div className="col-span-full py-10 flex flex-col items-center justify-center space-y-2">
+                                        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                                        <p className="text-xs text-zinc-500 font-medium">Syncing with GitHub...</p>
+                                    </div>
+                                )}
+
+                                {!loading && userProjects.length > 0 && userProjects.map((project) => (
+                                    <div
+                                        key={project.id}
+                                        onClick={() => handleOpenProject(project)}
+                                        className="bg-[#2d2d2d] rounded-md overflow-hidden border border-zinc-800 hover:border-primary/50 cursor-pointer group transition-all hover:translate-y-[-2px] shadow-lg flex flex-col relative"
+                                    >
+                                        <div className="h-32 bg-[#222] flex items-center justify-center overflow-hidden relative shrink-0">
+                                            <div className="text-primary opacity-40 group-hover:opacity-60 transition-opacity">
+                                                <div className="bg-primary/10 p-4 rounded-full">
+                                                    <LayoutGrid className="w-12 h-12" />
+                                                </div>
+                                            </div>
+                                            {project.sha && (
+                                                <div className="absolute bottom-2 right-2 bg-green-500/20 text-green-500 text-[8px] font-bold px-1.5 py-0.5 rounded border border-green-500/30 uppercase tracking-tighter">
+                                                    Cloud
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="p-3 bg-[#2d2d2d] border-t border-zinc-800 flex-1 flex flex-col justify-center">
+                                            <div className="font-medium text-white truncate text-sm">{project.name}</div>
+                                            <div className="text-[10px] text-zinc-500 mt-1 uppercase tracking-tighter font-bold opacity-60">My Project</div>
+                                        </div>
+                                    </div>
+                                ))}
+
                                 {EXAMPLES.map((example) => {
                                     const thumbnail = projectThumbnails[example.name];
                                     const isStarred = starredProjects.includes(example.name);
@@ -252,59 +326,81 @@ export function ProjectDashboard() {
                                 <ListIcon className="w-4 h-4" /> {activeNav}
                             </h3>
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                                {/* Filtering logic: normally this would be dynamic, but for now we filter EXAMPLES or your own stuff */}
-                                {EXAMPLES
-                                    .filter(e => e.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                                    .filter(e => {
-                                        if (activeNav === 'Starred') return starredProjects.includes(e.name);
-                                        if (activeNav === 'Created by me') return false;
-                                        if (activeNav === 'Shared with me') return true;
-                                        if (activeNav === 'Public') return true;
+                                {loading && (
+                                    <div className="col-span-full py-10 flex flex-col items-center justify-center space-y-2">
+                                        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                                        <p className="text-xs text-zinc-500 font-medium">Fetching {activeNav}...</p>
+                                    </div>
+                                )}
+
+                                {/* Filtered Projects (User + Examples) */}
+                                {!loading && [
+                                    ...userProjects.map(p => ({ ...p, type: 'user' })),
+                                    ...EXAMPLES.map(e => ({ ...e, type: 'example' }))
+                                ]
+                                    .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                                    .filter(p => {
+                                        if (activeNav === 'Starred') return starredProjects.includes(p.name);
+                                        if (activeNav === 'Created by me') return p.type === 'user';
+                                        if (activeNav === 'Shared with me') return false;
+                                        if (activeNav === 'Public') return p.type === 'example' || p.type === 'user';
                                         if (activeNav === 'Trash') return false;
                                         if (activeNav === 'Labels') return false;
                                         return true;
                                     })
-                                    .map((example) => {
-                                        const thumbnail = projectThumbnails[example.name];
-                                        const isStarred = starredProjects.includes(example.name);
+                                    .map((project: any) => {
+                                        const isExample = project.type === 'example';
+                                        const thumbnail = isExample ? projectThumbnails[project.name] : null;
+                                        const isStarred = starredProjects.includes(project.name);
                                         return (
                                             <div
-                                                key={`filtered-${example.id}`}
-                                                onClick={() => handleOpenExample(example)}
+                                                key={`filtered-${project.id}`}
+                                                onClick={() => isExample ? handleOpenExample(project) : handleOpenProject(project)}
                                                 className="bg-[#2d2d2d] rounded-md overflow-hidden border border-zinc-800 hover:border-primary/50 cursor-pointer group transition-all hover:translate-y-[-2px] shadow-lg flex flex-col relative"
                                             >
                                                 <div className="h-40 bg-[#252525] flex items-center justify-center overflow-hidden relative shrink-0">
                                                     {thumbnail ? (
-                                                        <img src={thumbnail} className="w-full h-full object-cover" alt={example.name} />
+                                                        <img src={thumbnail} className="w-full h-full object-cover" alt={project.name} />
                                                     ) : (
-                                                        <LayoutGrid className="w-10 h-10 text-zinc-700" />
+                                                        <LayoutGrid className={cn("w-10 h-10", isExample ? "text-zinc-700" : "text-primary/40")} />
                                                     )}
                                                     <div className="absolute top-2 right-2">
                                                         <button
-                                                            onClick={(e) => handleToggleStar(e, example.name)}
+                                                            onClick={(e) => handleToggleStar(e, project.name)}
                                                             className={`p-1.5 rounded-md backdrop-blur-md transition-all ${isStarred ? 'bg-primary/20 text-primary' : 'bg-black/50 text-zinc-400 opacity-0 group-hover:opacity-100'}`}
                                                         >
                                                             <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-primary' : ''}`} />
                                                         </button>
                                                     </div>
+                                                    {!isExample && (
+                                                        <div className="absolute bottom-2 right-2 bg-green-500/20 text-green-500 text-[8px] font-bold px-1.5 py-0.5 rounded border border-green-500/30 uppercase tracking-tighter">
+                                                            Cloud
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 <div className="p-3">
-                                                    <div className="font-medium text-white truncate text-sm">{example.name}</div>
-                                                    <div className="text-[10px] text-zinc-500 mt-1 uppercase tracking-tighter">Modified 2d ago</div>
+                                                    <div className="font-medium text-white truncate text-sm">{project.name}</div>
+                                                    <div className="text-[10px] text-zinc-500 mt-1 uppercase tracking-tighter">
+                                                        {isExample ? 'Example Project' : 'Last Modified 2d ago'}
+                                                    </div>
                                                 </div>
                                             </div>
                                         );
                                     })}
 
-                                {EXAMPLES.filter(e => {
-                                    if (activeNav === 'Starred') return starredProjects.includes(e.name);
-                                    if (activeNav === 'Created by me') return false;
-                                    if (activeNav === 'Shared with me') return true;
-                                    if (activeNav === 'Public') return true;
-                                    if (activeNav === 'Trash') return false;
-                                    if (activeNav === 'Labels') return false;
-                                    return true;
-                                }).length === 0 && (
+                                {!loading && [
+                                    ...userProjects.map(p => ({ ...p, type: 'user' })),
+                                    ...EXAMPLES.map(e => ({ ...e, type: 'example' }))
+                                ].filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                                    .filter(p => {
+                                        if (activeNav === 'Starred') return starredProjects.includes(p.name);
+                                        if (activeNav === 'Created by me') return p.type === 'user';
+                                        if (activeNav === 'Shared with me') return false;
+                                        if (activeNav === 'Public') return p.type === 'example' || p.type === 'user';
+                                        if (activeNav === 'Trash') return false;
+                                        if (activeNav === 'Labels') return false;
+                                        return true;
+                                    }).length === 0 && (
                                         <div className="col-span-full py-20 text-center space-y-3">
                                             <div className="w-16 h-16 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto text-zinc-600">
                                                 <Search className="w-8 h-8" />
@@ -362,14 +458,6 @@ export function ProjectDashboard() {
                     </div>
                 )}
             </div>
-
-            <GitHubTokenDialog
-                open={showTokenDialog}
-                onOpenChange={setShowTokenDialog}
-                mode="create"
-                onConfirm={createProject}
-                onSecondaryAction={createProject} // "Skip" still creates project
-            />
         </div>
     );
 }

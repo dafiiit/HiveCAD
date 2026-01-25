@@ -31,6 +31,7 @@ export interface StorageAdapter {
     load(projectId: string, owner?: string, repo?: string): Promise<any>;
 
     // Discovery
+    listProjects?(): Promise<any[]>;
     searchCommunityProjects?(query: string): Promise<any[]>;
 
     // Versioning (Optional / Future)
