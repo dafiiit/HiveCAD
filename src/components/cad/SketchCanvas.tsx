@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useThree, ThreeEvent } from "@react-three/fiber";
-import { Html } from "@react-three/drei";
+import { Html, Grid } from "@react-three/drei";
 import * as THREE from "three";
 import { useCADStore, SketchPrimitive, ToolType } from "../../hooks/useCADStore";
 import { SnappingEngine, SnapResult } from "../../lib/snapping";
@@ -143,12 +143,16 @@ const SketchCanvas = () => {
         if (e.intersections.length > 0) {
             const worldPoint = e.intersections[0].point;
 
-            // Clamp to exact plane to avoid floating point drift
-            if (sketchPlane === 'XY') worldPoint.y = 0;  // Y=0 plane
-            if (sketchPlane === 'XZ') worldPoint.z = 0;  // Z=0 plane
-            if (sketchPlane === 'YZ') worldPoint.x = 0;  // X=0 plane
+            // Transform World Point -> Local Point (Z-up)
+            // Scene is rotated by -90 deg X (Z_UP_ROTATION), so we apply +90 deg X to transform back
+            const localPoint = worldPoint.clone().applyEuler(new THREE.Euler(Math.PI / 2, 0, 0));
 
-            const p2d = to2D(worldPoint);
+            // Clamp to exact local plane to avoid floating point drift
+            if (sketchPlane === 'XY') localPoint.z = 0;  // Z=0 plane (Ground)
+            if (sketchPlane === 'XZ') localPoint.y = 0;  // Y=0 plane (Front)
+            if (sketchPlane === 'YZ') localPoint.x = 0;  // X=0 plane (Right)
+
+            const p2d = to2D(localPoint);
             let finalP2d = [...p2d] as [number, number];
             let currentSnapResult: SnapResult | null = null;
 
@@ -323,7 +327,6 @@ const SketchCanvas = () => {
 
                     if (applied) {
                         clear();
-                        toast.success("Dimension added");
                     }
                 }
             } else {
@@ -588,6 +591,20 @@ const SketchCanvas = () => {
 
     return (
         <group>
+            {/* Sketch Grid - aligned with the active plane */}
+            <Grid
+                args={[200, 200]}
+                cellSize={2.5}
+                cellThickness={0.3}
+                cellColor="#4a6080"
+                sectionSize={12.5}
+                sectionThickness={0.6}
+                sectionColor="#5a7090"
+                fadeDistance={200}
+                rotation={planeRotation}
+                position={[0, 0, -0.01]} // Slightly behind drawing plane
+            />
+
             {/* Invisible plane for raycasting */}
             <mesh
                 visible={false}

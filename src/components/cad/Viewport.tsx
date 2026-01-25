@@ -77,20 +77,7 @@ const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
         </line>
       </group>
 
-      {/* Sketch mode grid overlay */}
-      {isSketchMode && (
-        <Grid
-          args={[200, 200]}
-          cellSize={2.5}
-          cellThickness={0.3}
-          cellColor="#4a6080"
-          sectionSize={12.5}
-          sectionThickness={0.6}
-          sectionColor="#5a7090"
-          fadeDistance={200}
-          position={[0, 0, 0.01]}
-        />
-      )}
+      {/* Sketch mode grid overlay - moved to SketchCanvas for proper rotation */}
     </>
   );
 };

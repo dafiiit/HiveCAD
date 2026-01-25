@@ -49,29 +49,33 @@ export interface AnnotationContext {
 export function createAnnotationContext(plane: SketchPlane): AnnotationContext {
     const to3D = (point: Point2D): THREE.Vector3 => {
         switch (plane) {
-            case 'XY': return new THREE.Vector3(point.x, 0, point.y);  // Y=0 plane
-            case 'XZ': return new THREE.Vector3(point.x, point.y, 0); // Z=0 plane  
-            case 'YZ': return new THREE.Vector3(0, point.y, point.x); // X=0 plane
+            case 'XY': return new THREE.Vector3(point.x, point.y, 0);  // Z=0 plane (Top)
+            case 'XZ': return new THREE.Vector3(point.x, 0, point.y);  // Y=0 plane (Front)
+            case 'YZ': return new THREE.Vector3(0, point.x, point.y);  // X=0 plane (Right)
         }
     };
 
     // Define "right" (horizontal in sketch space) and "up" (vertical in sketch space)
-    // for each plane - must match camera orientation
+    // for each plane - must match camera orientation and Z-up system
     let rightVector: THREE.Vector3;
     let upVector: THREE.Vector3;
 
     switch (plane) {
-        case 'XY': // Top view from +Y
+        case 'XY': // Top view (Z-up ground)
+            rightVector = new THREE.Vector3(1, 0, 0);  // +X is right
+            upVector = new THREE.Vector3(0, 1, 0);     // +Y is up
+            break;
+        case 'XZ': // Front view (Y=0)
             rightVector = new THREE.Vector3(1, 0, 0);  // +X is right
             upVector = new THREE.Vector3(0, 0, 1);     // +Z is up
             break;
-        case 'XZ': // Front view from +Z
-            rightVector = new THREE.Vector3(1, 0, 0);  // +X is right
-            upVector = new THREE.Vector3(0, 1, 0);     // +Y is up
-            break;
-        case 'YZ': // Right view from +X
-            rightVector = new THREE.Vector3(0, 0, 1);  // +Z is right
-            upVector = new THREE.Vector3(0, 1, 0);     // +Y is up
+        case 'YZ': // Right view (X=0)
+            rightVector = new THREE.Vector3(0, 1, 0);  // +Y is right (horizontal on screen for right view?)
+            // Wait, for Right View (YZ plane):
+            // Normal is +X.
+            // Horizontal usually Y axis? Vertical is Z axis.
+            // So Right is +Y. Up is +Z.
+            upVector = new THREE.Vector3(0, 0, 1);     // +Z is up
             break;
     }
 
