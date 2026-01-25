@@ -44,6 +44,13 @@ export class AuthService {
         if (users[email]) {
             users[email].pat = pat;
             this.saveUsers(users);
+
+            // Also update current session if this is the logged in user
+            const currentSession = this.getCurrentUser();
+            if (currentSession && currentSession.email === email) {
+                currentSession.pat = pat;
+                localStorage.setItem(this.SESSION_KEY, JSON.stringify(currentSession));
+            }
         }
     }
 

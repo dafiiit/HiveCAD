@@ -14,13 +14,23 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
     // Auto-connect to Storage if PAT is present
     useEffect(() => {
         const connectStorage = async () => {
-            if (user?.pat) {
+            if (user?.pat && user.pat.trim() !== '') {
                 const { StorageManager } = await import('@/lib/storage/StorageManager');
                 const githubAdapter = StorageManager.getInstance().getAdapter('github');
                 if (githubAdapter && !githubAdapter.isAuthenticated()) {
-                    console.log('[AuthGateway] Auto-connecting GitHub storage...');
-                    await githubAdapter.connect(user.pat);
+                    console.log('[AuthGateway] Auto-connecting GitHub storage with PAT...');
+                    const success = await githubAdapter.connect(user.pat);
+                    if (success) {
+                        console.log('[AuthGateway] GitHub storage connected successfully.');
+                        useCADStore.getState().setStorageConnected(true);
+                    } else {
+                        console.error('[AuthGateway] GitHub storage connection failed.');
+                        useCADStore.getState().setStorageConnected(false);
+                    }
                 }
+            } else {
+                console.log('[AuthGateway] No PAT found for user, skipped cloud connection.');
+                useCADStore.getState().setStorageConnected(false);
             }
         };
         if (authLoaded && user) connectStorage();

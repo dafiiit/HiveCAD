@@ -66,7 +66,8 @@ export const createVersioningSlice: StateCreator<
                 versions: state.versions,
                 branches: state.branches,
                 currentBranch: state.currentBranch,
-                currentVersionId: state.currentVersionId
+                currentVersionId: state.currentVersionId,
+                thumbnail: state.projectThumbnails[state.fileName]
             };
 
             await adapter.save(state.fileName, projectData);

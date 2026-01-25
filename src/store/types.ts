@@ -304,9 +304,11 @@ export interface AssemblySlice {
 export interface AuthSlice {
     user: { email: string; pat?: string | null } | null;
     isAutosaveEnabled: boolean;
+    isStorageConnected: boolean;
     authLoaded: boolean;
     showPATDialog: boolean;
     setShowPATDialog: (show: boolean) => void;
+    setStorageConnected: (connected: boolean) => void;
     login: (email: string, password: string) => Promise<void>;
     signup: (email: string, password: string) => Promise<void>;
     logout: () => void;

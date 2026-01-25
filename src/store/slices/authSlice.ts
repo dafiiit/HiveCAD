@@ -5,6 +5,7 @@ import { AuthService } from '../../lib/auth/AuthService';
 export const createAuthSlice: StateCreator<CADState, [], [], AuthSlice> = (set, get) => ({
     user: null,
     isAutosaveEnabled: false,
+    isStorageConnected: false,
     showPATDialog: false,
     authLoaded: false,
 
@@ -25,10 +26,12 @@ export const createAuthSlice: StateCreator<CADState, [], [], AuthSlice> = (set, 
 
     logout: () => {
         AuthService.logout();
-        set({ user: null, isAutosaveEnabled: false });
+        set({ user: null, isAutosaveEnabled: false, isStorageConnected: false });
     },
 
     setShowPATDialog: (show) => set({ showPATDialog: show }),
+
+    setStorageConnected: (connected) => set({ isStorageConnected: connected }),
 
     setPAT: async (pat) => {
         const user = get().user;

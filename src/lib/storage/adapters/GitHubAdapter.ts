@@ -1,5 +1,5 @@
 import { Octokit } from 'octokit';
-import { StorageAdapter, StorageType } from '../types';
+import { StorageAdapter, StorageType, ProjectData } from '../types';
 
 export class GitHubAdapter implements StorageAdapter {
     readonly type: StorageType = 'github';
@@ -103,7 +103,17 @@ export class GitHubAdapter implements StorageAdapter {
             throw new Error('Not authenticated with GitHub');
         }
 
-        if (this.currentOwner !== this.authenticatedUser) {
+        const owner = this.currentOwner;
+        const repo = this.currentRepo;
+
+        if (!owner) {
+            throw new Error('GitHub owner is not defined. Please try reconnecting your account.');
+        }
+        if (!repo) {
+            throw new Error('GitHub repository is not defined. Please try reconnecting your account.');
+        }
+
+        if (owner !== this.authenticatedUser) {
             throw new Error('Can only save to repositories owned by the authenticated user');
         }
 
@@ -122,7 +132,21 @@ export class GitHubAdapter implements StorageAdapter {
         }
 
         const path = `hivecad/${projectId}.json`;
-        const content = btoa(JSON.stringify(data, null, 2));
+
+        // Prepare data with metadata if not present
+        const projectData: ProjectData = {
+            id: projectId,
+            name: data.name || projectId,
+            ownerId: this.authenticatedUser,
+            files: data.files || data,
+            version: data.version || '1.0.0',
+            lastModified: Date.now(),
+            labels: data.labels || [],
+            deletedAt: data.deletedAt,
+            thumbnail: data.thumbnail,
+        };
+
+        const content = btoa(JSON.stringify(projectData, null, 2));
 
         let sha: string | undefined;
         try {
@@ -147,6 +171,9 @@ export class GitHubAdapter implements StorageAdapter {
             sha,
         });
 
+        // Update the central index
+        await this.updateIndex(projectData);
+
         // Ensure topic is present (idempotent)
         await this.octokit.rest.repos.replaceAllTopics({
             owner,
@@ -157,7 +184,76 @@ export class GitHubAdapter implements StorageAdapter {
         console.log(`[GitHubAdapter] Saved ${projectId} to ${owner}/${repo}`);
     }
 
-    async load(projectId: string, owner?: string, repo?: string): Promise<any> {
+    private async updateIndex(project: ProjectData, isDelete = false): Promise<void> {
+        if (!this.octokit) return;
+        const owner = this.currentOwner!;
+        const repo = this.currentRepo!;
+        const indexPath = 'hivecad/index.json';
+
+        try {
+            let index: ProjectData[] = [];
+            let sha: string | undefined;
+
+            try {
+                const { data: indexFileData } = await this.octokit.rest.repos.getContent({
+                    owner,
+                    repo,
+                    path: indexPath,
+                });
+                if (!Array.isArray(indexFileData) && 'content' in indexFileData) {
+                    const content = atob(indexFileData.content.replace(/\n/g, ''));
+                    index = JSON.parse(content);
+                    sha = indexFileData.sha;
+                }
+            } catch (error: any) {
+                if (error.status !== 404) throw error;
+            }
+
+            // Update or remove the project
+            const existingIndex = index.findIndex(p => p.id === project.id);
+            if (isDelete) {
+                if (existingIndex > -1) index.splice(existingIndex, 1);
+            } else {
+                const entry = { ...project };
+                delete entry.files; // Don't store full data in index
+                if (existingIndex > -1) {
+                    index[existingIndex] = entry;
+                } else {
+                    index.push(entry);
+                }
+            }
+
+            await this.octokit.rest.repos.createOrUpdateFileContents({
+                owner,
+                repo,
+                path: indexPath,
+                message: isDelete ? `Remove ${project.id} from index` : `Update ${project.id} in index`,
+                content: btoa(JSON.stringify(index, null, 2)),
+                sha,
+            });
+        } catch (error) {
+            console.error('[GitHubAdapter] Failed to update index:', error);
+        }
+    }
+
+    async delete(projectId: string): Promise<void> {
+        // Soft delete: update deletedAt
+        await this.updateMetadata(projectId, { deletedAt: Date.now() });
+    }
+
+    async rename(projectId: string, newName: string): Promise<void> {
+        await this.updateMetadata(projectId, { name: newName });
+    }
+
+    async updateMetadata(projectId: string, updates: Partial<Pick<ProjectData, 'labels' | 'deletedAt' | 'name' | 'lastOpenedAt'>>): Promise<void> {
+        const data = await this.load(projectId);
+        if (!data) throw new Error('Project not found');
+
+        const updatedData = { ...data, ...updates, lastModified: Date.now() };
+        await this.save(projectId, updatedData);
+    }
+
+    async load(projectId: string, owner?: string, repo?: string): Promise<ProjectData | null> {
         if (!this.octokit) {
             throw new Error('Not connected to GitHub');
         }
@@ -189,36 +285,95 @@ export class GitHubAdapter implements StorageAdapter {
         }
     }
 
-    async listProjects(): Promise<any[]> {
+    async listProjects(): Promise<ProjectData[]> {
         if (!this.octokit || !this.authenticatedUser) throw new Error('Not authenticated with GitHub');
 
         const owner = this.currentOwner!;
         const repo = this.currentRepo!;
 
         try {
-            await this.ensureRepoExists(owner, repo);
-            const { data: contents } = await this.octokit.rest.repos.getContent({
+            const { data: indexFileData } = await this.octokit.rest.repos.getContent({
                 owner,
                 repo,
-                path: 'hivecad',
+                path: 'hivecad/index.json',
             });
 
-            if (Array.isArray(contents)) {
-                return contents
-                    .filter(item => item.name.endsWith('.json'))
-                    .map(item => ({
-                        id: item.name.replace('.json', ''),
-                        name: item.name.replace('.json', ''),
-                        url: item.html_url,
-                        sha: item.sha,
-                        path: item.path,
-                    }));
+            if (!Array.isArray(indexFileData) && 'content' in indexFileData) {
+                const content = atob(indexFileData.content.replace(/\n/g, ''));
+                return JSON.parse(content);
+            }
+            return [];
+        } catch (error: any) {
+            if (error.status === 404) {
+                // Fallback: list files if index doesn't exist (legacy migration)
+                const { data: contents } = await this.octokit.rest.repos.getContent({
+                    owner,
+                    repo,
+                    path: 'hivecad',
+                });
+                if (Array.isArray(contents)) {
+                    return contents
+                        .filter(item => item.name.endsWith('.json') && item.name !== 'index.json' && item.name !== 'tags.json')
+                        .map(item => ({
+                            id: item.name.replace('.json', ''),
+                            name: item.name.replace('.json', ''),
+                            ownerId: owner,
+                            lastModified: Date.now(),
+                        })) as ProjectData[];
+                }
+            }
+            return [];
+        }
+    }
+
+    async listTags(): Promise<Array<{ name: string, color: string }>> {
+        if (!this.octokit) return [];
+        const owner = this.currentOwner!;
+        const repo = this.currentRepo!;
+
+        try {
+            const { data: tagFileData } = await this.octokit.rest.repos.getContent({
+                owner,
+                repo,
+                path: 'hivecad/tags.json',
+            });
+            if (!Array.isArray(tagFileData) && 'content' in tagFileData) {
+                const content = atob(tagFileData.content.replace(/\n/g, ''));
+                return JSON.parse(content);
             }
             return [];
         } catch (error: any) {
             if (error.status === 404) return [];
             throw error;
         }
+    }
+
+    async saveTags(tags: Array<{ name: string, color: string }>): Promise<void> {
+        if (!this.octokit) return;
+        const owner = this.currentOwner!;
+        const repo = this.currentRepo!;
+        const tagPath = 'hivecad/tags.json';
+
+        let sha: string | undefined;
+        try {
+            const { data: tagFileData } = await this.octokit.rest.repos.getContent({
+                owner,
+                repo,
+                path: tagPath,
+            });
+            if (!Array.isArray(tagFileData)) sha = tagFileData.sha;
+        } catch (error: any) {
+            if (error.status !== 404) throw error;
+        }
+
+        await this.octokit.rest.repos.createOrUpdateFileContents({
+            owner,
+            repo,
+            path: tagPath,
+            message: 'Update tag definitions',
+            content: btoa(JSON.stringify(tags, null, 2)),
+            sha,
+        });
     }
 
     async searchCommunityProjects(query: string): Promise<any[]> {
@@ -234,5 +389,50 @@ export class GitHubAdapter implements StorageAdapter {
             description: item.description,
             url: item.html_url,
         }));
+    }
+
+    async resetRepository(): Promise<void> {
+        if (!this.octokit || !this.authenticatedUser || !this.currentOwner || !this.currentRepo) {
+            throw new Error('Not authenticated with GitHub');
+        }
+
+        const owner = this.currentOwner;
+        const repo = this.currentRepo;
+
+        try {
+            console.log(`[GitHubAdapter] Resetting repository ${owner}/${repo}...`);
+
+            // List all files in the hivecad/ directory
+            const { data: contents } = await this.octokit.rest.repos.getContent({
+                owner,
+                repo,
+                path: 'hivecad',
+            });
+
+            if (Array.isArray(contents)) {
+                // Delete each file
+                for (const item of contents) {
+                    if (item.type === 'file') {
+                        await this.octokit.rest.repos.deleteFile({
+                            owner,
+                            repo,
+                            path: item.path,
+                            message: `Clean up ${item.path} for repo reset`,
+                            sha: item.sha,
+                        });
+                        console.log(`[GitHubAdapter] Deleted ${item.path}`);
+                    }
+                }
+            }
+
+            console.log(`[GitHubAdapter] Repository ${owner}/${repo} reset successfully.`);
+        } catch (error: any) {
+            if (error.status === 404) {
+                console.log('[GitHubAdapter] hivecad/ directory not found, nothing to reset.');
+                return;
+            }
+            console.error('[GitHubAdapter] Failed to reset repository:', error);
+            throw error;
+        }
     }
 }

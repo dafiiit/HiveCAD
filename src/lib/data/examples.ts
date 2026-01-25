@@ -5,6 +5,7 @@ export const EXAMPLES = [
     modified: '2024-01-25T14:30:00Z',
     modifiedBy: 'System',
     ownedBy: 'HiveCAD',
+    ownerId: 'Example Project',
     code: `const { makePlane, makeCylinder, draw, drawCircle } = replicad;
 
 const defaultParams = {};
@@ -70,6 +71,7 @@ const main = () => {
     modified: '2024-01-25T15:00:00Z',
     modifiedBy: 'System',
     ownedBy: 'HiveCAD',
+    ownerId: 'Example Project',
     code: `const {
   draw,
   drawRoundedRectangle,

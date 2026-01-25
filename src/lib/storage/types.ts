@@ -10,11 +10,16 @@ export interface StorageConfig {
 
 export interface ProjectData {
     id: string;
-    name: string;
+    name: string; // The "display name"
     ownerId: string;
-    files: any; // Using any for now to match current structure, refine later
+    files: any;   // Using any for now to match current structure
     version: string;
     lastModified: number;
+    labels?: string[];
+    deletedAt?: number;
+    sha?: string;
+    lastOpenedAt?: number;
+    thumbnail?: string;
 }
 
 export interface StorageAdapter {
@@ -29,11 +34,21 @@ export interface StorageAdapter {
     // Persistence
     save(projectId: string, data: any): Promise<void>;
     load(projectId: string, owner?: string, repo?: string): Promise<any>;
+    delete(projectId: string): Promise<void>;
+    rename(projectId: string, newName: string): Promise<void>;
+    updateMetadata(projectId: string, updates: Partial<Pick<ProjectData, 'labels' | 'deletedAt' | 'name' | 'lastOpenedAt'>>): Promise<void>;
 
     // Discovery
-    listProjects?(): Promise<any[]>;
+    listProjects?(): Promise<ProjectData[]>;
     searchCommunityProjects?(query: string): Promise<any[]>;
+
+    // Labels management
+    listTags?(): Promise<Array<{ name: string, color: string }>>;
+    saveTags?(tags: Array<{ name: string, color: string }>): Promise<void>;
 
     // Versioning (Optional / Future)
     listVersions?(projectId: string): Promise<any[]>;
+
+    // Maintenance
+    resetRepository?(): Promise<void>;
 }
