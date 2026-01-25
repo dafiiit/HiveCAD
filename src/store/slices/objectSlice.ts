@@ -1,14 +1,26 @@
 import { StateCreator } from 'zustand';
 import { toast } from 'sonner';
 import { initCAD, replicadToThreeGeometry, replicadToThreeEdges } from '../../lib/cad-kernel';
-import * as replicad from 'replicad';
+// import * as replicad from 'replicad'; // Removed: execution is now in worker
 import { CodeManager } from '../../lib/code-manager';
 import { toolRegistry } from '../../lib/tools';
 import { CADState, ObjectSlice, CADObject } from '../types';
+import * as THREE from 'three';
 
 const DEFAULT_CODE = `const main = () => {
   return;
 };`;
+
+// Worker Initialization
+let replicadWorker: Worker | null = null;
+const getWorker = () => {
+    if (!replicadWorker) {
+        replicadWorker = new Worker(new URL('../../workers/replicad-worker.ts', import.meta.url), {
+            type: 'module'
+        });
+    }
+    return replicadWorker;
+};
 
 const DEFAULT_COLORS = ['#6090c0', '#c06060', '#60c060', '#c0c060', '#c0c060', '#60c0c0'];
 let colorIndex = 0;
@@ -32,6 +44,8 @@ export const createObjectSlice: StateCreator<
     activeOperation: null,
 
     addObject: async (type, options = {}) => {
+        // initCAD is still useful for initial setup check or helper functions on main thread if any
+        // but for worker execution it's handled inside the worker.
         try {
             await initCAD();
         } catch (e) {
@@ -221,52 +235,54 @@ export const createObjectSlice: StateCreator<
     runCode: async () => {
         const state = get();
         try {
-            await initCAD();
-
-            // 1. Transform Code
             const cm = new CodeManager(state.code);
             const executableCode = cm.transformForExecution();
 
-            // 2. Define Instrumentation
-            const __record = (uuid: string, shape: any) => {
-                if (shape && typeof shape === 'object') {
-                    try {
-                        (shape as any)._astId = uuid;
-                    } catch (e) {
-                        console.warn("Could not attach ID to shape", e);
-                    }
-                }
-                return shape;
+            const worker = getWorker();
+
+            // Promise wrapper for worker message
+            const executeInWorker = () => {
+                return new Promise<any>((resolve, reject) => {
+                    const handler = (e: MessageEvent) => {
+                        if (e.data.type === 'SUCCESS') {
+                            worker.removeEventListener('message', handler);
+                            resolve(e.data.meshes);
+                        } else if (e.data.type === 'ERROR') {
+                            worker.removeEventListener('message', handler);
+                            reject(new Error(e.data.error));
+                        }
+                    };
+                    worker.addEventListener('message', handler);
+                    worker.postMessage({ type: 'EXECUTE', code: executableCode });
+                });
             };
 
-            // 3. Execute
-            const hasDefaultParams = /const\s+defaultParams\s*=/.test(state.code);
-            const mainCall = hasDefaultParams
-                ? "\nreturn main(replicad, defaultParams);"
-                : "\nreturn main();";
-            const evaluator = new Function('replicad', '__record', executableCode + mainCall);
-            const result = evaluator(replicad, __record);
-
-            let shapesArray: any[] = [];
-            if (Array.isArray(result)) {
-                shapesArray = result.flat(Infinity);
-            } else if (result) {
-                shapesArray = [result];
-            }
+            const shapesArray = await executeInWorker();
 
             // 4. Map to CADObjects
-            const newObjects: CADObject[] = shapesArray.map((item, index) => {
-                const shape = item.shape || item;
-                const astId = (shape as any)._astId || `gen-${index}`;
+            const newObjects: CADObject[] = shapesArray.map((item: any, index: number) => {
+                const astId = item.id;
                 const existing = state.objects.find(o => o.id === astId);
 
-                let geometry = null;
-                let edgeGeometry = null;
-                try {
-                    geometry = replicadToThreeGeometry(shape);
-                    edgeGeometry = replicadToThreeEdges(shape);
-                } catch (err) {
-                    console.error(`Failed to convert shape ${index}`, err);
+                let geometry = undefined;
+                let edgeGeometry = undefined;
+
+                // Reconstruct Geometry from Worker Data
+                if (item.meshData) {
+                    const { vertices, indices, normals } = item.meshData;
+                    geometry = new THREE.BufferGeometry();
+                    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+                    if (indices) geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+                    if (normals && normals.length > 0) {
+                        geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+                    } else {
+                        geometry.computeVertexNormals();
+                    }
+                }
+
+                if (item.edgeData && item.edgeData.length > 0) {
+                    edgeGeometry = new THREE.BufferGeometry();
+                    edgeGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(item.edgeData), 3));
                 }
 
                 let type: CADObject['type'] = existing?.type || 'box';
@@ -304,10 +320,10 @@ export const createObjectSlice: StateCreator<
                     color: existing?.color || getNextColor(),
                     visible: true,
                     selected: existing?.selected || false,
-                    geometry: geometry || undefined,
-                    edgeGeometry: edgeGeometry || undefined
+                    geometry: geometry,
+                    edgeGeometry: edgeGeometry
                 };
-            }).filter(obj => (obj.geometry !== undefined || obj.edgeGeometry !== undefined));
+            }).filter((obj: any) => (obj.geometry !== undefined || obj.edgeGeometry !== undefined));
 
             set({ objects: newObjects });
 
