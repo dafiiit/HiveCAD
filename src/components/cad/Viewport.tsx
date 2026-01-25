@@ -17,6 +17,7 @@ const Z_UP_ROTATION: [number, number, number] = [-Math.PI / 2, 0, 0];
 // Grid helper component
 // Grid is defined in Z-up coordinates (XY is ground), rotation applied by parent ZUpContainer
 const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
+  if (isSketchMode) return null;
   return (
     <>
       {/* Main grid - on XY plane (ground in Z-up) */}

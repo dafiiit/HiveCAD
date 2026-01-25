@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, useLayoutEffect } from "react";
 import { useThree, ThreeEvent } from "@react-three/fiber";
 import { Html, Grid } from "@react-three/drei";
 import * as THREE from "three";
@@ -8,40 +8,7 @@ import { toolRegistry } from "../../lib/tools";
 import SketchToolDialog, { TOOL_PARAMS } from "./SketchToolDialog";
 import { DimensionBadge, createAnnotationContext } from "./SketchAnnotations";
 
-// Type needed for dynamic inputs
-interface DynamicInputProps {
-    position: [number, number, number];
-    value: number;
-    label?: string;
-    showLabel?: boolean;
-    onChange: (val: number) => void;
-    onLock: () => void;
-    autoFocus?: boolean;
-}
-
-const DynamicInputOverlay = ({ position, value, label, showLabel, onChange, onLock, autoFocus }: DynamicInputProps) => {
-    return (
-        <Html position={position} center className="pointer-events-none">
-            <div className="flex flex-col items-center pointer-events-auto">
-                <input
-                    type="number"
-                    value={value}
-                    onChange={(e) => onChange(parseFloat(e.target.value))}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter') onLock();
-                        if (e.key === 'Tab') {
-                            e.preventDefault();
-                            onLock();
-                        }
-                    }}
-                    autoFocus={autoFocus}
-                    className="w-20 bg-slate-800/90 text-white text-xs px-1.5 py-0.5 rounded border border-slate-600 focus:border-blue-500 focus:outline-none text-center shadow-lg"
-                />
-                {showLabel && <div className="text-[10px] text-slate-300 bg-slate-900/50 px-1 rounded mt-0.5 backdrop-blur-sm">{label}</div>}
-            </div>
-        </Html>
-    );
-};
+// ... (existing helper types/components)
 
 // Tools that require parameter dialog before drawing
 const DIALOG_REQUIRED_TOOLS: ToolType[] = [
@@ -78,6 +45,8 @@ const SketchCanvas = () => {
     const [pendingStartPoint, setPendingStartPoint] = useState<[number, number] | null>(null);
     const [dialogParams, setDialogParams] = useState<Record<string, any>>({});
 
+    const gridRef = useRef<any>(null);
+
     // Drag detection state
     const dragStartRef = useRef<{ x: number, y: number, time: number } | null>(null);
     const IS_CLICK_THRESHOLD = 5; // Pixels
@@ -89,6 +58,19 @@ const SketchCanvas = () => {
             setSnappingEngine(engine);
         }
     }, [snappingEngine, setSnappingEngine]);
+
+    // Ensure Grid is double-sided so it's visible from all angles
+    useLayoutEffect(() => {
+        if (gridRef.current) {
+            // Apply to all meshes in the group (Grid helper might be a group)
+            gridRef.current.traverse((obj: any) => {
+                if (obj.isMesh && obj.material) {
+                    obj.material.side = THREE.DoubleSide;
+                    obj.material.needsUpdate = true;
+                }
+            });
+        }
+    }, [sketchPlane]); // Re-run when plane changes just in case component remounts/updates
 
     // Update Snapping Entities when primitives change
     useEffect(() => {
@@ -621,19 +603,27 @@ const SketchCanvas = () => {
         return null;
     };
 
+    // Grid rotation - Drei Grid defaults to XZ plane (Normal Y)
+    // We need to rotate it to match the target Z-up plane
+    const gridRotation: [number, number, number] =
+        sketchPlane === 'XY' ? [Math.PI / 2, 0, 0] :           // Base XZ (Y+) -> Target XY (Z+). Rotate X 90.
+            sketchPlane === 'XZ' ? [0, 0, 0] :                     // Base XZ -> Target XZ. No rotation.
+                [0, 0, Math.PI / 2];                               // Base XZ -> Target YZ (X+). Rotate Z 90 (Y->X).
+
     return (
         <group>
             {/* Sketch Grid - aligned with the active plane */}
             <Grid
+                ref={gridRef}
                 args={[200, 200]}
-                cellSize={2.5}
-                cellThickness={0.3}
+                cellSize={5}
+                cellThickness={0.5}
                 cellColor="#4a6080"
-                sectionSize={12.5}
-                sectionThickness={0.6}
+                sectionSize={25}
+                sectionThickness={1}
                 sectionColor="#5a7090"
                 fadeDistance={200}
-                rotation={planeRotation}
+                rotation={gridRotation}
                 position={[0, 0, -0.01]} // Slightly behind drawing plane
             />
 
