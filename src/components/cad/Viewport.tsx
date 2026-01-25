@@ -54,9 +54,10 @@ const SceneObjects = () => {
 };
 
 const CADObjectRenderer = ({ object }: { object: CADObject }) => {
-  const { selectObject, selectedIds, isSketchMode, sketchPlane } = useCADStore();
+  const { selectObject, selectedIds, isSketchMode, sketchPlane, sketchesVisible, bodiesVisible, originVisible } = useCADStore();
   const isSketch = object.type === 'sketch';
   const isSelected = selectedIds.has(object.id);
+  const isAxis = object.type === 'datumAxis';
 
   // Check if this axis is normal to the current sketch plane (to hide it for better visibility)
   const isNormalAxisToSketch = (
@@ -67,7 +68,18 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
 
   // Axes are ONLY selectable via the Sidebar Browser
   const isSelectableType = object.type !== 'datumAxis';
-  const shouldBeVisible = !(isSketchMode && isNormalAxisToSketch);
+
+  // Determine visibility based on object type, folder visibility, and individual visibility
+  let shouldBeVisible = object.visible;
+
+  if (isAxis) {
+    shouldBeVisible = shouldBeVisible && originVisible && !(isSketchMode && isNormalAxisToSketch);
+  } else if (isSketch) {
+    shouldBeVisible = shouldBeVisible && sketchesVisible;
+  } else {
+    // Bodies or other objects
+    shouldBeVisible = shouldBeVisible && bodiesVisible;
+  }
 
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const IS_CLICK_THRESHOLD = 5;
@@ -211,10 +223,12 @@ const CameraController = ({ controlsRef }: { controlsRef: React.RefObject<Arcbal
 
 // Plane selector - planes are in Z-up coordinates, parent ZUpContainer applies rotation
 const PlaneSelector = () => {
-  const { sketchStep, setSketchPlane, isSketchMode } = useCADStore();
+  const { sketchStep, setSketchPlane, isSketchMode, planeVisibility, originVisible } = useCADStore();
   const [hoveredPlane, setHoveredPlane] = useState<string | null>(null);
 
-  if (!isSketchMode || sketchStep !== 'select-plane') return null;
+  // If origin is hidden, we don't show any planes unless we are in select-plane mode
+  const shouldShowEverything = isSketchMode && sketchStep === 'select-plane';
+  if (!shouldShowEverything && !originVisible) return null;
 
   const handlePlaneClick = (plane: 'XY' | 'XZ' | 'YZ') => {
     setSketchPlane(plane);
@@ -223,51 +237,60 @@ const PlaneSelector = () => {
   return (
     <group>
       {/* XY Plane - ground in Z-up (Blue) */}
-      <mesh
-        onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XY'); }}
-        onPointerOut={() => setHoveredPlane(null)}
-        onClick={(e) => { e.stopPropagation(); handlePlaneClick('XY'); }}
-      >
-        <planeGeometry args={[40, 40]} />
-        <meshBasicMaterial
-          color="#5577ee"
-          transparent
-          opacity={hoveredPlane === 'XY' ? 0.5 : 0.2}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
+      {(shouldShowEverything || planeVisibility['XY']) && (
+        <mesh
+          onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XY'); }}
+          onPointerOut={() => setHoveredPlane(null)}
+          onClick={(e) => { e.stopPropagation(); handlePlaneClick('XY'); }}
+          visible={shouldShowEverything || (originVisible && planeVisibility['XY'])}
+        >
+          <planeGeometry args={[40, 40]} />
+          <meshBasicMaterial
+            color="#5577ee"
+            transparent
+            opacity={hoveredPlane === 'XY' ? 0.5 : 0.2}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
 
       {/* XZ Plane - front in Z-up (Red) */}
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XZ'); }}
-        onPointerOut={() => setHoveredPlane(null)}
-        onClick={(e) => { e.stopPropagation(); handlePlaneClick('XZ'); }}
-      >
-        <planeGeometry args={[40, 40]} />
-        <meshBasicMaterial
-          color="#e05555"
-          transparent
-          opacity={hoveredPlane === 'XZ' ? 0.5 : 0.2}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
+      {(shouldShowEverything || planeVisibility['XZ']) && (
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XZ'); }}
+          onPointerOut={() => setHoveredPlane(null)}
+          onClick={(e) => { e.stopPropagation(); handlePlaneClick('XZ'); }}
+          visible={shouldShowEverything || (originVisible && planeVisibility['XZ'])}
+        >
+          <planeGeometry args={[40, 40]} />
+          <meshBasicMaterial
+            color="#e05555"
+            transparent
+            opacity={hoveredPlane === 'XZ' ? 0.5 : 0.2}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
 
       {/* YZ Plane - right in Z-up (Green) */}
-      <mesh
-        rotation={[0, Math.PI / 2, 0]}
-        onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('YZ'); }}
-        onPointerOut={() => setHoveredPlane(null)}
-        onClick={(e) => { e.stopPropagation(); handlePlaneClick('YZ'); }}
-      >
-        <planeGeometry args={[40, 40]} />
-        <meshBasicMaterial
-          color="#55e055"
-          transparent
-          opacity={hoveredPlane === 'YZ' ? 0.5 : 0.2}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
+      {(shouldShowEverything || planeVisibility['YZ']) && (
+        <mesh
+          rotation={[0, Math.PI / 2, 0]}
+          onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('YZ'); }}
+          onPointerOut={() => setHoveredPlane(null)}
+          onClick={(e) => { e.stopPropagation(); handlePlaneClick('YZ'); }}
+          visible={shouldShowEverything || (originVisible && planeVisibility['YZ'])}
+        >
+          <planeGeometry args={[40, 40]} />
+          <meshBasicMaterial
+            color="#55e055"
+            transparent
+            opacity={hoveredPlane === 'YZ' ? 0.5 : 0.2}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
     </group>
   );
 };

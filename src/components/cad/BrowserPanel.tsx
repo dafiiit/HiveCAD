@@ -112,7 +112,17 @@ const BrowserPanel = () => {
     isSketchMode,
     sketchStep,
     sketchPlane,
-    setSketchPlane
+    setSketchPlane,
+    originVisible,
+    setOriginVisibility,
+    axesVisible,
+    setAxesVisibility,
+    sketchesVisible,
+    setSketchesVisibility,
+    bodiesVisible,
+    setBodiesVisibility,
+    planeVisibility,
+    setPlaneVisibility
   } = useCADStore();
 
   const planeLabels: Record<string, string> = {
@@ -150,15 +160,29 @@ const BrowserPanel = () => {
   };
 
   const toggleVisibility = (id: string) => {
-    const newVisible = new Set(visibleItems);
-    if (newVisible.has(id)) {
-      newVisible.delete(id);
-    } else {
-      newVisible.add(id);
+    if (id === 'origin') {
+      setOriginVisibility(!originVisible);
+      return;
     }
-    setVisibleItems(newVisible);
+    if (id === 'axes') {
+      setAxesVisibility(!axesVisible);
+      return;
+    }
+    if (id === 'sketches') {
+      setSketchesVisibility(!sketchesVisible);
+      return;
+    }
+    if (id === 'bodies') {
+      setBodiesVisibility(!bodiesVisible);
+      return;
+    }
 
-    // Also toggle object visibility if it's a CAD object
+    if (id === 'XY' || id === 'XZ' || id === 'YZ') {
+      setPlaneVisibility(id, !planeVisibility[id]);
+      return;
+    }
+
+    // Toggle individual object visibility
     const obj = objects.find(o => o.id === id);
     if (obj) {
       updateObject(id, { visible: !obj.visible });
@@ -222,23 +246,13 @@ const BrowserPanel = () => {
             />
           </TreeItem>
 
-          {/* Named Views */}
-          <TreeItem
-            icon={expandedItems.has("views") ? <FolderOpen className="w-3.5 h-3.5" /> : <FolderClosed className="w-3.5 h-3.5" />}
-            label="Named Views"
-            level={1}
-            hasChildren
-            isExpanded={expandedItems.has("views")}
-            onToggleExpand={() => toggleExpand("views")}
-          />
 
-          {/* Origin */}
           <TreeItem
             icon={<Crosshair className="w-3.5 h-3.5" />}
             label="Origin"
             level={1}
             isExpanded={expandedItems.has("origin")}
-            isVisible={visibleItems.has("origin")}
+            isVisible={originVisible}
             hasChildren
             onToggleExpand={() => toggleExpand("origin")}
             onToggleVisibility={() => toggleVisibility("origin")}
@@ -248,23 +262,29 @@ const BrowserPanel = () => {
               label="Top (XY)"
               level={2}
               isSelected={isSketchMode && sketchPlane === 'XY'}
+              isVisible={planeVisibility['XY']}
               onClick={() => handlePlaneClick('XY')}
+              onToggleVisibility={() => toggleVisibility('XY')}
             />
             <TreeItem
               icon={<Box className="w-3.5 h-3.5" />}
               label="Front (XZ)"
               level={2}
               isSelected={isSketchMode && sketchPlane === 'XZ'}
+              isVisible={planeVisibility['XZ']}
               onClick={() => handlePlaneClick('XZ')}
+              onToggleVisibility={() => toggleVisibility('XZ')}
             />
             <TreeItem
               icon={<Box className="w-3.5 h-3.5" />}
               label="Right (YZ)"
               level={2}
               isSelected={isSketchMode && sketchPlane === 'YZ'}
+              isVisible={planeVisibility['YZ']}
               onClick={() => handlePlaneClick('YZ')}
+              onToggleVisibility={() => toggleVisibility('YZ')}
             />
-            {/* Origin Axes */}
+            {/* Origin Axes - Flattened */}
             {objects.filter(o => o.type === 'datumAxis').map(obj => (
               <TreeItem
                 key={obj.id}
@@ -279,37 +299,43 @@ const BrowserPanel = () => {
             ))}
           </TreeItem>
 
-          {/* Sketches */}
           <TreeItem
             icon={expandedItems.has("sketches") ? <FolderOpen className="w-3.5 h-3.5" /> : <FolderClosed className="w-3.5 h-3.5" />}
-            label="Sketches"
+            label={`Sketches (${objects.filter(o => o.type === 'sketch').length})`}
             level={1}
             isExpanded={expandedItems.has("sketches")}
-            isVisible={visibleItems.has("sketches")}
+            isVisible={sketchesVisible}
             hasChildren
             onToggleExpand={() => toggleExpand("sketches")}
             onToggleVisibility={() => toggleVisibility("sketches")}
           >
-            <TreeItem
-              icon={<Pencil className="w-3.5 h-3.5" />}
-              label="New Sketch..."
-              level={2}
-              onClick={handleStartSketch}
-            />
+            {objects.filter(o => o.type === 'sketch').map(obj => (
+              <TreeItem
+                key={obj.id}
+                icon={<Pencil className="w-3.5 h-3.5" />}
+                label={obj.name}
+                level={2}
+                isVisible={obj.visible}
+                isSelected={selectedIds.has(obj.id)}
+                onClick={() => handleObjectClick(obj.id)}
+                onToggleVisibility={() => toggleVisibility(obj.id)}
+                onDelete={() => handleObjectDelete(obj.id)}
+              />
+            ))}
           </TreeItem>
 
           {/* Bodies - dynamically populated */}
           <TreeItem
             icon={expandedItems.has("bodies") ? <FolderOpen className="w-3.5 h-3.5" /> : <FolderClosed className="w-3.5 h-3.5" />}
-            label={`Bodies (${objects.length})`}
+            label={`Bodies (${objects.filter(o => o.type !== 'sketch' && o.type !== 'datumAxis').length})`}
             level={1}
-            hasChildren={objects.filter(o => o.type !== 'datumAxis').length > 0}
+            hasChildren
             isExpanded={expandedItems.has("bodies")}
-            isVisible={visibleItems.has("bodies")}
+            isVisible={bodiesVisible}
             onToggleExpand={() => toggleExpand("bodies")}
             onToggleVisibility={() => toggleVisibility("bodies")}
           >
-            {objects.filter(o => o.type !== 'datumAxis').map(obj => (
+            {objects.filter(o => o.type !== 'sketch' && o.type !== 'datumAxis').map(obj => (
               <TreeItem
                 key={obj.id}
                 icon={<Box className="w-3.5 h-3.5" />}

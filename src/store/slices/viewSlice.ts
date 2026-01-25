@@ -13,6 +13,15 @@ export const createViewSlice: StateCreator<
     cameraQuaternion: [0, 0, 0, 1],
     zoom: 100,
     gridVisible: true,
+    originVisible: true,
+    axesVisible: true,
+    sketchesVisible: true,
+    bodiesVisible: true,
+    planeVisibility: {
+        XY: false,
+        XZ: false,
+        YZ: false,
+    },
     sketchOptions: {
         lookAt: true,
     },
@@ -22,6 +31,13 @@ export const createViewSlice: StateCreator<
     setCameraQuaternion: (quaternion) => set({ cameraQuaternion: quaternion }),
     setZoom: (zoom) => set({ zoom }),
     toggleGrid: () => set(state => ({ gridVisible: !state.gridVisible })),
+    setOriginVisibility: (visible) => set({ originVisible: visible }),
+    setAxesVisibility: (visible) => set({ axesVisible: visible }),
+    setSketchesVisibility: (visible) => set({ sketchesVisible: visible }),
+    setBodiesVisibility: (visible) => set({ bodiesVisible: visible }),
+    setPlaneVisibility: (plane, visible) => set(state => ({
+        planeVisibility: { ...state.planeVisibility, [plane]: visible }
+    })),
 
     fitToScreen: () => console.log("fitToScreen"), // This might need implementation or bridge to UI
     toggleFullscreen: () => set(state => ({ isFullscreen: !state.isFullscreen })),

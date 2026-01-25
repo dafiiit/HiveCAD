@@ -157,6 +157,15 @@ export interface ViewSlice {
     cameraQuaternion: [number, number, number, number];
     zoom: number;
     gridVisible: boolean;
+    originVisible: boolean;
+    axesVisible: boolean;
+    sketchesVisible: boolean;
+    bodiesVisible: boolean;
+    planeVisibility: {
+        XY: boolean;
+        XZ: boolean;
+        YZ: boolean;
+    };
     sketchOptions: { lookAt: boolean };
 
     setView: (view: ViewType) => void;
@@ -164,6 +173,11 @@ export interface ViewSlice {
     setCameraQuaternion: (quaternion: [number, number, number, number]) => void;
     setZoom: (zoom: number) => void;
     toggleGrid: () => void;
+    setOriginVisibility: (visible: boolean) => void;
+    setAxesVisibility: (visible: boolean) => void;
+    setSketchesVisibility: (visible: boolean) => void;
+    setBodiesVisibility: (visible: boolean) => void;
+    setPlaneVisibility: (plane: 'XY' | 'XZ' | 'YZ', visible: boolean) => void;
     fitToScreen: () => void;
     toggleFullscreen: () => void;
     setSketchOption: (key: 'lookAt', value: boolean) => void;
