@@ -264,6 +264,19 @@ const BrowserPanel = () => {
               isSelected={isSketchMode && sketchPlane === 'YZ'}
               onClick={() => handlePlaneClick('YZ')}
             />
+            {/* Origin Axes */}
+            {objects.filter(o => o.type === 'datumAxis').map(obj => (
+              <TreeItem
+                key={obj.id}
+                icon={<Ruler className="w-3.5 h-3.5" />}
+                label={obj.name}
+                level={2}
+                isVisible={obj.visible}
+                isSelected={selectedIds.has(obj.id)}
+                onClick={() => !isSketchMode && handleObjectClick(obj.id)}
+                onToggleVisibility={() => toggleVisibility(obj.id)}
+              />
+            ))}
           </TreeItem>
 
           {/* Sketches */}
@@ -290,13 +303,13 @@ const BrowserPanel = () => {
             icon={expandedItems.has("bodies") ? <FolderOpen className="w-3.5 h-3.5" /> : <FolderClosed className="w-3.5 h-3.5" />}
             label={`Bodies (${objects.length})`}
             level={1}
-            hasChildren={objects.length > 0}
+            hasChildren={objects.filter(o => o.type !== 'datumAxis').length > 0}
             isExpanded={expandedItems.has("bodies")}
             isVisible={visibleItems.has("bodies")}
             onToggleExpand={() => toggleExpand("bodies")}
             onToggleVisibility={() => toggleVisibility("bodies")}
           >
-            {objects.map(obj => (
+            {objects.filter(o => o.type !== 'datumAxis').map(obj => (
               <TreeItem
                 key={obj.id}
                 icon={<Box className="w-3.5 h-3.5" />}

@@ -1,1 +1,2 @@
-export { extrusionTool, revolveTool, pivotTool, translatePlaneTool } from './extrusion';
+export * from './extrusion';
+export * from './revolve';

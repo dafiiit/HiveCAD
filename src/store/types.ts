@@ -30,7 +30,7 @@ export type ViewType = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 
 export interface CADObject {
     id: string;
     name: string;
-    type: 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil' | 'sketch' | 'extrusion' | 'revolve' | 'plane';
+    type: 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil' | 'sketch' | 'extrusion' | 'revolve' | 'plane' | 'datumAxis';
     position: [number, number, number];
     rotation: [number, number, number];
     scale: [number, number, number];

@@ -36,48 +36,6 @@ const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
         rotation={[Math.PI / 2, 0, 0]}
       />
 
-      {/* Axis lines - Z-up coordinate system (Z is up, XY is ground) */}
-      <group>
-        {/* X axis - Red */}
-        <line>
-          <bufferGeometry>
-            <bufferAttribute
-              attach="attributes-position"
-              count={2}
-              array={new Float32Array([-100, 0, 0, 100, 0, 0])}
-              itemSize={3}
-            />
-          </bufferGeometry>
-          <lineBasicMaterial color="#e05555" linewidth={2} />
-        </line>
-
-        {/* Y axis - Green */}
-        <line>
-          <bufferGeometry>
-            <bufferAttribute
-              attach="attributes-position"
-              count={2}
-              array={new Float32Array([0, -100, 0, 0, 100, 0])}
-              itemSize={3}
-            />
-          </bufferGeometry>
-          <lineBasicMaterial color="#55e055" linewidth={2} />
-        </line>
-
-        {/* Z axis - Blue (UP in Replicad/CAD) */}
-        <line>
-          <bufferGeometry>
-            <bufferAttribute
-              attach="attributes-position"
-              count={2}
-              array={new Float32Array([0, 0, -100, 0, 0, 100])}
-              itemSize={3}
-            />
-          </bufferGeometry>
-          <lineBasicMaterial color="#5577ee" linewidth={2} />
-        </line>
-      </group>
-
       {/* Sketch mode grid overlay - moved to SketchCanvas for proper rotation */}
     </>
   );
@@ -96,15 +54,26 @@ const SceneObjects = () => {
 };
 
 const CADObjectRenderer = ({ object }: { object: CADObject }) => {
-  const selectObject = useCADStore((state) => state.selectObject);
-  const selectedIds = useCADStore((state) => state.selectedIds);
+  const { selectObject, selectedIds, isSketchMode, sketchPlane } = useCADStore();
   const isSketch = object.type === 'sketch';
   const isSelected = selectedIds.has(object.id);
+
+  // Check if this axis is normal to the current sketch plane (to hide it for better visibility)
+  const isNormalAxisToSketch = (
+    (sketchPlane === 'XY' && object.id === 'AXIS_Z') ||
+    (sketchPlane === 'XZ' && object.id === 'AXIS_Y') ||
+    (sketchPlane === 'YZ' && object.id === 'AXIS_X')
+  );
+
+  // Axes are ONLY selectable via the Sidebar Browser
+  const isSelectableType = object.type !== 'datumAxis';
+  const shouldBeVisible = !(isSketchMode && isNormalAxisToSketch);
 
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const IS_CLICK_THRESHOLD = 5;
 
   const handlePointerDown = (e: any) => {
+    if (!isSelectableType) return;
     // Record start position
     if (e.button === 0) {
       dragStartRef.current = {
@@ -115,6 +84,7 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
   };
 
   const handlePointerUp = (e: any) => {
+    if (!isSelectableType) return;
     e.stopPropagation();
 
     // Check click validity
@@ -133,6 +103,7 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
   };
 
   const handlePointerOver = (e: any) => {
+    if (!isSelectableType) return;
     e.stopPropagation();
     document.body.style.cursor = 'pointer';
   };
@@ -142,8 +113,8 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
   };
 
   return (
-    <group position={object.position} rotation={object.rotation} scale={object.scale}>
-      {object.geometry && (
+    <group position={object.position} rotation={object.rotation} scale={object.scale} visible={shouldBeVisible}>
+      {object.geometry && object.type !== 'datumAxis' && (
         <mesh
           geometry={object.geometry}
           onPointerDown={handlePointerDown}
@@ -155,7 +126,7 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
             color={isSelected ? '#80c0ff' : object.color}
             metalness={0.1}
             roughness={0.8}
-            transparent={isSketch || isSelected}
+            transparent={true}
             opacity={isSketch ? 0.3 : 1.0}
             side={THREE.DoubleSide}
             emissive={isSelected ? '#4080ff' : '#000000'}
@@ -164,12 +135,16 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
         </mesh>
       )}
       {object.edgeGeometry && (
-        <lineSegments geometry={object.edgeGeometry}>
+        <lineSegments
+          geometry={object.edgeGeometry}
+          renderOrder={0}
+        >
           <lineBasicMaterial
-            color={isSelected ? '#80c0ff' : (isSketch ? "#00ffff" : "#222222")}
+            color={isSelected ? '#80c0ff' : (isSketch ? "#00ffff" : (object.type === 'datumAxis' ? object.color : "#222222"))}
             transparent={isSketch}
             opacity={isSketch ? 0.8 : 1.0}
             depthTest={true}
+            linewidth={2}
           />
         </lineSegments>
       )}
@@ -297,95 +272,140 @@ const PlaneSelector = () => {
   );
 };
 
-// Extrusion Preview - shows a semi-transparent preview when extrusion operation is active
-const ExtrusionPreview = () => {
+// Operation Preview - handles visualization for Extrude and Revolve
+const OperationPreview = () => {
   const activeOperation = useCADStore((state) => state.activeOperation);
   const objects = useCADStore((state) => state.objects);
 
-  // Only show preview for extrusion-type operations
   if (!activeOperation) return null;
-  if (activeOperation.type !== 'extrusion' && activeOperation.type !== 'extrude' && activeOperation.type !== 'revolve') {
-    return null;
+
+  const { type, params } = activeOperation;
+
+  // Handle Extrusion
+  if (type === 'extrusion' || type === 'extrude') {
+    const selectedShapeId = params?.selectedShape || params?.profile; // 'profile' is used in new Revolve, 'selectedShape' in old Extrude
+    const distance = params?.distance || 10;
+
+    if (!selectedShapeId) return null;
+
+    const sourceObject = objects.find(obj => obj.id === selectedShapeId);
+    if (!sourceObject || !sourceObject.geometry) return null;
+
+    const sketchPlane = sourceObject.dimensions?.sketchPlane || 'XY';
+
+    let dir: [number, number, number] = [0, 0, 1];
+    let coneRotation: [number, number, number] = [Math.PI / 2, 0, 0];
+
+    if (sketchPlane === 'XZ') {
+      dir = [0, 1, 0];
+      coneRotation = [0, 0, 0];
+    } else if (sketchPlane === 'YZ') {
+      dir = [1, 0, 0];
+      coneRotation = [0, 0, -Math.PI / 2];
+    }
+
+    const offsetHalf = [dir[0] * distance / 2, dir[1] * distance / 2, dir[2] * distance / 2] as [number, number, number];
+    const offsetFull = [dir[0] * distance, dir[1] * distance, dir[2] * distance] as [number, number, number];
+
+    return (
+      <group position={sourceObject.position} rotation={sourceObject.rotation}>
+        <mesh geometry={sourceObject.geometry} position={offsetHalf}>
+          <meshStandardMaterial color="#80c0ff" transparent opacity={0.4} side={THREE.DoubleSide} depthWrite={false} />
+        </mesh>
+        <mesh geometry={sourceObject.geometry} position={offsetFull}>
+          <meshStandardMaterial color="#80c0ff" transparent opacity={0.6} side={THREE.DoubleSide} wireframe />
+        </mesh>
+        <line>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" count={2} array={new Float32Array([0, 0, 0, ...offsetFull])} itemSize={3} />
+          </bufferGeometry>
+          <lineBasicMaterial color="#80c0ff" linewidth={2} />
+        </line>
+        <mesh position={offsetFull} rotation={coneRotation}>
+          <coneGeometry args={[1.5, 3, 8]} />
+          <meshStandardMaterial color="#80c0ff" transparent opacity={0.8} />
+        </mesh>
+      </group>
+    );
   }
 
-  const { params } = activeOperation;
-  const selectedShapeId = params?.selectedShape;
-  const distance = params?.distance || 10;
+  // Handle Revolve
+  if (type === 'revolve') {
+    const profileId = params?.profile;
+    const axisId = params?.axis; // We might not be able to fully visualize without axis data
+    const angle = params?.angle || 360;
 
-  if (!selectedShapeId) return null;
+    if (!profileId) return null;
 
-  // Find the source object
-  const sourceObject = objects.find(obj => obj.id === selectedShapeId);
-  if (!sourceObject || !sourceObject.geometry) return null;
+    const sourceObject = objects.find(obj => obj.id === profileId);
+    if (!sourceObject || !sourceObject.geometry) return null;
 
-  // Determine extrusion direction based on sketch plane
-  // Replicad Normals (Z-up): XY -> Z, XZ -> Y, YZ -> X
-  const sketchPlane = sourceObject.dimensions?.sketchPlane || 'XY';
+    // Create "ghosts" rotated around the axis
+    // Without known axis data, we default to local Y axis of the sketch? 
+    // Or we try to use the selected axis object if it's a DatumAxis?
 
-  let dir: [number, number, number] = [0, 0, 1]; // Default to Z (XY plane)
-  let coneRotation: [number, number, number] = [Math.PI / 2, 0, 0];
+    // Basic visualization: Show 4 steps of rotation
+    const steps = 6;
+    const ghosts = [];
+    const angleRad = (angle * Math.PI) / 180;
 
-  if (sketchPlane === 'XZ') {
-    dir = [0, 1, 0];
-    coneRotation = [0, 0, 0];
-  } else if (sketchPlane === 'YZ') {
-    dir = [1, 0, 0];
-    coneRotation = [0, 0, -Math.PI / 2];
+    // Determine rotation axis. Default to local X for now if no axis selected?
+    // Or if checking sketchPlane...
+    const sketchPlane = sourceObject.dimensions?.sketchPlane || 'XY';
+    let axisVec = new THREE.Vector3(0, 1, 0); // Default revolve axis often Y
+    if (sketchPlane === 'XZ') axisVec.set(0, 0, 1); // Z
+
+    // If we could resolve `axisId`, we would use that direction. 
+    // For now, this is a "nice" enough visualization of *a* revolve.
+
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const rotAngle = angleRad * t;
+
+      ghosts.push(
+        <group key={i} rotation={[
+          axisVec.x * rotAngle,
+          axisVec.y * rotAngle,
+          axisVec.z * rotAngle
+        ]}>
+          <mesh geometry={sourceObject.geometry}>
+            <meshStandardMaterial
+              color="#80c0ff"
+              transparent
+              opacity={0.1 + (0.5 * t)}
+              side={THREE.DoubleSide}
+              wireframe={i === steps}
+            />
+          </mesh>
+        </group>
+      );
+    }
+
+    // Add Arcs to indicate flow?
+
+    return (
+      <group position={sourceObject.position} rotation={sourceObject.rotation}>
+        {ghosts}
+        {/* Axis Line Indicator (Visual only) */}
+        <line>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              count={2}
+              array={new Float32Array([
+                -axisVec.x * 50, -axisVec.y * 50, -axisVec.z * 50,
+                axisVec.x * 50, axisVec.y * 50, axisVec.z * 50
+              ])}
+              itemSize={3}
+            />
+          </bufferGeometry>
+          <lineBasicMaterial color="#ffaa00" linewidth={1} />
+        </line>
+      </group>
+    );
   }
 
-  const offsetHalf = [dir[0] * distance / 2, dir[1] * distance / 2, dir[2] * distance / 2] as [number, number, number];
-  const offsetFull = [dir[0] * distance, dir[1] * distance, dir[2] * distance] as [number, number, number];
-
-  return (
-    <group position={sourceObject.position} rotation={sourceObject.rotation}>
-      {/* Preview mesh - semi-transparent */}
-      <mesh
-        geometry={sourceObject.geometry}
-        position={offsetHalf}
-      >
-        <meshStandardMaterial
-          color="#80c0ff"
-          transparent
-          opacity={0.4}
-          side={THREE.DoubleSide}
-          depthWrite={false}
-        />
-      </mesh>
-
-      {/* Top cap indicator */}
-      <mesh
-        geometry={sourceObject.geometry}
-        position={offsetFull}
-      >
-        <meshStandardMaterial
-          color="#80c0ff"
-          transparent
-          opacity={0.6}
-          side={THREE.DoubleSide}
-          wireframe
-        />
-      </mesh>
-
-      {/* Direction arrow / indicator line */}
-      <line>
-        <bufferGeometry>
-          <bufferAttribute
-            attach="attributes-position"
-            count={2}
-            array={new Float32Array([0, 0, 0, ...offsetFull])}
-            itemSize={3}
-          />
-        </bufferGeometry>
-        <lineBasicMaterial color="#80c0ff" linewidth={2} />
-      </line>
-
-      {/* Arrow head at the end */}
-      <mesh position={offsetFull} rotation={coneRotation}>
-        <coneGeometry args={[1.5, 3, 8]} />
-        <meshStandardMaterial color="#80c0ff" transparent opacity={0.8} />
-      </mesh>
-    </group>
-  );
+  return null;
 };
 
 
@@ -398,6 +418,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
       <Canvas
         gl={{ antialias: true, alpha: false }}
         style={{ background: "hsl(210, 30%, 16%)" }}
+        onPointerMissed={() => useCADStore.getState().clearSelection()}
       >
         {/* Camera - stays Y-up for stable ArcballControls */}
         <PerspectiveCamera
@@ -418,7 +439,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
           <CADGrid isSketchMode={isSketchMode} />
           <PlaneSelector />
           <SceneObjects />
-          <ExtrusionPreview />
+          <OperationPreview />
           <SketchCanvas />
         </group>
 

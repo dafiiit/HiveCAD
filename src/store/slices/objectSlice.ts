@@ -30,6 +30,85 @@ const getNextColor = () => {
     return color;
 };
 
+const getOriginAxes = (): CADObject[] => {
+    const axisLength = 100;
+    const axes: CADObject[] = [
+        {
+            id: 'AXIS_X',
+            name: 'X Axis',
+            type: 'datumAxis',
+            position: [0, 0, 0],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+            dimensions: {},
+            color: '#ff4444',
+            visible: true,
+            selected: false,
+        },
+        {
+            id: 'AXIS_Y',
+            name: 'Y Axis',
+            type: 'datumAxis',
+            position: [0, 0, 0],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+            dimensions: {},
+            color: '#44ff44',
+            visible: true,
+            selected: false
+        },
+        {
+            id: 'AXIS_Z',
+            name: 'Z Axis',
+            type: 'datumAxis',
+            position: [0, 0, 0],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+            dimensions: {},
+            color: '#4444ff',
+            visible: true,
+            selected: false
+        }
+    ];
+
+    // Create geometries
+    const createAxisGeo = (start: [number, number, number], end: [number, number, number]) => {
+        const geo = new THREE.BufferGeometry();
+        const vertices = new Float32Array([...start, ...end]);
+        geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+        return geo;
+    };
+
+    // Helper for thicker hit target if needed (optional)
+    const createHitCylinder = (length: number, axis: 'x' | 'y' | 'z') => {
+        const geo = new THREE.CylinderGeometry(2, 2, length * 2);
+        if (axis === 'x') { geo.rotateZ(-Math.PI / 2); }
+        if (axis === 'y') { /* default Y up */ }
+        if (axis === 'z') { geo.rotateX(Math.PI / 2); }
+        return geo;
+    };
+
+    // Use edgeGeometry for the visual "line"
+    // Use regular geometry (invisible) for hit testing? 
+    // Actually, Viewport renderer only attaches events to `geometry` mesh.
+    // So we need a mesh. If we make it fully transparent, it works as a hit target.
+    // And we set edgeGeometry for the visual line.
+
+    // X Axis - Red
+    axes[0].geometry = createHitCylinder(axisLength, 'x');
+    axes[0].edgeGeometry = createAxisGeo([-axisLength, 0, 0], [axisLength, 0, 0]);
+
+    // Y Axis - Green
+    axes[1].geometry = createHitCylinder(axisLength, 'y');
+    axes[1].edgeGeometry = createAxisGeo([0, -axisLength, 0], [0, axisLength, 0]);
+
+    // Z Axis - Blue
+    axes[2].geometry = createHitCylinder(axisLength, 'z');
+    axes[2].edgeGeometry = createAxisGeo([0, 0, -axisLength], [0, 0, axisLength]);
+
+    return axes;
+};
+
 export const createObjectSlice: StateCreator<
     CADState,
     [],
@@ -88,6 +167,9 @@ export const createObjectSlice: StateCreator<
                         const invalidSelection = selectedIds.some(id => {
                             const obj = currentState.objects.find(o => o.id === id);
                             if (!obj) return true; // Should not happen
+
+                            // Check strictly if the type is allowed
+                            if (reqs.allowedTypes?.includes(obj.type as any)) return false;
 
                             const isSolid = ['box', 'cylinder', 'sphere', 'torus', 'coil', 'extrusion', 'revolve'].includes(obj.type);
                             const isSketch = obj.type === 'sketch' || toolRegistry.get(obj.type)?.metadata.category === 'sketch';
@@ -324,6 +406,9 @@ export const createObjectSlice: StateCreator<
                     edgeGeometry: edgeGeometry
                 };
             }).filter((obj: any) => (obj.geometry !== undefined || obj.edgeGeometry !== undefined));
+
+            // Add origin axes
+            newObjects.push(...getOriginAxes());
 
             set({ objects: newObjects });
 

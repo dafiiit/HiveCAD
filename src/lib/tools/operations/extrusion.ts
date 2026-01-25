@@ -54,34 +54,6 @@ export const extrusionTool: Tool = {
     }
 };
 
-export const revolveTool: Tool = {
-    metadata: {
-        id: 'revolve',
-        label: 'Revolve',
-        icon: 'RotateCw',
-        category: 'operation',
-        description: 'Revolve a sketch around an axis'
-    },
-    uiProperties: [
-        { key: 'angle', label: 'Angle', type: 'number', default: 360, unit: 'deg', min: 1, max: 360 }
-    ],
-    selectionRequirements: {
-        min: 1,
-        max: 1,
-        allowedTypes: ['sketch', 'face']
-    },
-    execute(codeManager: CodeManager, selectedIds: string[], params: Record<string, any>): void {
-        const selectedId = selectedIds[0];
-        if (selectedId) {
-            const { angle = 360 } = params;
-            if (angle === 360) {
-                codeManager.addOperation(selectedId, 'revolve', []);
-            } else {
-                codeManager.addOperation(selectedId, 'revolve', [angle]);
-            }
-        }
-    }
-};
 
 export const pivotTool: Tool = {
     metadata: {

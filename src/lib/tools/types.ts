@@ -38,13 +38,14 @@ export interface ToolMetadata {
 export interface ToolUIProperty {
     key: string;
     label: string;
-    type: 'number' | 'boolean' | 'select' | 'text';
+    type: 'number' | 'boolean' | 'select' | 'text' | 'selection';
     default: any;
     unit?: 'mm' | 'deg' | '%';
     options?: { value: string; label: string }[]; // For select type
     min?: number;
     max?: number;
     step?: number;
+    allowedTypes?: string[]; // For selection type: filter what can be selected
 }
 
 // Sketch primitive data (matches existing SketchPrimitive in useCADStore)
@@ -59,7 +60,7 @@ export interface SketchPrimitiveData {
 export interface SelectionRequirements {
     min?: number;
     max?: number;
-    allowedTypes?: ('sketch' | 'face' | 'solid' | 'other')[]; // Map to CADObject types
+    allowedTypes?: ('sketch' | 'face' | 'solid' | 'edge' | 'datumAxis' | 'other')[]; // Map to CADObject types
 }
 
 // Base Tool interface - all tools implement this
