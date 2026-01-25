@@ -250,7 +250,7 @@ export function processSketch({
                 const isForward = cycle.direction[0];
                 let currentPoint = isForward ? firstEdge.start.point : firstEdge.end.point;
 
-                cm.addOperation(sketchName!, 'movePointer', [currentPoint.x, currentPoint.y]);
+                cm.addOperation(sketchName!, 'movePointerTo', [[currentPoint.x, currentPoint.y]]);
 
                 cycle.edges.forEach((edge, i) => {
                     const isFwd = cycle.direction[i];
@@ -258,7 +258,7 @@ export function processSketch({
                     if (edge.geometry.type === GeometryType.Line) {
                         const l = edge.geometry as LineSegment;
                         const pEnd = isFwd ? l.end : l.start;
-                        cm.addOperation(sketchName!, 'lineTo', [pEnd.x, pEnd.y]);
+                        cm.addOperation(sketchName!, 'lineTo', [[pEnd.x, pEnd.y]]);
                         currentPoint = pEnd;
                     } else if (edge.geometry.type === GeometryType.Arc) {
                         const a = edge.geometry as ArcSegment;
@@ -300,10 +300,10 @@ export function processSketch({
                     if (prim.points.length >= 2) {
                         const [p1, p2] = prim.points;
                         if (isFirst) {
-                            cm.addOperation(sketchName!, 'movePointer', [p1[0], p1[1]]);
+                            cm.addOperation(sketchName!, 'movePointerTo', [[p1[0], p1[1]]]);
                             isFirst = false;
                         }
-                        cm.addOperation(sketchName!, 'lineTo', [p2[0], p2[1]]);
+                        cm.addOperation(sketchName!, 'lineTo', [[p2[0], p2[1]]]);
                     }
                 }
                 // Arcs
@@ -312,25 +312,25 @@ export function processSketch({
                         const p1 = prim.points[0];
                         const p2 = prim.points[1];
                         if (isFirst) {
-                            cm.addOperation(sketchName!, 'movePointer', [p1[0], p1[1]]);
+                            cm.addOperation(sketchName!, 'movePointerTo', [[p1[0], p1[1]]]);
                             isFirst = false;
                         }
                         if (prim.points.length >= 3) {
                             const via = prim.points[2];
                             cm.addOperation(sketchName!, 'threePointsArcTo', [[p2[0], p2[1]], [via[0], via[1]]]);
                         } else {
-                            cm.addOperation(sketchName!, 'lineTo', [p2[0], p2[1]]);
+                            cm.addOperation(sketchName!, 'lineTo', [[p2[0], p2[1]]]);
                         }
                     }
                 }
                 // Splines
                 else if (['spline', 'smoothSpline'].includes(prim.type) && prim.points.length >= 2) {
                     if (isFirst && prim.points.length > 0) {
-                        cm.addOperation(sketchName!, 'movePointer', [prim.points[0][0], prim.points[0][1]]);
+                        cm.addOperation(sketchName!, 'movePointerTo', [[prim.points[0][0], prim.points[0][1]]]);
                         isFirst = false;
                     }
                     for (let i = 1; i < prim.points.length; i++) {
-                        cm.addOperation(sketchName!, 'lineTo', [prim.points[i][0], prim.points[i][1]]);
+                        cm.addOperation(sketchName!, 'lineTo', [[prim.points[i][0], prim.points[i][1]]]);
                     }
                 }
                 // Bezier
@@ -338,10 +338,10 @@ export function processSketch({
                     const p1 = prim.points[0];
                     const p2 = prim.points[1];
                     if (isFirst) {
-                        cm.addOperation(sketchName!, 'movePointer', [p1[0], p1[1]]);
+                        cm.addOperation(sketchName!, 'movePointerTo', [[p1[0], p1[1]]]);
                         isFirst = false;
                     }
-                    cm.addOperation(sketchName!, 'lineTo', [p2[0], p2[1]]);
+                    cm.addOperation(sketchName!, 'lineTo', [[p2[0], p2[1]]]);
                 }
             });
 
