@@ -35,13 +35,19 @@ export const extrusionTool: Tool = {
             const { distance = 10, twistAngle, endFactor } = params;
             const extrudeArgs: any[] = [distance];
 
+
             // Only add options object if there are non-default values
-            if (twistAngle || endFactor !== 1) {
-                const opts: Record<string, any> = {};
-                if (twistAngle) opts.twistAngle = twistAngle;
-                if (endFactor !== 1) opts.endFactor = endFactor;
-                extrudeArgs.push(opts);
-            }
+            // We pass extrusionDirection to ensure it follows the sketch normal (especially for non-XY planes)
+            const opts: Record<string, any> = {
+                extrusionDirection: { type: 'raw', content: `${selectedId}._defaultDirection` }
+            };
+
+            if (twistAngle) opts.twistAngle = twistAngle;
+            if (endFactor !== 1) opts.endFactor = endFactor;
+
+            // Always pass the opts object now since it contains the direction
+            extrudeArgs.push(opts);
+
 
             codeManager.addOperation(selectedId, 'extrude', extrudeArgs);
         }
