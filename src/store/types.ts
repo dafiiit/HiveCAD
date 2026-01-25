@@ -203,6 +203,7 @@ export interface VersioningSlice {
     settingsOpen: boolean;
     helpOpen: boolean;
     notificationsOpen: boolean;
+    projectThumbnails: Record<string, string>; // Project name -> base64 image
 
     undo: () => void;
     redo: () => void;
@@ -216,6 +217,8 @@ export interface VersioningSlice {
     open: () => void;
     reset: () => void;
     setFileName: (name: string) => void;
+    closeProject: () => void;
+    updateThumbnail: (name: string, thumbnail: string) => void;
     addComment: (text: string, position?: [number, number, number]) => void;
     deleteComment: (id: string) => void;
     toggleComments: () => void;
@@ -298,4 +301,17 @@ export interface AssemblySlice {
     solveAssembly: () => void;
 }
 
-export type CADState = ObjectSlice & ViewSlice & VersioningSlice & SolverSlice & SketchSlice & SnappingSlice & AssemblySlice;
+export interface AuthSlice {
+    user: { email: string; pat?: string | null } | null;
+    isAutosaveEnabled: boolean;
+    authLoaded: boolean;
+
+    login: (email: string, password: string) => Promise<void>;
+    signup: (email: string, password: string) => Promise<void>;
+    logout: () => void;
+    setPAT: (pat: string | null) => Promise<void>;
+    loadSession: () => void;
+}
+
+export type CADState = ObjectSlice & ViewSlice & VersioningSlice & SolverSlice & SketchSlice & SnappingSlice & AuthSlice;
+// export type CADState = ObjectSlice & ViewSlice & VersioningSlice & SolverSlice & SketchSlice & SnappingSlice & AssemblySlice & AuthSlice;

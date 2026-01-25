@@ -433,16 +433,44 @@ const OperationPreview = () => {
 
 
 
+const ThumbnailCapturer = () => {
+  const { gl, scene, camera } = useThree();
+  const { fileName, updateThumbnail, closeProject } = useCADStore();
+
+  // We use a ref to detect when we want to "exit"
+  // But actually, we want to trigger capture BEFORE state resets.
+  // We'll use a custom window event or a store trigger.
+
+  useEffect(() => {
+    const handleExit = () => {
+      if (fileName === 'Untitled') return;
+
+      // Render the scene to capture a fresh frame if needed
+      // gl.render(scene, camera);
+
+      const screenshot = gl.domElement.toDataURL('image/jpeg', 0.5); // Low res jpg
+      updateThumbnail(fileName, screenshot);
+      closeProject();
+    };
+
+    window.addEventListener('hivecad-exit-project', handleExit);
+    return () => window.removeEventListener('hivecad-exit-project', handleExit);
+  }, [gl, fileName, updateThumbnail, closeProject]);
+
+  return null;
+};
+
 const Viewport = ({ isSketchMode }: ViewportProps) => {
   const controlsRef = useRef<ArcballControlsImpl>(null);
 
   return (
     <div className="cad-viewport w-full h-full">
       <Canvas
-        gl={{ antialias: true, alpha: false }}
+        gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
         style={{ background: "hsl(210, 30%, 16%)" }}
         onPointerMissed={() => useCADStore.getState().clearSelection()}
       >
+        <ThumbnailCapturer />
         {/* Camera - stays Y-up for stable ArcballControls */}
         <PerspectiveCamera
           makeDefault

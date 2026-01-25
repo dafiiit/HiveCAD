@@ -118,9 +118,10 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
         <div className="flex items-center gap-1">
           <button
             className="p-1 hover:bg-secondary rounded transition-colors flex items-center justify-center"
-            onClick={() => toast("HiveCAD Menu")}
+            onClick={() => window.dispatchEvent(new CustomEvent('hivecad-exit-project'))}
+            title="Exit to Dashboard"
           >
-            <img src="/favicon.ico" alt="HiveCAD Logo" className="w-5 h-5" />
+            <img src="/favicon.ico" alt="HiveCAD Logo" className="w-5 h-5 transition-transform hover:scale-110" />
           </button>
 
           <button

@@ -29,6 +29,13 @@ export const createVersioningSlice: StateCreator<
     settingsOpen: false,
     helpOpen: false,
     notificationsOpen: false,
+    projectThumbnails: (() => {
+        try {
+            return JSON.parse(localStorage.getItem('hivecad_thumbnails') || '{}');
+        } catch {
+            return {};
+        }
+    })(),
 
     undo: () => console.log("Undo"),
     redo: () => console.log("Redo"),
@@ -83,6 +90,25 @@ export const createVersioningSlice: StateCreator<
         set({ objects: [], code: 'const main = () => { return; };' });
     },
     setFileName: (name) => set({ fileName: name }),
+    closeProject: () => {
+        set({
+            fileName: 'Untitled',
+            objects: [],
+            code: 'const main = () => { return; };',
+            history: [],
+            historyIndex: -1,
+            isSaved: true,
+            versions: [],
+            branches: new Map([['main', '']]),
+            currentBranch: 'main',
+            currentVersionId: null,
+        });
+    },
+    updateThumbnail: (name, thumbnail) => {
+        const thumbnails = { ...get().projectThumbnails, [name]: thumbnail };
+        localStorage.setItem('hivecad_thumbnails', JSON.stringify(thumbnails));
+        set({ projectThumbnails: thumbnails });
+    },
 
     addComment: (text, position) => {
         const state = get();

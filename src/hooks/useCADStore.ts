@@ -6,6 +6,7 @@ import { createSolverSlice } from '../store/slices/solverSlice';
 import { createVersioningSlice } from '../store/slices/versioningSlice';
 import { createSketchSlice } from '../store/slices/sketchSlice';
 import { createSnappingSlice } from '../store/slices/snappingSlice';
+import { createAuthSlice } from '../store/slices/authSlice';
 
 // Re-export types for backward compatibility
 export * from '../store/types';
@@ -17,4 +18,5 @@ export const useCADStore = create<CADState>((...a) => ({
   ...createVersioningSlice(...a),
   ...createSketchSlice(...a),
   ...createSnappingSlice(...a),
+  ...createAuthSlice(...a),
 }));
