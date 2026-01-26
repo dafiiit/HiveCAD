@@ -537,6 +537,7 @@ export function ProjectDashboard() {
                                                 }}
                                                 tags={tags}
                                                 projectThumbnails={projectThumbnails}
+                                                hasPAT={!!user?.pat}
                                             />
                                         ));
                                     })()}
@@ -825,14 +826,20 @@ export function ProjectDashboard() {
     );
 }
 
-function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showMenu, onDelete, onRename, onManageTags, tags, projectThumbnails }: any) {
+function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showMenu, onDelete, onRename, onManageTags, tags, projectThumbnails, hasPAT }: any) {
     const isExample = project.type === 'example';
 
     // Thumbnail resolution order:
     // 1. Explicit project.thumbnail (if present, usually from modern storage index)
     // 2. Local store projectThumbnails[project.name] (base64 from local storage)
-    // 3. Fallback to constructed URL if project is on GitHub
+    // 3. Fallback for examples if no thumbnail exists AND no PAT is connected
+    // 4. Fallback to constructed URL if project is on GitHub
     let thumbnail = project.thumbnail || projectThumbnails[project.name];
+
+    if (!thumbnail && isExample && !hasPAT) {
+        if (project.id === 'example-watering-can') thumbnail = '/previews/watering-can.png';
+        if (project.id === 'example-gridfinity') thumbnail = '/previews/gridfinity.png';
+    }
 
     if (!thumbnail && project.sha && !isExample) {
         // Construct the raw GitHub URL for the isolated thumbnail

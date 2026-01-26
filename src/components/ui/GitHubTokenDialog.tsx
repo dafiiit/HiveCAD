@@ -48,7 +48,7 @@ export function GitHubTokenDialog({ open, onOpenChange, mode, onConfirm, onSecon
                         </DialogTitle>
                     </div>
                     <DialogDescription className="text-zinc-400 text-sm leading-relaxed">
-                        HiveCAD is **decentralized**. Your designs stay in **your GitHub**, not on our servers.
+                        HiveCAD is <strong className="text-zinc-200 font-bold tracking-wide">decentralized</strong>. Your designs stay in <strong className="text-zinc-200 font-bold tracking-wide">your GitHub</strong>, not on our servers.
                         We need your Personal Access Token (PAT) to ensure your CAD is saved securely to your own repository.
                     </DialogDescription>
                 </DialogHeader>
@@ -58,14 +58,14 @@ export function GitHubTokenDialog({ open, onOpenChange, mode, onConfirm, onSecon
                         <div className="flex items-start gap-3">
                             <Info className="w-5 h-5 text-primary mt-0.5 shrink-0" />
                             <div className="text-xs text-zinc-300 space-y-1">
-                                <p className="font-semibold text-zinc-100">Why do I need a PAT?</p>
-                                <p>This token allows HiveCAD to create a repository called `hivecad-projects` in your account where your files will be stored.</p>
+                                <p className="font-semibold text-zinc-100">Why do I need a Personal Access Token (PAT)?</p>
+                                <p>This token allows HiveCAD to create a repository called <strong>hivecad-projects</strong> in your account where your files will be stored.</p>
                             </div>
                         </div>
 
                         <div className="space-y-2 pt-2">
                             <div className="flex items-center justify-between">
-                                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Enter Personal Access Token</label>
+                                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Enter PAT</label>
                                 <a
                                     href="https://github.com/settings/tokens/new?description=HiveCAD%20Storage&scopes=repo,user"
                                     target="_blank"

@@ -161,7 +161,7 @@ export function CloudConnectionsDialog({ open, onOpenChange }: CloudConnectionsD
                                         </button>
                                     </div>
                                     <div className="text-[10px] text-muted-foreground">
-                                        The token needs `repo` and `user` scopes. For your convenience, it is stored securely with your user account.
+                                        The token needs <code className="bg-secondary px-1 rounded">repo</code> and <code className="bg-secondary px-1 rounded">user</code> scopes. For your convenience, it is stored securely with your user account.
                                     </div>
                                 </div>
                             )}
