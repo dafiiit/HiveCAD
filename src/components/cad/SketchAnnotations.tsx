@@ -387,6 +387,8 @@ interface LineAnnotationProps {
     lockedLength?: number | null;
     /** Locked angle value */
     lockedAngle?: number | null;
+    /** Dimensioning mode: 'aligned' | 'horizontal' | 'vertical' */
+    dimMode?: 'aligned' | 'horizontal' | 'vertical';
 }
 
 /**
@@ -398,36 +400,38 @@ export const LineAnnotation = ({
     end,
     plane,
     lockedLength,
-    lockedAngle
+    lockedAngle,
+    dimMode = 'aligned'
 }: LineAnnotationProps) => {
     const ctx = useMemo(() => createAnnotationContext(plane), [plane]);
 
     const length = distance2D(start, end);
+    const dx = Math.abs(end.x - start.x);
+    const dy = Math.abs(end.y - start.y);
     const angleRad = angle2D(start, end);
     const angleDeg = normalizeAngle(radToDeg(angleRad));
 
     // Don't render for very short lines
     if (length < 0.1) return null;
 
-    // Reference line extends horizontally from start (in +X direction in sketch space)
-    const refLineLength = Math.max(length * 1.1, 15);
-    const refLineEnd: Point2D = { x: start.x + refLineLength, y: start.y };
-
-    // Arc radius
-    const arcRadius = Math.min(length * 0.35, 12);
-
-    // Badge positions - offset from line
+    // Aligned Dimension badge positions
     const perpAngle = angleRad + Math.PI / 2;
     const lengthBadgeOffset = 3;
     const lengthBadgePos: Point2D = {
-        x: end.x + Math.cos(perpAngle) * lengthBadgeOffset + Math.cos(angleRad) * 2,
-        y: end.y + Math.sin(perpAngle) * lengthBadgeOffset + Math.sin(angleRad) * 2
+        x: (start.x + end.x) / 2 + Math.cos(perpAngle) * lengthBadgeOffset,
+        y: (start.y + end.y) / 2 + Math.sin(perpAngle) * lengthBadgeOffset
     };
 
-    const angleBadgeMidAngle = angleRad / 2;
-    const angleBadgePos: Point2D = {
-        x: start.x + Math.cos(angleBadgeMidAngle) * (arcRadius + 8),
-        y: start.y + Math.sin(angleBadgeMidAngle) * (arcRadius + 8)
+    // Horizontal Dimension
+    const hDimBadgePos: Point2D = {
+        x: (start.x + end.x) / 2,
+        y: Math.max(start.y, end.y) + 6
+    };
+
+    // Vertical Dimension
+    const vDimBadgePos: Point2D = {
+        x: Math.min(start.x, end.x) - 10,
+        y: (start.y + end.y) / 2
     };
 
     return (
@@ -441,37 +445,129 @@ export const LineAnnotation = ({
             {/* End point marker */}
             <PointMarker position={end} ctx={ctx} />
 
-            {/* Horizontal reference line */}
-            <ReferenceLine from={start} to={refLineEnd} ctx={ctx} />
-
-            {/* Angle arc */}
-            {length > 1 && (
-                <AngleArc
-                    center={start}
-                    startAngle={0}
-                    endAngle={angleRad}
-                    radius={arcRadius}
-                    ctx={ctx}
-                />
+            {/* Aligned Dimension */}
+            {dimMode === 'aligned' && (
+                <>
+                    <ReferenceLine from={start} to={{ x: start.x + Math.max(length * 1.1, 15), y: start.y }} ctx={ctx} />
+                    {length > 1 && (
+                        <AngleArc
+                            center={start}
+                            startAngle={0}
+                            endAngle={angleRad}
+                            radius={Math.min(length * 0.35, 12)}
+                            ctx={ctx}
+                        />
+                    )}
+                    <DimensionBadge
+                        position={lengthBadgePos}
+                        ctx={ctx}
+                        value={lockedLength ?? length}
+                        unit="mm"
+                    />
+                    <DimensionBadge
+                        position={{
+                            x: start.x + Math.cos(angleRad / 2) * (Math.min(length * 0.35, 12) + 8),
+                            y: start.y + Math.sin(angleRad / 2) * (Math.min(length * 0.35, 12) + 8)
+                        }}
+                        ctx={ctx}
+                        value={lockedAngle ?? angleDeg}
+                        unit="deg"
+                        decimals={1}
+                        variant="secondary"
+                    />
+                </>
             )}
 
-            {/* Length badge */}
-            <DimensionBadge
-                position={lengthBadgePos}
-                ctx={ctx}
-                value={lockedLength ?? length}
-                unit="mm"
-                variant="primary"
-            />
+            {/* Horizontal Dimension */}
+            {dimMode === 'horizontal' && dx > 0.1 && (
+                <>
+                    <ReferenceLine from={start} to={{ x: start.x, y: hDimBadgePos.y }} ctx={ctx} />
+                    <ReferenceLine from={end} to={{ x: end.x, y: hDimBadgePos.y }} ctx={ctx} />
+                    <DimensionBadge
+                        position={hDimBadgePos}
+                        ctx={ctx}
+                        value={dx}
+                        unit="mm"
+                        variant="primary"
+                    />
+                </>
+            )}
 
-            {/* Angle badge */}
+            {/* Vertical Dimension */}
+            {dimMode === 'vertical' && dy > 0.1 && (
+                <>
+                    <ReferenceLine from={start} to={{ x: vDimBadgePos.x, y: start.y }} ctx={ctx} />
+                    <ReferenceLine from={end} to={{ x: vDimBadgePos.x, y: end.y }} ctx={ctx} />
+                    <DimensionBadge
+                        position={vDimBadgePos}
+                        ctx={ctx}
+                        value={dy}
+                        unit="mm"
+                        variant="primary"
+                    />
+                </>
+            )}
+        </group>
+    );
+};
+
+interface ArcAnnotationProps {
+    center: Point2D;
+    start: Point2D;
+    end: Point2D;
+    radius: number;
+    startAngle: number;
+    endAngle: number;
+    plane: SketchPlane;
+}
+
+/**
+ * Annotation for arcs. Shows radius and center.
+ */
+export const ArcAnnotation = ({
+    center,
+    start,
+    end,
+    radius,
+    startAngle,
+    endAngle,
+    plane
+}: ArcAnnotationProps) => {
+    const ctx = useMemo(() => createAnnotationContext(plane), [plane]);
+
+    if (radius < 0.1) return null;
+
+    // Radius line to mid angle
+    const midAngle = (startAngle + endAngle) / 2;
+    const midPoint: Point2D = {
+        x: center.x + Math.cos(midAngle) * radius,
+        y: center.y + Math.sin(midAngle) * radius
+    };
+
+    const badgePos: Point2D = {
+        x: center.x + Math.cos(midAngle) * (radius / 2),
+        y: center.y + Math.sin(midAngle) * (radius / 2)
+    };
+
+    return (
+        <group>
+            {/* Radius line */}
+            <ReferenceLine from={center} to={midPoint} ctx={ctx} color="#00ffff" dashed={false} opacity={0.5} />
+
+            {/* Center marker */}
+            <PointMarker position={center} ctx={ctx} shape="diamond" color="#ffff00" />
+
+            {/* Endpoints */}
+            <PointMarker position={start} ctx={ctx} />
+            <PointMarker position={end} ctx={ctx} />
+
+            {/* Radius badge */}
             <DimensionBadge
-                position={angleBadgePos}
+                position={badgePos}
                 ctx={ctx}
-                value={lockedAngle ?? angleDeg}
-                unit="deg"
-                decimals={1}
-                variant="secondary"
+                value={radius}
+                unit="R"
+                variant="primary"
             />
         </group>
     );
@@ -630,6 +726,7 @@ export default {
     AngleArc,
     DrawingLine,
     LineAnnotation,
+    ArcAnnotation,
     CircleAnnotation,
     RectangleAnnotation,
     createAnnotationContext

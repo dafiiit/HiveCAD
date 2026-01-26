@@ -16,14 +16,7 @@ import { LoadingScreen } from '../ui/LoadingScreen';
 
 type DashboardMode = 'workspace' | 'discover';
 
-const DISCOVER_PROJECTS = [
-    { id: 'd1', name: 'Precision Drone Frame', author: 'sky_builder', likes: 124, forks: 45, thumbnail: null },
-    { id: 'd2', name: 'Gridfinity 4x4 Base', author: 'organizer_pro', likes: 89, forks: 21, thumbnail: null },
-    { id: 'd3', name: 'Minimalist Pot', author: 'industrial_box', likes: 210, forks: 12, thumbnail: null },
-    { id: 'd4', name: 'M3 Bolt Assortment', author: 'mech_man', likes: 56, forks: 8, thumbnail: null },
-    { id: 'd5', name: 'Parametric Hinge', author: 'hinge_king', likes: 167, forks: 34, thumbnail: null },
-    { id: 'd6', name: 'Custom Keyboard Case', author: 'clack_master', likes: 312, forks: 67, thumbnail: null },
-];
+// No placeholders needed anymore as we have real projects
 
 export function ProjectDashboard() {
     const {
@@ -50,6 +43,7 @@ export function ProjectDashboard() {
     const [showSettingsMenu, setShowSettingsMenu] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
+    const [discoverProjects, setDiscoverProjects] = useState<any[]>([]);
 
     const refreshProjects = useCallback(async () => {
         // If we have a PAT, we should wait until the cloud connection is ready
@@ -76,8 +70,23 @@ export function ProjectDashboard() {
             } finally {
                 setLoading(false);
             }
+        } else if (dashboardMode === 'discover') {
+            setLoading(true);
+            try {
+                const { StorageManager } = await import('@/lib/storage/StorageManager');
+                const adapter = StorageManager.getInstance().currentAdapter;
+                if (adapter.searchCommunityProjects) {
+                    const projects = await adapter.searchCommunityProjects(searchQuery);
+                    setDiscoverProjects(projects);
+                }
+            } catch (error) {
+                console.error("Failed to fetch discover projects:", error);
+                setDiscoverProjects([]);
+            } finally {
+                setLoading(false);
+            }
         }
-    }, [user?.pat, dashboardMode, isStorageConnected]);
+    }, [user?.pat, dashboardMode, isStorageConnected, searchQuery]);
 
     useEffect(() => {
         refreshProjects();
@@ -100,20 +109,76 @@ export function ProjectDashboard() {
         }
     });
 
+    const handleForkProject = async (project: any) => {
+        if (!user?.pat) {
+            setShowPATDialog(true);
+            return;
+        }
+
+        setLoadingMessage(`Forking ${project.name}...`);
+        try {
+            const { StorageManager } = await import('@/lib/storage/StorageManager');
+            const manager = StorageManager.getInstance();
+            const adapter = manager.currentAdapter;
+
+            // 1. Load external data
+            const externalData = await manager.openExternalProject(project.owner, project.repo, project.id);
+            if (!externalData) throw new Error("Failed to load source project");
+
+            // 2. Prepare new project ID (to avoid conflicts)
+            const newId = `${project.id}-fork-${Date.now().toString().slice(-4)}`;
+
+            // 3. Save to user's own repo
+            const forkData = {
+                ...externalData,
+                id: newId,
+                name: `${externalData.name} (Fork)`,
+                ownerId: user.email,
+                lastModified: Date.now(),
+            };
+
+            await adapter.save(newId, forkData);
+
+            // 4. Also copy thumbnail if exists
+            if (project.thumbnail) {
+                // We'd ideally fetch the image and re-save it, but for now we'll just let the new index entry use the old URL or wait for next save
+                // Actually, save() already triggers the Supabase index update.
+            }
+
+            toast.success(`Forked "${project.name}" to your workspace!`);
+            setDashboardMode('workspace');
+            refreshProjects();
+        } catch (error) {
+            console.error("Fork failed:", error);
+            toast.error("Failed to fork project");
+        } finally {
+            setLoadingMessage(null);
+        }
+    };
+
     const handleOpenProject = async (project: any) => {
         setLoadingMessage(`Loading ${project.name}...`);
         try {
             const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const adapter = StorageManager.getInstance().currentAdapter;
+            const manager = StorageManager.getInstance();
+            const adapter = manager.currentAdapter;
 
-            // Mark as opened
-            await adapter.updateMetadata(project.id, { lastOpenedAt: Date.now() });
+            let data: ProjectData | null = null;
 
-            const data = await adapter.load(project.id);
+            if (project.owner && project.repo) {
+                // External project from Discover
+                data = await manager.openExternalProject(project.owner, project.repo, project.id);
+            } else {
+                // Own project
+                // Mark as opened
+                await adapter.updateMetadata(project.id, { lastOpenedAt: Date.now() });
+                data = await adapter.load(project.id);
+            }
+
             if (data) {
                 setFileName(data.name || project.name);
                 // Use data.files.code if it exists (modern storage structure) or fallback to data.code
-                const codeToSet = data.files?.code ?? data.code;
+                const codeToSet = data.files?.code ?? (data as any).code;
                 if (codeToSet !== undefined) {
                     setCode(codeToSet);
                 }
@@ -121,6 +186,7 @@ export function ProjectDashboard() {
                 refreshProjects();
             }
         } catch (error) {
+            console.error("Failed to open project:", error);
             toast.error("Failed to open project");
         } finally {
             setLoadingMessage(null);
@@ -625,36 +691,74 @@ export function ProjectDashboard() {
 
                         {/* Pinterest-style Staggered Grid */}
                         <div className="columns-1 sm:columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
-                            {DISCOVER_PROJECTS.map((item) => (
+                            {discoverProjects.map((item) => (
                                 <div
                                     key={item.id}
+                                    onClick={() => handleOpenProject(item)}
                                     className="break-inside-avoid bg-[#222] rounded-xl overflow-hidden border border-zinc-800 hover:border-primary/40 transition-all cursor-pointer group shadow-xl"
                                 >
                                     <div
-                                        className="w-full bg-zinc-800/50 flex items-center justify-center"
-                                        style={{ height: `${150 + (parseInt(item.id[1]) * 40)}px` }}
+                                        className="w-full bg-zinc-800/50 flex items-center justify-center relative aspect-video"
                                     >
-                                        <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
-                                            <LayoutGrid className="w-8 h-8" />
+                                        {item.thumbnail ? (
+                                            <img
+                                                src={item.thumbnail}
+                                                alt={item.name}
+                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).src = '';
+                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                }}
+                                            />
+                                        ) : (
+                                            <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                                                <LayoutGrid className="w-8 h-8" />
+                                            </div>
+                                        )}
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3 px-4">
+                                            <Button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleOpenProject(item);
+                                                }}
+                                                className="w-full bg-primary text-white font-bold rounded-full shadow-2xl scale-90 group-hover:scale-100 transition-transform"
+                                            >
+                                                OPEN PROJECT
+                                            </Button>
+                                            <Button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleForkProject(item);
+                                                }}
+                                                variant="outline"
+                                                className="w-full bg-white/10 border-white/20 text-white font-bold rounded-full scale-90 group-hover:scale-100 transition-transform hover:bg-white/20"
+                                            >
+                                                FORK TO MY REPO
+                                            </Button>
                                         </div>
                                     </div>
                                     <div className="p-4 space-y-3">
                                         <div className="font-bold text-white text-sm leading-tight group-hover:text-primary transition-colors">{item.name}</div>
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-2">
-                                                <div className="w-5 h-5 rounded-full bg-zinc-700 flex items-center justify-center text-[8px] text-white">
-                                                    {item.author[0].toUpperCase()}
+                                                <div className="w-5 h-5 rounded-full bg-zinc-700 flex items-center justify-center text-[8px] text-white uppercase">
+                                                    {(item.author || item.owner || '?')[0]}
                                                 </div>
-                                                <span className="text-[10px] text-zinc-500 font-medium">@{item.author}</span>
+                                                <span className="text-[10px] text-zinc-500 font-medium">@{item.author || item.owner}</span>
                                             </div>
                                             <div className="flex items-center gap-3 text-[10px] text-zinc-500">
-                                                <div className="flex items-center gap-0.5"><Clock className="w-3 h-3" /> {item.forks}</div>
+                                                <div className="flex items-center gap-0.5"><Clock className="w-3 h-3" /> {item.forks || 0}</div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             ))}
                         </div>
+                        {discoverProjects.length === 0 && !loading && (
+                            <div className="text-center py-20 text-zinc-500">
+                                No community projects found. Be the first to publish!
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

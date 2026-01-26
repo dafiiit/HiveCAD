@@ -57,7 +57,8 @@ export const lineTool: Tool = {
     renderAnnotation(
         primitive: SketchPrimitive,
         plane: SketchPlane,
-        lockedValues?: Record<string, number | null>
+        lockedValues?: Record<string, number | null>,
+        dimMode?: 'aligned' | 'horizontal' | 'vertical'
     ) {
         if (primitive.points.length < 2) return null;
         const start = { x: primitive.points[0][0], y: primitive.points[0][1] };
@@ -68,7 +69,8 @@ export const lineTool: Tool = {
             end,
             plane,
             lockedLength: lockedValues?.length ?? null,
-            lockedAngle: lockedValues?.angle ?? null
+            lockedAngle: lockedValues?.angle ?? null,
+            dimMode
         });
     }
 };

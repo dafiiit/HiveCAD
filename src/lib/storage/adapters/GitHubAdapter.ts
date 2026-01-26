@@ -1,5 +1,6 @@
 import { Octokit } from 'octokit';
 import { StorageAdapter, StorageType, ProjectData } from '../types';
+import { supabase } from '../../auth/supabase';
 
 export class GitHubAdapter implements StorageAdapter {
     readonly type: StorageType = 'github';
@@ -202,6 +203,31 @@ export class GitHubAdapter implements StorageAdapter {
         });
 
         console.log(`[GitHubAdapter] Saved ${projectId} to ${owner}/${repo}`);
+
+        // Centralized Project Index (Supabase)
+        try {
+            const { error } = await supabase
+                .from('projects')
+                .upsert({
+                    id: projectId,
+                    name: projectData.name,
+                    description: (data as any).description || 'A HiveCAD Project',
+                    thumbnail_url: `${import.meta.env.VITE_GITHUB_PAGES_URL || `https://raw.githubusercontent.com/${owner}/${repo}/main/`}hivecad/thumbnails/${projectId}.png`,
+                    github_owner: owner,
+                    github_repo: repo,
+                    file_path: path,
+                    is_public: true, // For now we assume all projects in this repo are public
+                    updated_at: new Date().toISOString(),
+                });
+
+            if (error) {
+                console.warn('[GitHubAdapter] Failed to upsert to Supabase:', error);
+            } else {
+                console.log(`[GitHubAdapter] ${projectId} indexed in Supabase`);
+            }
+        } catch (error) {
+            console.warn('[GitHubAdapter] Error syncing with Supabase:', error);
+        }
     }
 
     private async updateIndex(project: ProjectData, isDelete = false): Promise<void> {
@@ -435,18 +461,45 @@ export class GitHubAdapter implements StorageAdapter {
     }
 
     async searchCommunityProjects(query: string): Promise<any[]> {
-        if (!this.octokit) throw new Error('Not connected to GitHub');
+        try {
+            let supabaseQuery = supabase
+                .from('projects')
+                .select('*')
+                .eq('is_public', true);
 
-        const q = `${query} topic:hivecad-project`;
-        const { data } = await this.octokit.rest.search.repos({ q });
+            if (query) {
+                supabaseQuery = supabaseQuery.or(`name.ilike.%${query}%,description.ilike.%${query}%`);
+            }
 
-        return data.items.map(item => ({
-            id: item.id,
-            name: item.name,
-            owner: item.owner.login,
-            description: item.description,
-            url: item.html_url,
-        }));
+            const { data, error } = await supabaseQuery;
+
+            if (error) throw error;
+
+            return data.map(item => ({
+                id: item.id,
+                name: item.name,
+                owner: item.github_owner,
+                repo: item.github_repo,
+                description: item.description,
+                thumbnail: item.thumbnail_url,
+            }));
+        } catch (error) {
+            console.error('[GitHubAdapter] Failed to search Supabase projects:', error);
+
+            // Fallback to GitHub Search
+            if (!this.octokit) return [];
+
+            const q = `${query} topic:hivecad-project`;
+            const { data } = await this.octokit.rest.search.repos({ q });
+
+            return data.items.map(item => ({
+                id: item.id,
+                name: item.name,
+                owner: item.owner.login,
+                description: item.description,
+                url: item.html_url,
+            }));
+        }
     }
 
     async resetRepository(): Promise<void> {

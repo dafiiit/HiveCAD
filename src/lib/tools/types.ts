@@ -134,7 +134,8 @@ export interface Tool {
     renderAnnotation?(
         primitive: SketchPrimitive,
         plane: SketchPlane,
-        lockedValues?: Record<string, number | null>
+        lockedValues?: Record<string, number | null>,
+        dimMode?: 'aligned' | 'horizontal' | 'vertical'
     ): ReactNode;
 
     /**

@@ -185,7 +185,29 @@ const SketchCanvas = () => {
             if (currentDrawingPrimitive && !showDialog) {
                 const newPoints = [...currentDrawingPrimitive.points];
                 newPoints[newPoints.length - 1] = finalP2d;
-                updateCurrentDrawingPrimitive({ ...currentDrawingPrimitive, points: newPoints });
+
+                // NEW: Calculate dimension mode for lines
+                let dimMode: 'aligned' | 'horizontal' | 'vertical' = 'aligned';
+                if (currentDrawingPrimitive.type === 'line' && currentDrawingPrimitive.points.length >= 2) {
+                    const start = currentDrawingPrimitive.points[0];
+                    const distH = Math.abs(p2d[1] - start[1]);
+                    const distV = Math.abs(p2d[0] - start[0]);
+
+                    // If mouse is significantly further away in one axis than the other 
+                    // and also far from the aligned path, switch mode
+                    const threshold = 15;
+                    if (distH > threshold && distH > distV * 1.5) {
+                        dimMode = 'horizontal';
+                    } else if (distV > threshold && distV > distH * 1.5) {
+                        dimMode = 'vertical';
+                    }
+                }
+
+                updateCurrentDrawingPrimitive({
+                    ...currentDrawingPrimitive,
+                    points: newPoints,
+                    properties: { ...currentDrawingPrimitive.properties, dimMode } as any
+                });
 
                 // Update Solver if drawing
                 const solverId = currentDrawingPrimitive.properties?.solverId;
@@ -521,7 +543,12 @@ const SketchCanvas = () => {
     const renderAnnotation = (prim: SketchPrimitive) => {
         const toolDef = toolRegistry.get(prim.type);
         if (toolDef?.renderAnnotation) {
-            return toolDef.renderAnnotation(prim as any, sketchPlane!, lockedValues as any);
+            return toolDef.renderAnnotation(
+                prim as any,
+                sketchPlane!,
+                lockedValues as any,
+                (prim.properties as any)?.dimMode
+            );
         }
         return null;
     };

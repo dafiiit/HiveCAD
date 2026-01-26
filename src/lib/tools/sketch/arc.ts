@@ -1,6 +1,7 @@
 import React from 'react';
 import * as THREE from 'three';
-import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../types';
+import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchPlane } from '../types';
+import { arcFromThreePoints } from '../../sketch-graph/Geometry';
 import type { CodeManager } from '../../code-manager';
 import { generateToolId } from '../types';
 
@@ -67,17 +68,54 @@ export const threePointsArcTool: Tool = {
         }
 
         if (points.length >= 3) {
-            // 3 points: use CatmullRom for smooth preview
-            const splineCurve = new THREE.CatmullRomCurve3([
-                points[0],
-                points[2], // via point
-                points[1]
-            ]);
-            const arcPoints = splineCurve.getPoints(20);
-            return renderLine(primitive.id, arcPoints, color);
+            const p1 = { x: primitive.points[0][0], y: primitive.points[0][1] };
+            const p2 = { x: primitive.points[1][0], y: primitive.points[1][1] };
+            const p3 = { x: primitive.points[2][0], y: primitive.points[2][1] };
+
+            // Synchronous call to geometry helper
+            const arc = arcFromThreePoints(p1, p2, p3);
+
+            if (arc) {
+                const curve = new THREE.EllipseCurve(
+                    arc.center.x, arc.center.y,
+                    arc.radius, arc.radius,
+                    arc.startAngle, arc.endAngle,
+                    !arc.ccw, 0
+                );
+                const arcPoints = curve.getPoints(50).map(p => to3D(p.x, p.y));
+                return renderLine(primitive.id, arcPoints, color);
+            }
+
+            // Fallback for collinear or invalid
+            return renderLine(primitive.id, points.slice(0, 2), color);
         }
 
         return null;
+    },
+    renderAnnotation(
+        primitive: SketchPrimitive,
+        plane: SketchPlane,
+    ) {
+        if (primitive.points.length < 3) return null;
+
+        const p1 = { x: primitive.points[0][0], y: primitive.points[0][1] };
+        const p2 = { x: primitive.points[1][0], y: primitive.points[1][1] };
+        const p3 = { x: primitive.points[2][0], y: primitive.points[2][1] };
+
+        const arc = arcFromThreePoints(p1, p2, p3);
+        if (!arc) return null;
+
+        const { ArcAnnotation } = require('../../../components/cad/SketchAnnotations');
+        return React.createElement(ArcAnnotation, {
+            key: `${primitive.id}-annotation`,
+            center: arc.center,
+            start: p1,
+            end: p2,
+            radius: arc.radius,
+            startAngle: arc.startAngle,
+            endAngle: arc.endAngle,
+            plane
+        });
     }
 };
 
