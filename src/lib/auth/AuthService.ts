@@ -35,10 +35,11 @@ export class AuthService {
     }
 
     static async signInWithOAuth(provider: Provider): Promise<void> {
+        const redirectUrl = import.meta.env.VITE_AUTH_REDIRECT_URL || window.location.origin;
         const { error } = await supabase.auth.signInWithOAuth({
             provider,
             options: {
-                redirectTo: window.location.origin,
+                redirectTo: redirectUrl,
             },
         });
 
