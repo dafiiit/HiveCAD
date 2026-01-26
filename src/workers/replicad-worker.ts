@@ -59,37 +59,120 @@ self.onmessage = async (e) => {
 
                 let meshData = null;
                 let edgeData = null;
+                let faceMapping = [];
+                let edgeMapping = [];
 
-                // Mesh the shape
+                // Mesh the shape with face mapping
                 try {
                     let meshable = shape;
-                    if (shape && !shape.mesh) {
-                        if (typeof shape.face === 'function') meshable = shape.face();
-                        else if (shape.face) meshable = shape.face;
+
+                    // Check if we can iterate faces (Solid, Shell)
+                    // We try to use shape.faces to mesh individual faces for selection mapping
+                    if (shape && shape.type !== 'Sketch' && shape.faces && shape.faces.length > 0) {
+                        const vertices = [];
+                        const indices = [];
+                        const normals = [];
+                        let vertexOffset = 0;
+                        let indexOffset = 0;
+
+                        // iterate faces
+                        const faces = Array.from(shape.faces);
+                        for (let i = 0; i < faces.length; i++) {
+                            const face: any = faces[i];
+                            const faceMesh = face.mesh({ tolerance: 0.1, angularTolerance: 30.0 });
+
+                            if (faceMesh.vertices && faceMesh.triangles) {
+                                // Accumulate
+                                vertices.push(...faceMesh.vertices);
+                                normals.push(...(faceMesh.normals || []));
+
+                                const faceIndices = faceMesh.triangles.map((idx: number) => idx + vertexOffset);
+                                indices.push(...faceIndices);
+
+                                // Record mapping: start index in the INDICES array, count, and face ID (index)
+                                faceMapping.push({
+                                    start: indexOffset,
+                                    count: faceIndices.length,
+                                    faceId: i
+                                });
+
+                                vertexOffset += faceMesh.vertices.length / 3;
+                                indexOffset += faceIndices.length;
+                            }
+                        }
+
+                        if (vertices.length > 0) {
+                            meshData = {
+                                vertices: new Float32Array(vertices),
+                                indices: new Uint32Array(indices),
+                                normals: new Float32Array(normals)
+                            };
+                        }
+
+                    } else {
+                        // Fallback for Sketches or shapes without faces property
+                        if (shape && !shape.mesh) {
+                            if (typeof shape.face === 'function') meshable = shape.face();
+                            else if (shape.face) meshable = shape.face;
+                        }
+
+                        if (meshable && meshable.mesh) {
+                            const mesh = meshable.mesh({ tolerance: 0.1, angularTolerance: 30.0 });
+                            meshData = {
+                                vertices: mesh.vertices,
+                                indices: mesh.triangles || mesh.faces,
+                                normals: mesh.normals
+                            };
+                        }
                     }
 
-                    if (meshable && meshable.mesh) {
-                        const mesh = meshable.mesh({ tolerance: 0.1, angularTolerance: 30.0 });
-                        meshData = {
-                            vertices: mesh.vertices,
-                            indices: mesh.triangles || mesh.faces,
-                            normals: mesh.normals
-                        };
-                    }
                 } catch (err) {
                     console.error(`Worker: Failed to mesh shape ${index}`, err);
                 }
 
-                // Extract edges
+                // Extract edges with mapping
                 try {
-                    let edgeSource = shape;
-                    if (shape && typeof shape.meshEdges !== 'function' && shape.face) {
-                        edgeSource = typeof shape.face === 'function' ? shape.face() : shape.face;
+                    // Try iterating edges
+                    if (shape && shape.edges && shape.edges.length > 0) {
+                        const allLines = [];
+                        let lineOffset = 0;
+                        const edges = Array.from(shape.edges);
+
+                        for (let i = 0; i < edges.length; i++) {
+                            const edge: any = edges[i];
+                            const { lines } = edge.mesh({ tolerance: 0.1, angularTolerance: 30.0 });
+                            if (lines && lines.length > 0) {
+                                allLines.push(...lines);
+                                // Each line segment is 2 points * 3 coords = 6 floats? 
+                                // meshEdges returns array of coords [x1,y1,z1, x2,y2,z2, ...] ?
+                                // Replicad meshEdges returns { lines: [x1,y1,z1, x2,y2,z2, ...] } usually flat array.
+                                // So count is lines.length / 3 (num vertices). Num segments = lines.length / 6.
+
+                                edgeMapping.push({
+                                    start: lineOffset,
+                                    count: lines.length, // Number of floats
+                                    edgeId: i
+                                });
+                                lineOffset += lines.length;
+                            }
+                        }
+
+                        if (allLines.length > 0) {
+                            edgeData = new Float32Array(allLines);
+                        }
+
+                    } else {
+                        // Fallback
+                        let edgeSource = shape;
+                        if (shape && typeof shape.meshEdges !== 'function' && shape.face) {
+                            edgeSource = typeof shape.face === 'function' ? shape.face() : shape.face;
+                        }
+                        if (edgeSource && typeof edgeSource.meshEdges === 'function') {
+                            const { lines } = edgeSource.meshEdges({ tolerance: 0.1, angularTolerance: 30.0 });
+                            edgeData = lines;
+                        }
                     }
-                    if (edgeSource && typeof edgeSource.meshEdges === 'function') {
-                        const { lines } = edgeSource.meshEdges({ tolerance: 0.1, angularTolerance: 30.0 });
-                        edgeData = lines;
-                    }
+
                 } catch (err) {
                     console.error(`Worker: Failed to extract edges ${index}`, err);
                 }
@@ -97,7 +180,9 @@ self.onmessage = async (e) => {
                 return {
                     id: astId,
                     meshData,
-                    edgeData
+                    edgeData,
+                    faceMapping,
+                    edgeMapping
                 };
             });
 

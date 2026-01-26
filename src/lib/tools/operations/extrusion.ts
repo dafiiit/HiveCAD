@@ -35,19 +35,36 @@ export const extrusionTool: Tool = {
             const { distance = 10, twistAngle, endFactor } = params;
             const extrudeArgs: any[] = [distance];
 
-
-            // Only add options object if there are non-default values
-            // We pass extrusionDirection to ensure it follows the sketch normal (especially for non-XY planes)
-            const opts: Record<string, any> = {
-                extrusionDirection: { type: 'raw', content: `${selectedId}._defaultDirection` }
-            };
-
+            const opts: Record<string, any> = {};
             if (twistAngle) opts.twistAngle = twistAngle;
             if (endFactor !== 1) opts.endFactor = endFactor;
 
+            // Check if selecting a face of a solid
+            if (selectedId.includes(':face-')) {
+                const [baseId, faceStr] = selectedId.split(':face-');
+                const faceIndex = parseInt(faceStr);
+
+                if (!isNaN(faceIndex)) {
+                    // Separate logic for Face Extrusion: Create NEW object
+                    // 1. Create reference to face
+                    // const faceVar = baseId.face(faceIndex);
+                    const faceVar = codeManager.addFeature('face', baseId, [faceIndex]);
+
+                    // 2. Extrude the face
+                    if (Object.keys(opts).length > 0) extrudeArgs.push(opts);
+                    codeManager.addFeature('extrude', faceVar, extrudeArgs);
+                    return;
+                }
+            }
+
+            // Normal Sketch Extrusion (Mutation)
+            // We pass extrusionDirection to ensure it follows the sketch normal (especially for non-XY planes)
+            if (!opts.extrusionDirection) {
+                opts.extrusionDirection = { type: 'raw', content: `${selectedId}._defaultDirection` };
+            }
+
             // Always pass the opts object now since it contains the direction
             extrudeArgs.push(opts);
-
 
             codeManager.addOperation(selectedId, 'extrude', extrudeArgs);
         }

@@ -410,7 +410,9 @@ export const createObjectSlice: StateCreator<
                     visible: true,
                     selected: existing?.selected || false,
                     geometry: geometry,
-                    edgeGeometry: edgeGeometry
+                    edgeGeometry: edgeGeometry,
+                    faceMapping: item.faceMapping,
+                    edgeMapping: item.edgeMapping
                 };
             }).filter((obj: any) => (obj.geometry !== undefined || obj.edgeGeometry !== undefined));
 

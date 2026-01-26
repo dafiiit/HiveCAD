@@ -40,6 +40,8 @@ export interface CADObject {
     selected: boolean;
     geometry?: THREE.BufferGeometry;
     edgeGeometry?: THREE.BufferGeometry;
+    faceMapping?: { start: number; count: number; faceId: number }[];
+    edgeMapping?: { start: number; count: number; edgeId: number }[];
 }
 
 export interface HistoryItem {

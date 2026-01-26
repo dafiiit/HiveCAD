@@ -55,11 +55,111 @@ const SceneObjects = () => {
   );
 };
 
+const FaceHighlighter = ({ object, faceIds }: { object: CADObject, faceIds: number[] }) => {
+  const geometry = React.useMemo(() => {
+    if (!object.geometry || !object.faceMapping) return null;
+
+    const subset = new THREE.BufferGeometry();
+    subset.setAttribute('position', object.geometry.getAttribute('position'));
+    if (object.geometry.attributes.normal) {
+      subset.setAttribute('normal', object.geometry.getAttribute('normal'));
+    }
+
+    const indices: number[] = [];
+    const indexAttr = object.geometry.index;
+
+    if (!indexAttr) return null;
+
+    faceIds.forEach(fid => {
+      const mapping = object.faceMapping?.find(m => m.faceId === fid);
+      if (mapping) {
+        for (let i = 0; i < mapping.count; i++) {
+          indices.push(indexAttr.getX(mapping.start + i));
+        }
+      }
+    });
+
+    if (indices.length === 0) return null;
+    subset.setIndex(indices);
+    return subset;
+  }, [object, faceIds]);
+
+  if (!geometry) return null;
+
+  return (
+    <mesh geometry={geometry}>
+      <meshBasicMaterial
+        color="#ffaa00"
+        transparent
+        opacity={0.5}
+        depthTest={false} // Overlay effect
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
+};
+
+const EdgeHighlighter = ({ object, edgeIds }: { object: CADObject, edgeIds: number[] }) => {
+  const geometry = React.useMemo(() => {
+    if (!object.edgeGeometry || !object.edgeMapping) return null;
+
+    const subset = new THREE.BufferGeometry();
+    const posAttr = object.edgeGeometry.getAttribute('position');
+    const positions: number[] = [];
+
+    edgeIds.forEach(eid => {
+      const mapping = object.edgeMapping?.find(m => m.edgeId === eid);
+      if (mapping) {
+        for (let i = 0; i < mapping.count; i++) {
+          positions.push(posAttr.getX(mapping.start + i));
+          positions.push(posAttr.getY(mapping.start + i));
+          positions.push(posAttr.getZ(mapping.start + i));
+        }
+      }
+    });
+
+    if (positions.length === 0) return null;
+    subset.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    return subset;
+  }, [object, edgeIds]);
+
+  if (!geometry) return null;
+
+  return (
+    <lineSegments geometry={geometry} renderOrder={1}>
+      <lineBasicMaterial color="#ffff00" linewidth={3} depthTest={false} />
+    </lineSegments>
+  );
+};
+
 const CADObjectRenderer = ({ object }: { object: CADObject }) => {
   const { selectObject, selectedIds, isSketchMode, sketchPlane, sketchesVisible, bodiesVisible, originVisible } = useCADStore();
   const isSketch = object.type === 'sketch';
   const isSelected = selectedIds.has(object.id);
   const isAxis = object.type === 'datumAxis';
+
+  // Identify sub-selections
+  const selectedFaces = React.useMemo(() => {
+    const faces: number[] = [];
+    selectedIds.forEach(id => {
+      if (id.startsWith(object.id + ':face-')) {
+        const faceId = parseInt(id.split(':face-')[1]);
+        if (!isNaN(faceId)) faces.push(faceId);
+      }
+    });
+    return faces;
+  }, [selectedIds, object.id]);
+
+  const selectedEdges = React.useMemo(() => {
+    const edges: number[] = [];
+    selectedIds.forEach(id => {
+      if (id.startsWith(object.id + ':edge-')) {
+        const edgeId = parseInt(id.split(':edge-')[1]);
+        if (!isNaN(edgeId)) edges.push(edgeId);
+      }
+    });
+    return edges;
+  }, [selectedIds, object.id]);
 
   // Check if this axis is normal to the current sketch plane (to hide it for better visibility)
   const isNormalAxisToSketch = (
@@ -111,9 +211,29 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
       if (dist > IS_CLICK_THRESHOLD) return;
     }
 
+    // Determine Selection ID
+    let selectionId = object.id;
+
+    // Check Sub-Selection
+    if (e.object.type === 'Mesh' && object.faceMapping && e.faceIndex !== undefined) {
+      const triangleStartIndex = e.faceIndex * 3;
+      const face = object.faceMapping.find(m => triangleStartIndex >= m.start && triangleStartIndex < m.start + m.count);
+      if (face) {
+        selectionId = `${object.id}:face-${face.faceId}`;
+      }
+    } else if (e.object.type === 'LineSegments' && object.edgeMapping && e.index !== undefined) {
+      // Determine edge index (segment index to float offset)
+      // e.index is segment index
+      const floatOffset = e.index * 6;
+      const edge = object.edgeMapping.find(m => floatOffset >= m.start && floatOffset < m.start + m.count);
+      if (edge) {
+        selectionId = `${object.id}:edge-${edge.edgeId}`;
+      }
+    }
+
     // Check if shift is held for multi-select
     const multiSelect = e.nativeEvent?.shiftKey || false;
-    selectObject(object.id, multiSelect);
+    selectObject(selectionId, multiSelect);
   };
 
   const handlePointerOver = (e: any) => {
@@ -129,38 +249,56 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
   return (
     <group position={object.position} rotation={object.rotation} scale={object.scale} visible={shouldBeVisible}>
       {object.geometry && object.type !== 'datumAxis' && (
-        <mesh
-          geometry={object.geometry}
-          onPointerDown={handlePointerDown}
-          onPointerUp={handlePointerUp}
-          onPointerOver={handlePointerOver}
-          onPointerOut={handlePointerOut}
-        >
-          <meshStandardMaterial
-            color={isSelected ? '#80c0ff' : object.color}
-            metalness={0.1}
-            roughness={0.8}
-            transparent={true}
-            opacity={isSketch ? 0.3 : 1.0}
-            side={THREE.DoubleSide}
-            emissive={isSelected ? '#4080ff' : '#000000'}
-            emissiveIntensity={isSelected ? 0.3 : 0}
-          />
-        </mesh>
+        <>
+          <mesh
+            geometry={object.geometry}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerOver={handlePointerOver}
+            onPointerOut={handlePointerOut}
+          >
+            <meshStandardMaterial
+              color={isSelected ? '#80c0ff' : object.color}
+              metalness={0.1}
+              roughness={0.8}
+              transparent={true}
+              opacity={isSketch ? 0.3 : 1.0}
+              side={THREE.DoubleSide}
+              emissive={isSelected ? '#4080ff' : '#000000'}
+              emissiveIntensity={isSelected ? 0.3 : 0}
+              polygonOffset={true}
+              polygonOffsetFactor={1}
+              polygonOffsetUnits={1}
+            />
+          </mesh>
+
+          {selectedFaces.length > 0 && (
+            <FaceHighlighter object={object} faceIds={selectedFaces} />
+          )}
+        </>
       )}
       {object.edgeGeometry && (
-        <lineSegments
-          geometry={object.edgeGeometry}
-          renderOrder={0}
-        >
-          <lineBasicMaterial
-            color={isSelected ? '#80c0ff' : (isSketch ? "#00ffff" : (object.type === 'datumAxis' ? object.color : "#222222"))}
-            transparent={isSketch}
-            opacity={isSketch ? 0.8 : 1.0}
-            depthTest={true}
-            linewidth={2}
-          />
-        </lineSegments>
+        <>
+          <lineSegments
+            geometry={object.edgeGeometry}
+            renderOrder={0}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerOver={handlePointerOver}
+            onPointerOut={handlePointerOut}
+          >
+            <lineBasicMaterial
+              color={isSelected ? '#80c0ff' : (isSketch ? "#00ffff" : (object.type === 'datumAxis' ? object.color : "#222222"))}
+              transparent={isSketch}
+              opacity={isSketch ? 0.8 : 1.0}
+              depthTest={true}
+              linewidth={2}
+            />
+          </lineSegments>
+          {selectedEdges.length > 0 && (
+            <EdgeHighlighter object={object} edgeIds={selectedEdges} />
+          )}
+        </>
       )}
     </group>
   );
