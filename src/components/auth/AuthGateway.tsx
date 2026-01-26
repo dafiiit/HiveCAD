@@ -8,7 +8,10 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
     const { user, fileName, loadSession, authLoaded, isAutosaveEnabled, save, code, objects, showPATDialog, setShowPATDialog } = useCADStore();
 
     useEffect(() => {
-        loadSession();
+        const initSession = async () => {
+            await loadSession();
+        };
+        initSession();
     }, [loadSession]);
 
     // Auto-connect to Storage if PAT is present

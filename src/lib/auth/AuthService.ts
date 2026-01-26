@@ -1,74 +1,71 @@
+import { supabase } from './supabase';
+import { Provider } from '@supabase/supabase-js';
+
 /**
- * Mock AuthService to simulate server-side authentication and storage.
- * In a real application, this would interact with a secure backend.
+ * AuthService to handle authentication and session management using Supabase.
  */
 export class AuthService {
-    private static USER_STORAGE_KEY = 'hivecad_users';
-    private static SESSION_KEY = 'hivecad_current_user';
-
     static async signup(email: string, password: string): Promise<any> {
-        // Simulate network delay
-        await new Promise(resolve => setTimeout(resolve, 800));
+        const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+        });
 
-        const users = this.getUsers();
-        if (users[email]) {
-            throw new Error('User already exists');
-        }
+        if (error) throw error;
 
-        // In a real app, hash the password!
-        users[email] = { email, password, pat: null };
-        this.saveUsers(users);
-
-        const userData = { email };
-        localStorage.setItem(this.SESSION_KEY, JSON.stringify(userData));
+        const userData = { email: data.user?.email };
         return userData;
     }
 
     static async login(email: string, password: string): Promise<any> {
-        await new Promise(resolve => setTimeout(resolve, 800));
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
 
-        const users = this.getUsers();
-        const user = users[email];
+        if (error) throw error;
 
-        if (!user || user.password !== password) {
-            throw new Error('Invalid email or password');
-        }
-
-        const userData = { email, pat: user.pat };
-        localStorage.setItem(this.SESSION_KEY, JSON.stringify(userData));
+        const userData = {
+            email: data.user?.email,
+            // In a real app, you might store the PAT in a user profile table in Supabase
+            // For now, we'll keep the PAT logic if it exists in the user metadata or similar
+            pat: data.user?.user_metadata?.pat || null
+        };
         return userData;
     }
 
+    static async signInWithOAuth(provider: Provider): Promise<void> {
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider,
+            options: {
+                redirectTo: window.location.origin,
+            },
+        });
+
+        if (error) throw error;
+    }
+
     static async updatePAT(email: string, pat: string | null): Promise<void> {
-        const users = this.getUsers();
-        if (users[email]) {
-            users[email].pat = pat;
-            this.saveUsers(users);
+        // Update user metadata in Supabase
+        const { error } = await supabase.auth.updateUser({
+            data: { pat }
+        });
 
-            // Also update current session if this is the logged in user
-            const currentSession = this.getCurrentUser();
-            if (currentSession && currentSession.email === email) {
-                currentSession.pat = pat;
-                localStorage.setItem(this.SESSION_KEY, JSON.stringify(currentSession));
-            }
-        }
+        if (error) throw error;
     }
 
-    static getCurrentUser(): any | null {
-        const data = localStorage.getItem(this.SESSION_KEY);
-        return data ? JSON.parse(data) : null;
+    static async getCurrentUser(): Promise<any | null> {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return null;
+
+        return {
+            email: session.user.email,
+            pat: session.user.user_metadata?.pat || null
+        };
     }
 
-    static logout(): void {
-        localStorage.removeItem(this.SESSION_KEY);
-    }
-
-    private static getUsers(): Record<string, any> {
-        const data = localStorage.getItem(this.USER_STORAGE_KEY);
-        return data ? JSON.parse(data) : {};
-    }
-
-    private static saveUsers(users: Record<string, any>): void {
-        localStorage.setItem(this.USER_STORAGE_KEY, JSON.stringify(users));
+    static async logout(): Promise<void> {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
     }
 }

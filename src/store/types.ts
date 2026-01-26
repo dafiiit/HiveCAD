@@ -306,7 +306,10 @@ export interface AssemblySlice {
     solveAssembly: () => void;
 }
 
+import { Provider } from '@supabase/supabase-js';
+
 export interface AuthSlice {
+
     user: { email: string; pat?: string | null } | null;
     isAutosaveEnabled: boolean;
     isStorageConnected: boolean;
@@ -316,9 +319,10 @@ export interface AuthSlice {
     setStorageConnected: (connected: boolean) => void;
     login: (email: string, password: string) => Promise<void>;
     signup: (email: string, password: string) => Promise<void>;
+    signInWithOAuth: (provider: Provider) => Promise<void>;
     logout: () => void;
     setPAT: (pat: string | null) => Promise<void>;
-    loadSession: () => void;
+    loadSession: () => Promise<void>;
 }
 
 export type CADState = ObjectSlice & ViewSlice & VersioningSlice & SolverSlice & SketchSlice & SnappingSlice & AuthSlice;

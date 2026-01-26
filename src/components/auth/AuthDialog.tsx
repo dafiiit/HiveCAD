@@ -62,51 +62,73 @@ export function AuthDialog() {
                 )}
 
                 {step === 'auth' && (
-                    <form onSubmit={handleAuth} className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-500">
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-500">
                         <div className="text-center space-y-2">
                             <div className="mx-auto w-16 h-16 mb-4">
                                 <img src="/favicon.ico" alt="HiveCAD Logo" className="w-full h-full object-contain" />
                             </div>
                             <h2 className="text-2xl font-bold tracking-tight text-white">{mode === 'signup' ? 'Create Account' : 'Welcome Back'}</h2>
-                            <p className="text-zinc-500">Enter your credentials to continue.</p>
+                            <p className="text-zinc-500">{mode === 'signup' ? 'Join the federated engineering community.' : 'Enter your credentials to continue.'}</p>
                         </div>
 
-                        <div className="space-y-4">
-                            <div className="relative">
-                                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-600" />
-                                <Input
-                                    type="email"
-                                    placeholder="Email"
-                                    className="h-12 pl-12 bg-white/5 border-zinc-800 text-white placeholder:text-zinc-600 focus:ring-primary focus:border-primary transition-all"
-                                    value={email}
-                                    onChange={e => setEmail(e.target.value)}
-                                    required
-                                />
+                        <div className="flex justify-center">
+                            <Button
+                                variant="outline"
+                                className="w-full h-12 bg-white/5 border-zinc-800 hover:bg-white/10 text-white flex items-center justify-center gap-3"
+                                onClick={() => useCADStore.getState().signInWithOAuth('github')}
+                            >
+                                <Github className="w-5 h-5" />
+                                <span>Continue with GitHub</span>
+                            </Button>
+                        </div>
+
+                        <div className="relative">
+                            <div className="absolute inset-0 flex items-center">
+                                <span className="w-full border-t border-zinc-800" />
                             </div>
-                            <div className="relative">
-                                <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-600" />
-                                <Input
-                                    type="password"
-                                    placeholder="Password"
-                                    className="h-12 pl-12 bg-white/5 border-zinc-800 text-white placeholder:text-zinc-600 focus:ring-primary focus:border-primary transition-all"
-                                    value={password}
-                                    onChange={e => setPassword(e.target.value)}
-                                    required
-                                />
+                            <div className="relative flex justify-center text-xs uppercase">
+                                <span className="bg-black px-2 text-zinc-500">Or continue with email</span>
                             </div>
                         </div>
 
-                        <Button className="w-full h-12 text-lg font-medium shadow-[0_0_20px_rgba(var(--primary),0.2)]" type="submit" disabled={loading}>
-                            {loading ? 'Processing...' : (mode === 'signup' ? 'Sign Up' : 'Sign In')}
-                            <ArrowRight className="ml-2 w-5 h-5" />
-                        </Button>
+                        <form onSubmit={handleAuth} className="space-y-4">
+                            <div className="space-y-4">
+                                <div className="relative">
+                                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-600" />
+                                    <Input
+                                        type="email"
+                                        placeholder="Email"
+                                        className="h-12 pl-12 bg-white/5 border-zinc-800 text-white placeholder:text-zinc-600 focus:ring-primary focus:border-primary transition-all"
+                                        value={email}
+                                        onChange={e => setEmail(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                                <div className="relative">
+                                    <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-600" />
+                                    <Input
+                                        type="password"
+                                        placeholder="Password"
+                                        className="h-12 pl-12 bg-white/5 border-zinc-800 text-white placeholder:text-zinc-600 focus:ring-primary focus:border-primary transition-all"
+                                        value={password}
+                                        onChange={e => setPassword(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <Button className="w-full h-12 text-lg font-medium shadow-[0_0_20px_rgba(var(--primary),0.2)]" type="submit" disabled={loading}>
+                                {loading ? 'Processing...' : (mode === 'signup' ? 'Sign Up' : 'Sign In')}
+                                <ArrowRight className="ml-2 w-5 h-5" />
+                            </Button>
+                        </form>
 
                         <div className="text-center">
                             <button type="button" className="text-sm text-zinc-500 hover:text-primary transition-colors hover:underline" onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}>
                                 {mode === 'login' ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
                             </button>
                         </div>
-                    </form>
+                    </div>
                 )}
             </div>
         </div>

@@ -9,8 +9,8 @@ export const createAuthSlice: StateCreator<CADState, [], [], AuthSlice> = (set, 
     showPATDialog: false,
     authLoaded: false,
 
-    loadSession: () => {
-        const user = AuthService.getCurrentUser();
+    loadSession: async () => {
+        const user = await AuthService.getCurrentUser();
         set({ user, isAutosaveEnabled: !!user?.pat, authLoaded: true });
     },
 
@@ -24,8 +24,12 @@ export const createAuthSlice: StateCreator<CADState, [], [], AuthSlice> = (set, 
         set({ user, isAutosaveEnabled: false });
     },
 
-    logout: () => {
-        AuthService.logout();
+    signInWithOAuth: async (provider) => {
+        await AuthService.signInWithOAuth(provider);
+    },
+
+    logout: async () => {
+        await AuthService.logout();
         set({ user: null, isAutosaveEnabled: false, isStorageConnected: false });
     },
 
