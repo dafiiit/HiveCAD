@@ -49,4 +49,8 @@ export class GoogleDriveAdapter implements StorageAdapter {
     async updateMetadata(_projectId: string, _updates: any): Promise<void> {
         // Implement updateMetadata
     }
+
+    async saveThumbnail(_projectId: string, _thumbnail: string): Promise<void> {
+        // Implement saveThumbnail
+    }
 }

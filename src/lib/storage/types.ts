@@ -37,6 +37,7 @@ export interface StorageAdapter {
     delete(projectId: string): Promise<void>;
     rename(projectId: string, newName: string): Promise<void>;
     updateMetadata(projectId: string, updates: Partial<Pick<ProjectData, 'tags' | 'deletedAt' | 'name' | 'lastOpenedAt'>>): Promise<void>;
+    saveThumbnail(projectId: string, thumbnail: string): Promise<void>;
 
     // Discovery
     listProjects?(): Promise<ProjectData[]>;

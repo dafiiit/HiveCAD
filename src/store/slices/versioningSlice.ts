@@ -4,6 +4,8 @@ import { CADState, VersioningSlice, VersionCommit, Comment } from '../types';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
+let saveTimeout: any = null;
+
 export const createVersioningSlice: StateCreator<
     CADState,
     [],
@@ -36,6 +38,10 @@ export const createVersioningSlice: StateCreator<
             return {};
         }
     })(),
+    isSaving: false,
+    pendingSave: false,
+    lastSaveTime: Date.now(),
+    lastSaveError: null,
 
     undo: () => console.log("Undo"),
     redo: () => console.log("Redo"),
@@ -45,20 +51,24 @@ export const createVersioningSlice: StateCreator<
     stepBack: () => { },
     stepForward: () => { },
 
-    save: async () => {
+    save: async (isManual = false) => {
         const state = get();
+
         // Prevent concurrent saves
-        /* if (state.isSaving) return; */
+        if (state.isSaving) {
+            set({ pendingSave: true });
+            return;
+        }
 
         try {
-            // We'll need to update the slice to track saving state properly later
-            // For now, let's just use the adapter
+            set({ isSaving: true, lastSaveError: null });
             const { StorageManager } = await import('@/lib/storage/StorageManager');
             const adapter = StorageManager.getInstance().currentAdapter;
 
-            toast.loading(`Saving to ${adapter.name}...`, { id: 'save-toast' });
+            if (isManual) {
+                toast.loading(`Saving to ${adapter.name}...`, { id: 'save-toast' });
+            }
 
-            // Prepare data to save - this would ideally be more structured
             const projectData = {
                 fileName: state.fileName,
                 objects: state.objects,
@@ -67,24 +77,49 @@ export const createVersioningSlice: StateCreator<
                 branches: state.branches,
                 currentBranch: state.currentBranch,
                 currentVersionId: state.currentVersionId,
-                thumbnail: state.projectThumbnails[state.fileName]
+                // thumbnail is removed from here to reduce payload size
             };
 
             await adapter.save(state.fileName, projectData);
 
-            set({ isSaved: true });
-            toast.success(`Saved to ${adapter.name}`, { id: 'save-toast' });
+            set({ isSaved: true, isSaving: false, lastSaveTime: Date.now() });
+
+            if (isManual) {
+                toast.success(`Saved to ${adapter.name}`, { id: 'save-toast' });
+            } else {
+                // Remove any existing error toast if auto-save finally succeeded
+                toast.dismiss('save-toast');
+            }
         } catch (error: any) {
             console.error("Save failed:", error);
             const message = error.message || String(error);
+            set({ isSaving: false, lastSaveError: message });
 
-            if (message.includes('Not authenticated')) {
-                toast.error("GitHub account not linked. Please link your account to save.", { id: 'save-toast' });
-                set({ showPATDialog: true });
-            } else {
-                toast.error(`Save failed: ${message}`, { id: 'save-toast' });
+            // Only notify if it's a manual save or if it's been failing for a while
+            // For now, let's always show error on failure if it's GitHub
+            if (isManual || Date.now() - state.lastSaveTime > 60000) {
+                if (message.includes('Not authenticated')) {
+                    toast.error("GitHub account not linked. Please link your account to save.", { id: 'save-toast' });
+                    set({ showPATDialog: true });
+                } else {
+                    toast.error(`Save failed: ${message}`, { id: 'save-toast' });
+                }
             }
         }
+    },
+    triggerSave: () => {
+        const state = get();
+        if (state.pendingSave || state.isSaving) return;
+
+        if (saveTimeout) clearTimeout(saveTimeout);
+
+        set({ pendingSave: true });
+
+        saveTimeout = setTimeout(() => {
+            const currentState = get();
+            set({ pendingSave: false });
+            currentState.save(false);
+        }, 3000);
     },
     saveAs: (name) => set({ fileName: name, isSaved: true }),
     open: async () => {
@@ -93,12 +128,25 @@ export const createVersioningSlice: StateCreator<
         toast.info(`Open from ${adapter.name} not fully implemented yet`);
     },
     reset: () => {
-        // This is tricky because it affects other slices
-        // But since createObjectSlice sets default code, maybe we just reset objects/code
         set({ objects: [], code: 'const main = () => { return; };' });
     },
     setFileName: (name) => set({ fileName: name }),
-    closeProject: () => {
+    closeProject: async () => {
+        const state = get();
+        // Take a final thumbnail before closing if possible
+        const thumbnail = state.projectThumbnails[state.fileName];
+        if (thumbnail) {
+            try {
+                const { StorageManager } = await import('@/lib/storage/StorageManager');
+                const adapter = StorageManager.getInstance().currentAdapter;
+                if (adapter.saveThumbnail) {
+                    await adapter.saveThumbnail(state.fileName, thumbnail);
+                }
+            } catch (e) {
+                console.warn('[versioningSlice] Failed to save final thumbnail on close', e);
+            }
+        }
+
         set({
             fileName: 'Untitled',
             objects: [],
@@ -112,10 +160,21 @@ export const createVersioningSlice: StateCreator<
             currentVersionId: null,
         });
     },
-    updateThumbnail: (name, thumbnail) => {
+    updateThumbnail: async (name, thumbnail) => {
         const thumbnails = { ...get().projectThumbnails, [name]: thumbnail };
         localStorage.setItem('hivecad_thumbnails', JSON.stringify(thumbnails));
         set({ projectThumbnails: thumbnails });
+
+        // Also save to adapter if connected
+        try {
+            const { StorageManager } = await import('@/lib/storage/StorageManager');
+            const adapter = StorageManager.getInstance().currentAdapter;
+            if (adapter.isAuthenticated() && adapter.saveThumbnail) {
+                await adapter.saveThumbnail(name, thumbnail);
+            }
+        } catch (e) {
+            console.warn('[versioningSlice] Failed to save thumbnail to adapter', e);
+        }
     },
 
     addComment: (text, position) => {

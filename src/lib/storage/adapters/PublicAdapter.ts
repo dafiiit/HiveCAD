@@ -57,4 +57,8 @@ export class PublicAdapter implements StorageAdapter {
             await this.save(projectId, { ...data, ...updates });
         }
     }
+
+    async saveThumbnail(projectId: string, thumbnail: string): Promise<void> {
+        localStorage.setItem(`hivecad_public_thumb_${projectId}`, thumbnail);
+    }
 }

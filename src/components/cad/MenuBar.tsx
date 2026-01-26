@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { CloudConnectionsDialog } from "@/components/ui/CloudConnectionsDialog";
 import { useEffect, useState } from "react";
 import {
@@ -49,14 +50,20 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
     toggleNotifications,
     objects,
     user,
-    code
+    isSaving,
+    pendingSave,
+    lastSaveError
   } = useCADStore();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [cloudConnectionsOpen, setCloudConnectionsOpen] = useState(false);
 
-  const handleSave = () => {
-    setCloudConnectionsOpen(true);
+  const handleManualSave = async () => {
+    if (!user?.pat) {
+      setCloudConnectionsOpen(true);
+      return;
+    }
+    await save(true);
   };
 
   const handleOpen = () => {
@@ -98,12 +105,12 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        save(); // Keep Ctrl+S functionality
+        handleManualSave();
       }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [save]);
+  }, [save, user?.pat]);
 
   const filteredObjects = objects.filter(obj =>
     obj.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -128,14 +135,24 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           </button>
 
           <button
-            className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
-            onClick={handleSave}
-            title={!user?.pat ? "GitHub Sync Disabled - Link your PAT in Settings" : "Sync / Storage Connections"}
+            className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover group relative"
+            onClick={handleManualSave}
+            title={!user?.pat ? "GitHub Sync Disabled - Click to link" : (isSaving ? "Saving..." : (pendingSave ? "Save Pending..." : (isSaved ? "Saved to Cloud" : "Unsaved Changes - Click to sync")))}
           >
-            <RefreshCw className={`w-4 h-4 ${!isSaved && user?.pat ? 'text-yellow-500' : ''}`} />
+            <RefreshCw className={cn(
+              "w-4 h-4 transition-all",
+              !isSaved && user?.pat && !isSaving && 'text-yellow-500 animate-pulse',
+              isSaving && 'animate-spin text-primary',
+              !user?.pat && 'text-muted-foreground/50'
+            )} />
             {!user?.pat && (
               <div className="absolute -top-1 -right-1">
                 <AlertCircle className="w-3 h-3 text-red-500 animate-pulse" />
+              </div>
+            )}
+            {lastSaveError && (
+              <div className="absolute -top-1 -right-1">
+                <AlertCircle className="w-3 h-3 text-red-500" />
               </div>
             )}
           </button>

@@ -204,6 +204,10 @@ export interface VersioningSlice {
     helpOpen: boolean;
     notificationsOpen: boolean;
     projectThumbnails: Record<string, string>; // Project name -> base64 image
+    isSaving: boolean;
+    pendingSave: boolean;
+    lastSaveTime: number;
+    lastSaveError: string | null;
 
     undo: () => void;
     redo: () => void;
@@ -212,7 +216,8 @@ export interface VersioningSlice {
     skipToEnd: () => void;
     stepBack: () => void;
     stepForward: () => void;
-    save: () => void;
+    save: (isManual?: boolean) => Promise<void>;
+    triggerSave: () => void;
     saveAs: (name: string) => void;
     open: () => void;
     reset: () => void;

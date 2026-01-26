@@ -143,12 +143,14 @@ export class GitHubAdapter implements StorageAdapter {
             lastModified: Date.now(),
             tags: data.tags || [],
             deletedAt: data.deletedAt,
-            thumbnail: data.thumbnail,
+            // thumbnail is handled separately now
         };
 
         const content = btoa(JSON.stringify(projectData, null, 2));
 
         let sha: string | undefined;
+        let existingMetadata: any = null;
+
         try {
             const { data: fileData } = await this.octokit.rest.repos.getContent({
                 owner,
@@ -157,6 +159,14 @@ export class GitHubAdapter implements StorageAdapter {
             });
             if (!Array.isArray(fileData)) {
                 sha = fileData.sha;
+                if ('content' in fileData) {
+                    try {
+                        const existingContent = atob(fileData.content.replace(/\n/g, ''));
+                        existingMetadata = JSON.parse(existingContent);
+                    } catch (e) {
+                        console.warn('[GitHubAdapter] Failed to parse existing project data for metadata check', e);
+                    }
+                }
             }
         } catch (error: any) {
             if (error.status !== 404) throw error;
@@ -171,8 +181,18 @@ export class GitHubAdapter implements StorageAdapter {
             sha,
         });
 
-        // Update the central index
-        await this.updateIndex(projectData);
+        // Check if metadata actually changed before updating index
+        const metadataChanged = !existingMetadata ||
+            existingMetadata.name !== projectData.name ||
+            JSON.stringify(existingMetadata.tags) !== JSON.stringify(projectData.tags) ||
+            existingMetadata.deletedAt !== projectData.deletedAt;
+
+        if (metadataChanged) {
+            console.log(`[GitHubAdapter] Metadata changed for ${projectId}, updating index...`);
+            await this.updateIndex(projectData);
+        } else {
+            console.log(`[GitHubAdapter] Metadata unchanged for ${projectId}, skipping index update.`);
+        }
 
         // Ensure topic is present (idempotent)
         await this.octokit.rest.repos.replaceAllTopics({
@@ -251,6 +271,44 @@ export class GitHubAdapter implements StorageAdapter {
 
         const updatedData = { ...data, ...updates, lastModified: Date.now() };
         await this.save(projectId, updatedData);
+    }
+
+    async saveThumbnail(projectId: string, thumbnail: string): Promise<void> {
+        if (!this.isAuthenticated() || !this.octokit || !this.authenticatedUser) {
+            throw new Error('Not authenticated with GitHub');
+        }
+
+        const owner = this.currentOwner!;
+        const repo = this.currentRepo!;
+        const path = `hivecad/thumbnails/${projectId}.png`;
+
+        // Strip the data:image/png;base64, prefix if present
+        const base64Data = thumbnail.includes(',') ? thumbnail.split(',')[1] : thumbnail;
+
+        let sha: string | undefined;
+        try {
+            const { data: fileData } = await this.octokit.rest.repos.getContent({
+                owner,
+                repo,
+                path,
+            });
+            if (!Array.isArray(fileData)) {
+                sha = fileData.sha;
+            }
+        } catch (error: any) {
+            if (error.status !== 404) throw error;
+        }
+
+        await this.octokit.rest.repos.createOrUpdateFileContents({
+            owner,
+            repo,
+            path,
+            message: `Update thumbnail for ${projectId}`,
+            content: base64Data,
+            sha,
+        });
+
+        console.log(`[GitHubAdapter] Thumbnail saved for ${projectId}`);
     }
 
     async load(projectId: string, owner?: string, repo?: string): Promise<ProjectData | null> {

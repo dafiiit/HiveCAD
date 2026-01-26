@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { GitHubTokenDialog } from '../ui/GitHubTokenDialog';
 import { ProjectData } from '@/lib/storage/types';
+import { LoadingScreen } from '../ui/LoadingScreen';
 
 type DashboardMode = 'workspace' | 'discover';
 
@@ -48,6 +49,7 @@ export function ProjectDashboard() {
     const [tagColorInput, setTagColorInput] = useState("#fbbf24");
     const [showSettingsMenu, setShowSettingsMenu] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
+    const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
 
     const refreshProjects = useCallback(async () => {
         // If we have a PAT, we should wait until the cloud connection is ready
@@ -99,7 +101,7 @@ export function ProjectDashboard() {
     });
 
     const handleOpenProject = async (project: any) => {
-        setLoading(true);
+        setLoadingMessage(`Loading ${project.name}...`);
         try {
             const { StorageManager } = await import('@/lib/storage/StorageManager');
             const adapter = StorageManager.getInstance().currentAdapter;
@@ -121,7 +123,7 @@ export function ProjectDashboard() {
         } catch (error) {
             toast.error("Failed to open project");
         } finally {
-            setLoading(false);
+            setLoadingMessage(null);
         }
     };
 
@@ -161,6 +163,7 @@ export function ProjectDashboard() {
 
     const handleRenameProject = async (projectId: string, newName: string) => {
         if (!newName.trim()) return;
+        setLoadingMessage(`Renaming to ${newName}...`);
         try {
             const { StorageManager } = await import('@/lib/storage/StorageManager');
             const adapter = StorageManager.getInstance().currentAdapter;
@@ -171,18 +174,29 @@ export function ProjectDashboard() {
             await refreshProjects();
         } catch (error) {
             toast.error("Failed to rename project");
+        } finally {
+            setLoadingMessage(null);
         }
     };
 
     const handleUpdateTags = async (projectId: string, tags: string[]) => {
+        // Optimistic update
+        setUserProjects(prev => prev.map(p =>
+            p.id === projectId ? { ...p, tags } : p
+        ));
+
         try {
             const { StorageManager } = await import('@/lib/storage/StorageManager');
             const adapter = StorageManager.getInstance().currentAdapter;
             await adapter.updateMetadata(projectId, { tags });
             toast.success("Tags updated");
-            await refreshProjects();
+            // No need to refreshProjects immediately as we updated it optimistically
+            // But we can do it in background to sync
+            refreshProjects();
         } catch (error) {
             toast.error("Failed to update tags");
+            // Revert update if failed
+            refreshProjects();
         }
     };
 
@@ -204,6 +218,7 @@ export function ProjectDashboard() {
     };
 
     const handleDeleteTag = async (tagName: string) => {
+        setLoadingMessage(`Deleting tag ${tagName}...`);
         const newTags = tags.filter(t => t.name !== tagName);
         try {
             const { StorageManager } = await import('@/lib/storage/StorageManager');
@@ -228,6 +243,8 @@ export function ProjectDashboard() {
             }
         } catch (error) {
             toast.error("Failed to delete tag");
+        } finally {
+            setLoadingMessage(null);
         }
     };
 
@@ -247,7 +264,7 @@ export function ProjectDashboard() {
     };
 
     const handleResetRepository = async () => {
-        setLoading(true);
+        setLoadingMessage("Purging Repository...");
         try {
             const { StorageManager } = await import('@/lib/storage/StorageManager');
             const adapter = StorageManager.getInstance().currentAdapter;
@@ -281,7 +298,7 @@ export function ProjectDashboard() {
             console.error("Reset failed:", error);
             toast.error("Failed to reset repository.");
         } finally {
-            setLoading(false);
+            setLoadingMessage(null);
         }
     };
 
@@ -786,30 +803,44 @@ export function ProjectDashboard() {
                                     variant="ghost"
                                     className="flex-1 h-12 border border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800"
                                     onClick={() => setShowResetConfirm(false)}
-                                    disabled={loading}
+                                    disabled={!!loadingMessage}
                                 >
                                     ABORT MISSION
                                 </Button>
                                 <Button
                                     className="flex-1 h-12 bg-red-600 hover:bg-red-500 text-white font-black shadow-[0_0_20px_rgba(220,38,38,0.4)]"
                                     onClick={handleResetRepository}
-                                    disabled={loading}
+                                    disabled={!!loadingMessage}
                                 >
-                                    {loading ? 'PURGING...' : 'I UNDERSTAND, RESET ALL'}
+                                    {loadingMessage ? 'PURGING...' : 'I UNDERSTAND, RESET ALL'}
                                 </Button>
                             </div>
                         </div>
                     </div>
                 </div>
             )}
+
+            {loadingMessage && <LoadingScreen message={loadingMessage} />}
         </div>
     );
 }
 
 function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showMenu, onDelete, onRename, onManageTags, tags, projectThumbnails }: any) {
     const isExample = project.type === 'example';
-    const thumbnail = project.thumbnail || projectThumbnails[project.name];
-    // Ensure project.deletedAt is handled for both user and example projects
+
+    // Thumbnail resolution order:
+    // 1. Explicit project.thumbnail (if present, usually from modern storage index)
+    // 2. Local store projectThumbnails[project.name] (base64 from local storage)
+    // 3. Fallback to constructed URL if project is on GitHub
+    let thumbnail = project.thumbnail || projectThumbnails[project.name];
+
+    if (!thumbnail && project.sha && !isExample) {
+        // Construct the raw GitHub URL for the isolated thumbnail
+        // Note: This assumes the repo and owner are the current ones, which is true for 'user' projects
+        // In a more robust implementation, we might store the full thumbnail URL in the index
+        thumbnail = `https://raw.githubusercontent.com/${project.ownerId}/hivecad-projects/main/hivecad/thumbnails/${project.id}.png`;
+    }
+
     const deleteMessage = project.deletedAt ? `Deleted ${Math.floor((Date.now() - project.deletedAt) / (1000 * 60 * 60 * 24))}d ago (Expires in ${7 - Math.floor((Date.now() - project.deletedAt) / (1000 * 60 * 60 * 24))}d)` : null;
 
     return (

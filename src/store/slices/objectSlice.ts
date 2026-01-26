@@ -221,6 +221,7 @@ export const createObjectSlice: StateCreator<
 
         set({ code: cm.getCode() });
         get().runCode();
+        get().triggerSave();
     },
 
     updateObject: (id, updates) => {
@@ -249,6 +250,7 @@ export const createObjectSlice: StateCreator<
 
             set({ code: cm.getCode() });
             get().runCode();
+            get().triggerSave();
             return;
         }
 
@@ -259,6 +261,7 @@ export const createObjectSlice: StateCreator<
         const updatedObjects = [...state.objects];
         updatedObjects[objectIndex] = { ...updatedObjects[objectIndex], ...updates };
         set({ objects: updatedObjects, isSaved: false });
+        get().triggerSave();
     },
 
     deleteObject: (id) => {
@@ -271,6 +274,7 @@ export const createObjectSlice: StateCreator<
         if (newCode !== state.code) {
             set({ code: newCode });
             get().runCode();
+            get().triggerSave();
         } else {
             console.warn("Delete via Code First failed - deleting from view only");
             set({
@@ -278,6 +282,7 @@ export const createObjectSlice: StateCreator<
                 selectedIds: new Set([...state.selectedIds].filter(sid => sid !== id)),
                 isSaved: false,
             });
+            get().triggerSave();
         }
     },
 
@@ -311,8 +316,10 @@ export const createObjectSlice: StateCreator<
 
     setActiveTool: (tool) => set({ activeTool: tool }),
     setActiveTab: (tab) => set({ activeTab: tab }),
-
-    setCode: (code) => set({ code }),
+    setCode: (code) => {
+        set({ code, isSaved: false });
+        get().triggerSave();
+    },
 
     runCode: async () => {
         const state = get();
@@ -449,6 +456,7 @@ export const createObjectSlice: StateCreator<
 
         set({ code: cm.getCode() });
         get().runCode();
+        get().triggerSave();
         toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} operation applied`);
     },
 
