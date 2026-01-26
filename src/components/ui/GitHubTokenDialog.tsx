@@ -64,7 +64,18 @@ export function GitHubTokenDialog({ open, onOpenChange, mode, onConfirm, onSecon
                         </div>
 
                         <div className="space-y-2 pt-2">
-                            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Enter Personal Access Token</label>
+                            <div className="flex items-center justify-between">
+                                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Enter Personal Access Token</label>
+                                <a
+                                    href="https://github.com/settings/tokens/new?description=HiveCAD%20Storage&scopes=repo,user"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors font-bold uppercase tracking-wider"
+                                >
+                                    <ExternalLink className="w-3 h-3" />
+                                    Click here to get PAT
+                                </a>
+                            </div>
                             <Input
                                 type="password"
                                 placeholder="ghp_..."
@@ -75,15 +86,6 @@ export function GitHubTokenDialog({ open, onOpenChange, mode, onConfirm, onSecon
                             />
                         </div>
 
-                        <a
-                            href="https://github.com/settings/tokens/new?description=HiveCAD%20Storage&scopes=repo,user"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 text-[11px] text-primary hover:underline font-medium"
-                        >
-                            <ExternalLink className="w-3 h-3" />
-                            How to get a PAT (requires `repo` and `user` scopes)
-                        </a>
                     </div>
 
                     {mode === 'exit' && (
