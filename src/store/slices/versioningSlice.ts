@@ -90,6 +90,12 @@ export const createVersioningSlice: StateCreator<
                 // Remove any existing error toast if auto-save finally succeeded
                 toast.dismiss('save-toast');
             }
+
+            // Check if a save was requested while we were saving
+            if (get().pendingSave) {
+                set({ pendingSave: false });
+                get().save(false);
+            }
         } catch (error: any) {
             console.error("Save failed:", error);
             const message = error.message || String(error);

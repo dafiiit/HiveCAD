@@ -9,8 +9,10 @@ import {
   Bell,
   Search,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  GitBranch
 } from "lucide-react";
+import { ProjectHistoryView } from "../project/ProjectHistoryView";
 import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -52,11 +54,25 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
     user,
     isSaving,
     pendingSave,
-    lastSaveError
+    lastSaveError,
+    setCode,
+    setFileName,
+    runCode
   } = useCADStore();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [cloudConnectionsOpen, setCloudConnectionsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [tempName, setTempName] = useState("");
+
+  const handleNameSubmit = () => {
+    if (tempName.trim() && tempName !== fileName) {
+      setFileName(tempName);
+      toast.success(`Renamed to ${tempName}`);
+    }
+    setIsEditingName(false);
+  };
 
   const handleManualSave = async () => {
     if (!user?.pat) {
@@ -97,6 +113,32 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
       }
     } else {
       toast("Nothing to reset");
+    }
+  };
+
+
+  const handleViewVersion = async (sha: string) => {
+    try {
+      const { StorageManager } = await import('@/lib/storage/StorageManager');
+      const adapter = StorageManager.getInstance().currentAdapter;
+
+      toast.loading(`Loading version...`, { id: 'load-version' });
+      const data = await adapter.load(fileName, undefined, undefined, sha);
+
+      if (data) {
+        setFileName(data.name || fileName);
+        const codeToSet = data.files?.code ?? (data as any).code;
+        if (codeToSet !== undefined) {
+          setCode(codeToSet);
+          // Trigger run to update view
+          setTimeout(() => runCode(), 100);
+        }
+        toast.success(`Loaded version (Read Only)`, { id: 'load-version' });
+        setHistoryOpen(false);
+      }
+    } catch (error) {
+      console.error("Failed to load version:", error);
+      toast.error("Failed to load version", { id: 'load-version' });
     }
   };
 
@@ -165,6 +207,25 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
             <FolderOpen className="w-4 h-4" />
           </button>
 
+          <button
+            className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
+            onClick={handleOpen}
+            title="Open (Ctrl+O)"
+          >
+            <FolderOpen className="w-4 h-4" />
+          </button>
+
+          {user?.pat && (
+            <button
+              className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
+              onClick={() => setHistoryOpen(true)}
+              title="History & Branches"
+              disabled={fileName === 'Untitled'}
+            >
+              <GitBranch className="w-4 h-4" />
+            </button>
+          )}
+
           <div className="w-px h-4 bg-border mx-1" />
 
           <button
@@ -197,7 +258,30 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
         {/* Center - File name */}
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${isSaved ? 'bg-green-500' : 'bg-yellow-500'}`} />
-          <span className="text-foreground font-medium">{fileName}{!isSaved && '*'}</span>
+          {isEditingName ? (
+            <Input
+              value={tempName}
+              onChange={(e) => setTempName(e.target.value)}
+              onBlur={handleNameSubmit}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleNameSubmit();
+                if (e.key === 'Escape') setIsEditingName(false);
+              }}
+              className="h-6 w-48 text-xs"
+              autoFocus
+            />
+          ) : (
+            <span
+              className="text-foreground font-medium cursor-pointer hover:underline hover:text-primary transition-colors"
+              onClick={() => {
+                setTempName(fileName);
+                setIsEditingName(true);
+              }}
+              title="Click to rename"
+            >
+              {fileName}{!isSaved && '*'}
+            </span>
+          )}
         </div>
 
         {/* Right section - User controls */}
@@ -358,6 +442,13 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ProjectHistoryView
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        projectId={fileName}
+        onViewVersion={handleViewVersion}
+      />
     </>
   );
 };

@@ -1,5 +1,5 @@
 import { Octokit } from 'octokit';
-import { StorageAdapter, StorageType, ProjectData } from '../types';
+import { StorageAdapter, StorageType, ProjectData, CommitInfo, BranchInfo } from '../types';
 import { supabase } from '../../auth/supabase';
 
 export class GitHubAdapter implements StorageAdapter {
@@ -10,6 +10,7 @@ export class GitHubAdapter implements StorageAdapter {
     private authenticatedUser: string | null = null;
     private currentOwner: string | null = null;
     private currentRepo: string | null = null;
+    private currentBranchName: string = 'main';
 
     async connect(token?: string): Promise<boolean> {
         console.log('[GitHubAdapter] connect() called', token ? '(with token)' : '(without token)');
@@ -62,41 +63,30 @@ export class GitHubAdapter implements StorageAdapter {
         return this._isAuthenticated;
     }
 
-    private async ensureRepoExists(owner: string, repo: string): Promise<boolean> {
-        if (!this.octokit) return false;
+    private async retryOperation<T>(
+        operation: () => Promise<T>,
+        onConflict: () => Promise<void>,
+        maxRetries = 3
+    ): Promise<T> {
+        let lastError: any;
 
-        try {
-            await this.octokit.rest.repos.get({ owner, repo });
-            return true;
-        } catch (error: any) {
-            if (error.status === 404) {
-                console.log(`[GitHubAdapter] Repository ${owner}/${repo} not found. Attempting to create...`);
-                try {
-                    await this.octokit.rest.repos.createForAuthenticatedUser({
-                        name: repo,
-                        description: 'HiveCAD Projects (Decentralized Storage)',
-                        private: false,
-                    });
-
-                    // Add topic
-                    await this.octokit.rest.repos.replaceAllTopics({
-                        owner,
-                        repo,
-                        names: ['hivecad-project'],
-                    });
-
-                    console.log(`[GitHubAdapter] Repository ${owner}/${repo} created successfully.`);
-                    return true;
-                } catch (createError: any) {
-                    console.error('[GitHubAdapter] Failed to create repository:', createError);
-                    if (createError.status === 403 || createError.status === 401) {
-                        throw new Error(`Failed to create repository '${repo}'. Your GitHub PAT might be missing the 'repo' scope.`);
-                    }
-                    throw createError;
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                return await operation();
+            } catch (error: any) {
+                lastError = error;
+                // Check for 409 Conflict or "does not match" error message
+                if (error.status === 409 || (error.message && error.message.includes('does not match'))) {
+                    console.warn(`[GitHubAdapter] Conflict detected (attempt ${i + 1}/${maxRetries}). Retrying...`);
+                    await onConflict();
+                    // Add a small jitter/delay to prevent hammering
+                    await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
+                    continue;
                 }
+                throw error;
             }
-            throw error;
         }
+        throw lastError;
     }
 
     async save(projectId: string, data: any): Promise<void> {
@@ -107,11 +97,8 @@ export class GitHubAdapter implements StorageAdapter {
         const owner = this.currentOwner;
         const repo = this.currentRepo;
 
-        if (!owner) {
-            throw new Error('GitHub owner is not defined. Please try reconnecting your account.');
-        }
-        if (!repo) {
-            throw new Error('GitHub repository is not defined. Please try reconnecting your account.');
+        if (!owner || !repo) {
+            throw new Error('GitHub owner/repo not defined');
         }
 
         if (owner !== this.authenticatedUser) {
@@ -144,43 +131,61 @@ export class GitHubAdapter implements StorageAdapter {
             lastModified: Date.now(),
             tags: data.tags || [],
             deletedAt: data.deletedAt,
-            // thumbnail is handled separately now
         };
 
         const content = btoa(JSON.stringify(projectData, null, 2));
 
+        // State to hold the current SHA
         let sha: string | undefined;
         let existingMetadata: any = null;
 
-        try {
-            const { data: fileData } = await this.octokit.rest.repos.getContent({
-                owner,
-                repo,
-                path,
-            });
-            if (!Array.isArray(fileData)) {
-                sha = fileData.sha;
-                if ('content' in fileData) {
-                    try {
-                        const existingContent = atob(fileData.content.replace(/\n/g, ''));
-                        existingMetadata = JSON.parse(existingContent);
-                    } catch (e) {
-                        console.warn('[GitHubAdapter] Failed to parse existing project data for metadata check', e);
+        // Helper to fetch current SHA
+        const fetchCurrentSha = async () => {
+            try {
+                const { data: fileData } = await this.octokit!.rest.repos.getContent({
+                    owner,
+                    repo,
+                    path,
+                    ref: this.currentBranchName,
+                });
+                if (!Array.isArray(fileData)) {
+                    sha = fileData.sha;
+                    if ('content' in fileData) {
+                        try {
+                            const existingContent = atob(fileData.content.replace(/\n/g, ''));
+                            existingMetadata = JSON.parse(existingContent);
+                        } catch (e) {
+                            console.warn('[GitHubAdapter] Failed to parse existing project data', e);
+                        }
                     }
                 }
+            } catch (error: any) {
+                if (error.status !== 404) throw error;
+                sha = undefined; // File doesn't exist yet
             }
-        } catch (error: any) {
-            if (error.status !== 404) throw error;
-        }
+        };
 
-        await this.octokit.rest.repos.createOrUpdateFileContents({
-            owner,
-            repo,
-            path,
-            message: `Update project ${projectId}`,
-            content,
-            sha,
-        });
+        // Initial fetch
+        await fetchCurrentSha();
+
+        // Perform save with retry
+        await this.retryOperation(
+            async () => {
+                await this.octokit!.rest.repos.createOrUpdateFileContents({
+                    owner,
+                    repo,
+                    path,
+                    message: `Update project ${projectId}`,
+                    content,
+                    sha,
+                    branch: this.currentBranchName,
+                });
+            },
+            async () => {
+                // On conflict, re-fetch SHA
+                await fetchCurrentSha();
+            }
+        );
 
         // Check if metadata actually changed before updating index
         const metadataChanged = !existingMetadata ||
@@ -236,50 +241,55 @@ export class GitHubAdapter implements StorageAdapter {
         const repo = this.currentRepo!;
         const indexPath = 'hivecad/index.json';
 
-        try {
-            let index: ProjectData[] = [];
-            let sha: string | undefined;
+        await this.retryOperation(
+            async () => {
+                let index: ProjectData[] = [];
+                let sha: string | undefined;
 
-            try {
-                const { data: indexFileData } = await this.octokit.rest.repos.getContent({
+                try {
+                    const { data: indexFileData } = await this.octokit!.rest.repos.getContent({
+                        owner,
+                        repo,
+                        path: indexPath,
+                        ref: this.currentBranchName,
+                    });
+                    if (!Array.isArray(indexFileData) && 'content' in indexFileData) {
+                        const content = atob(indexFileData.content.replace(/\n/g, ''));
+                        index = JSON.parse(content);
+                        sha = indexFileData.sha;
+                    }
+                } catch (error: any) {
+                    if (error.status !== 404) throw error;
+                }
+
+                // Update or remove the project
+                const existingIndex = index.findIndex(p => p.id === project.id);
+                if (isDelete) {
+                    if (existingIndex > -1) index.splice(existingIndex, 1);
+                } else {
+                    const entry = { ...project };
+                    delete entry.files; // Don't store full data in index
+                    if (existingIndex > -1) {
+                        index[existingIndex] = entry;
+                    } else {
+                        index.push(entry);
+                    }
+                }
+
+                await this.octokit!.rest.repos.createOrUpdateFileContents({
                     owner,
                     repo,
                     path: indexPath,
+                    message: isDelete ? `Remove ${project.id} from index` : `Update ${project.id} in index`,
+                    content: btoa(JSON.stringify(index, null, 2)),
+                    sha,
+                    branch: this.currentBranchName,
                 });
-                if (!Array.isArray(indexFileData) && 'content' in indexFileData) {
-                    const content = atob(indexFileData.content.replace(/\n/g, ''));
-                    index = JSON.parse(content);
-                    sha = indexFileData.sha;
-                }
-            } catch (error: any) {
-                if (error.status !== 404) throw error;
+            },
+            async () => {
+                // No specific state needed to refresh here as we re-fetch everything inside the loop
             }
-
-            // Update or remove the project
-            const existingIndex = index.findIndex(p => p.id === project.id);
-            if (isDelete) {
-                if (existingIndex > -1) index.splice(existingIndex, 1);
-            } else {
-                const entry = { ...project };
-                delete entry.files; // Don't store full data in index
-                if (existingIndex > -1) {
-                    index[existingIndex] = entry;
-                } else {
-                    index.push(entry);
-                }
-            }
-
-            await this.octokit.rest.repos.createOrUpdateFileContents({
-                owner,
-                repo,
-                path: indexPath,
-                message: isDelete ? `Remove ${project.id} from index` : `Update ${project.id} in index`,
-                content: btoa(JSON.stringify(index, null, 2)),
-                sha,
-            });
-        } catch (error) {
-            console.error('[GitHubAdapter] Failed to update index:', error);
-        }
+        );
     }
 
     async delete(projectId: string): Promise<void> {
@@ -308,36 +318,51 @@ export class GitHubAdapter implements StorageAdapter {
         const repo = this.currentRepo!;
         const path = `hivecad/thumbnails/${projectId}.png`;
 
-        // Strip the data:image/png;base64, prefix if present
         const base64Data = thumbnail.includes(',') ? thumbnail.split(',')[1] : thumbnail;
 
+        // State for SHA
         let sha: string | undefined;
-        try {
-            const { data: fileData } = await this.octokit.rest.repos.getContent({
-                owner,
-                repo,
-                path,
-            });
-            if (!Array.isArray(fileData)) {
-                sha = fileData.sha;
-            }
-        } catch (error: any) {
-            if (error.status !== 404) throw error;
-        }
 
-        await this.octokit.rest.repos.createOrUpdateFileContents({
-            owner,
-            repo,
-            path,
-            message: `Update thumbnail for ${projectId}`,
-            content: base64Data,
-            sha,
-        });
+        const fetchSha = async () => {
+            try {
+                const { data: fileData } = await this.octokit!.rest.repos.getContent({
+                    owner,
+                    repo,
+                    path,
+                    ref: this.currentBranchName,
+                });
+                if (!Array.isArray(fileData)) {
+                    sha = fileData.sha;
+                }
+            } catch (error: any) {
+                if (error.status !== 404) throw error;
+                sha = undefined;
+            }
+        };
+
+        await fetchSha();
+
+        await this.retryOperation(
+            async () => {
+                await this.octokit!.rest.repos.createOrUpdateFileContents({
+                    owner,
+                    repo,
+                    path,
+                    message: `Update thumbnail for ${projectId}`,
+                    content: base64Data,
+                    sha,
+                    branch: this.currentBranchName,
+                });
+            },
+            async () => {
+                await fetchSha();
+            }
+        );
 
         console.log(`[GitHubAdapter] Thumbnail saved for ${projectId}`);
     }
 
-    async load(projectId: string, owner?: string, repo?: string): Promise<ProjectData | null> {
+    async load(projectId: string, owner?: string, repo?: string, ref?: string): Promise<ProjectData | null> {
         if (!this.octokit) {
             throw new Error('Not connected to GitHub');
         }
@@ -356,6 +381,7 @@ export class GitHubAdapter implements StorageAdapter {
                 owner: targetOwner,
                 repo: targetRepo,
                 path,
+                ref: ref || this.currentBranchName,
             });
 
             if ('content' in fileData) {
@@ -380,6 +406,7 @@ export class GitHubAdapter implements StorageAdapter {
                 owner,
                 repo,
                 path: 'hivecad/index.json',
+                ref: this.currentBranchName,
             });
 
             if (!Array.isArray(indexFileData) && 'content' in indexFileData) {
@@ -394,6 +421,7 @@ export class GitHubAdapter implements StorageAdapter {
                     owner,
                     repo,
                     path: 'hivecad',
+                    ref: this.currentBranchName,
                 });
                 if (Array.isArray(contents)) {
                     return contents
@@ -420,6 +448,7 @@ export class GitHubAdapter implements StorageAdapter {
                 owner,
                 repo,
                 path: 'hivecad/tags.json',
+                ref: this.currentBranchName,
             });
             if (!Array.isArray(tagFileData) && 'content' in tagFileData) {
                 const content = atob(tagFileData.content.replace(/\n/g, ''));
@@ -439,25 +468,40 @@ export class GitHubAdapter implements StorageAdapter {
         const tagPath = 'hivecad/tags.json';
 
         let sha: string | undefined;
-        try {
-            const { data: tagFileData } = await this.octokit.rest.repos.getContent({
-                owner,
-                repo,
-                path: tagPath,
-            });
-            if (!Array.isArray(tagFileData)) sha = tagFileData.sha;
-        } catch (error: any) {
-            if (error.status !== 404) throw error;
-        }
 
-        await this.octokit.rest.repos.createOrUpdateFileContents({
-            owner,
-            repo,
-            path: tagPath,
-            message: 'Update tag definitions',
-            content: btoa(JSON.stringify(tags, null, 2)),
-            sha,
-        });
+        const fetchSha = async () => {
+            try {
+                const { data: tagFileData } = await this.octokit!.rest.repos.getContent({
+                    owner,
+                    repo,
+                    path: tagPath,
+                    ref: this.currentBranchName,
+                });
+                if (!Array.isArray(tagFileData)) sha = tagFileData.sha;
+            } catch (error: any) {
+                if (error.status !== 404) throw error;
+                sha = undefined;
+            }
+        };
+
+        await fetchSha();
+
+        await this.retryOperation(
+            async () => {
+                await this.octokit!.rest.repos.createOrUpdateFileContents({
+                    owner,
+                    repo,
+                    path: tagPath,
+                    message: 'Update tag definitions',
+                    content: btoa(JSON.stringify(tags, null, 2)),
+                    sha,
+                    branch: this.currentBranchName,
+                });
+            },
+            async () => {
+                await fetchSha();
+            }
+        );
     }
 
     async searchCommunityProjects(query: string): Promise<any[]> {
@@ -522,6 +566,7 @@ export class GitHubAdapter implements StorageAdapter {
 
             if (Array.isArray(contents)) {
                 // Delete each file
+                // Delete each file/directory
                 for (const item of contents) {
                     if (item.type === 'file') {
                         await this.octokit.rest.repos.deleteFile({
@@ -532,6 +577,32 @@ export class GitHubAdapter implements StorageAdapter {
                             sha: item.sha,
                         });
                         console.log(`[GitHubAdapter] Deleted ${item.path}`);
+                    } else if (item.type === 'dir') {
+                        // Recursively delete contents of directory (e.g. thumbnails)
+                        try {
+                            const { data: dirContents } = await this.octokit.rest.repos.getContent({
+                                owner,
+                                repo,
+                                path: item.path,
+                            });
+
+                            if (Array.isArray(dirContents)) {
+                                for (const subItem of dirContents) {
+                                    if (subItem.type === 'file') {
+                                        await this.octokit.rest.repos.deleteFile({
+                                            owner,
+                                            repo,
+                                            path: subItem.path,
+                                            message: `Clean up ${subItem.path} for repo reset`,
+                                            sha: subItem.sha,
+                                        });
+                                        console.log(`[GitHubAdapter] Deleted ${subItem.path}`);
+                                    }
+                                }
+                            }
+                        } catch (err) {
+                            console.warn(`[GitHubAdapter] Failed to clean up directory ${item.path}`, err);
+                        }
                     }
                 }
             }
@@ -544,6 +615,142 @@ export class GitHubAdapter implements StorageAdapter {
             }
             console.error('[GitHubAdapter] Failed to reset repository:', error);
             throw error;
+        }
+    }
+    async getHistory(projectId: string): Promise<CommitInfo[]> {
+        if (!this.octokit || !this.currentOwner || !this.currentRepo) return [];
+
+        try {
+            // We want to see history relevant to this project file across all "interesting" branches.
+            // But simple API limitation: listCommits takes ONE sha.
+            // Strategy: Get commits for the current branch.
+            // Ideally we'd merge histories from main + current branch, but let's start with current.
+            const response = await this.octokit.request('GET /repos/{owner}/{repo}/commits', {
+                owner: this.currentOwner,
+                repo: this.currentRepo,
+                path: `hivecad/${projectId}.json`,
+                sha: this.currentBranchName,
+                per_page: 50,
+            });
+
+            return response.data.map((commit: any) => ({
+                hash: commit.sha,
+                parents: commit.parents.map((p: any) => p.sha),
+                author: {
+                    name: commit.commit.author.name,
+                    email: commit.commit.author.email,
+                    date: commit.commit.author.date,
+                },
+                subject: commit.commit.message.split('\n')[0],
+                body: commit.commit.message.split('\n').slice(1).join('\n'),
+                refNames: [commit.sha === response.data[0].sha ? this.currentBranchName : ''] // Simplified ref tagging
+            }));
+        } catch (error) {
+            console.error('[GitHubAdapter] Failed to get history:', error);
+            return [];
+        }
+    }
+
+    async createBranch(projectId: string, sourceSha: string, branchName: string): Promise<void> {
+        if (!this.octokit || !this.currentOwner || !this.currentRepo) throw new Error('Not connected');
+
+        // Convention: project/{projectId}/{branchName}
+        // But user might just pass "fix-bug". 
+        // Let's force the convention inside this method or assume caller handles it?
+        // Plan said: "The UI will filter branches... We will assume a naming convention".
+        // Let's prepend project ID if not present?? 
+        // Actually, let's keep it simple: creating a branch creates it at the repo level.
+        // We will prepend `project/${projectId}/` to keep namespace clean.
+
+        const fullBranchName = branchName.startsWith('project/') ? branchName : `project/${projectId}/${branchName}`;
+        const ref = `refs/heads/${fullBranchName}`;
+
+        try {
+            await this.octokit.rest.git.createRef({
+                owner: this.currentOwner,
+                repo: this.currentRepo,
+                ref,
+                sha: sourceSha,
+            });
+            console.log(`[GitHubAdapter] Created branch ${ref} at ${sourceSha}`);
+
+            // Switch to it?
+            // Usually separate step, but for convenience let's wait for caller to switch.
+        } catch (error: any) {
+            if (error.status === 422) {
+                throw new Error(`Branch ${fullBranchName} already exists`);
+            }
+            throw error;
+        }
+    }
+
+    async getBranches(projectId: string): Promise<BranchInfo[]> {
+        if (!this.octokit || !this.currentOwner || !this.currentRepo) return [];
+
+        try {
+            const { data: branches } = await this.octokit.rest.repos.listBranches({
+                owner: this.currentOwner,
+                repo: this.currentRepo,
+            });
+
+            // Filter: main + project-specific branches
+            const relevantBranches = branches.filter(b =>
+                b.name === 'main' ||
+                b.name === 'master' ||
+                b.name.startsWith(`project/${projectId}/`)
+            );
+
+            return relevantBranches.map(b => ({
+                name: b.name,
+                sha: b.commit.sha,
+                isCurrent: b.name === this.currentBranchName
+            }));
+        } catch (error) {
+            console.error('[GitHubAdapter] Failed to list branches:', error);
+            return [];
+        }
+    }
+
+    async switchBranch(branchName: string): Promise<void> {
+        // Just update local state.
+        // In a real git client we'd checkout. 
+        // Here we just say "future operations apply to this branch".
+        // Verify branch exists?
+
+        const exists = await this.ensureBranchExists(branchName);
+        if (!exists) throw new Error(`Branch ${branchName} does not exist`);
+
+        this.currentBranchName = branchName;
+        console.log(`[GitHubAdapter] Switched to branch ${branchName}`);
+    }
+
+    async getCurrentBranch(): Promise<string> {
+        return this.currentBranchName;
+    }
+
+    private async ensureBranchExists(branchName: string): Promise<boolean> {
+        if (!this.octokit || !this.currentOwner || !this.currentRepo) return false;
+        try {
+            await this.octokit.rest.repos.getBranch({
+                owner: this.currentOwner,
+                repo: this.currentRepo,
+                branch: branchName,
+            });
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    private async ensureRepoExists(owner: string, repo: string): Promise<void> {
+        if (!this.octokit) throw new Error('Not connected');
+        try {
+            await this.octokit.rest.repos.get({
+                owner,
+                repo,
+            });
+        } catch (error: any) {
+            throw new Error(`Repository ${owner}/${repo} does not exist or is not accessible.`);
         }
     }
 }

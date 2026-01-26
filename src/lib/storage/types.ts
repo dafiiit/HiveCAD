@@ -33,11 +33,18 @@ export interface StorageAdapter {
 
     // Persistence
     save(projectId: string, data: any): Promise<void>;
-    load(projectId: string, owner?: string, repo?: string): Promise<any>;
+    load(projectId: string, owner?: string, repo?: string, ref?: string): Promise<any>;
     delete(projectId: string): Promise<void>;
     rename(projectId: string, newName: string): Promise<void>;
     updateMetadata(projectId: string, updates: Partial<Pick<ProjectData, 'tags' | 'deletedAt' | 'name' | 'lastOpenedAt'>>): Promise<void>;
     saveThumbnail(projectId: string, thumbnail: string): Promise<void>;
+
+    // History and Branching (Optional, mostly for GitHub adapter)
+    getHistory?(projectId: string): Promise<CommitInfo[]>;
+    createBranch?(projectId: string, sourceSha: string, branchName: string): Promise<void>;
+    getBranches?(projectId: string): Promise<BranchInfo[]>;
+    switchBranch?(branchName: string): Promise<void>;
+    getCurrentBranch?(): Promise<string>;
 
     // Discovery
     listProjects?(): Promise<ProjectData[]>;
@@ -52,4 +59,23 @@ export interface StorageAdapter {
 
     // Maintenance
     resetRepository?(): Promise<void>;
+}
+
+export interface CommitInfo {
+    hash: string;
+    parents: string[];
+    author: {
+        name: string;
+        email?: string;
+        date: string;
+    };
+    subject: string;
+    body?: string;
+    refNames?: string[]; // e.g. ["HEAD", "main", "origin/main"]
+}
+
+export interface BranchInfo {
+    name: string;
+    sha: string;
+    isCurrent: boolean;
 }

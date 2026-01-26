@@ -13,6 +13,8 @@ import { cn } from '@/lib/utils';
 import { GitHubTokenDialog } from '../ui/GitHubTokenDialog';
 import { ProjectData } from '@/lib/storage/types';
 import { LoadingScreen } from '../ui/LoadingScreen';
+import { ProjectHistoryView } from './ProjectHistoryView';
+import { GitBranch } from 'lucide-react';
 
 type DashboardMode = 'workspace' | 'discover';
 
@@ -27,7 +29,7 @@ export function ProjectDashboard() {
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [dashboardMode, setDashboardMode] = useState<DashboardMode>('workspace');
-    const [activeNav, setActiveNav] = useState('Created by me');
+    const [activeNav, setActiveNav] = useState('Last Opened');
     const [folders, setFolders] = useState<string[]>([]);
     const [starredProjects, setStarredProjects] = useState<string[]>([]);
     const [userProjects, setUserProjects] = useState<ProjectData[]>([]);
@@ -44,6 +46,7 @@ export function ProjectDashboard() {
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
     const [discoverProjects, setDiscoverProjects] = useState<any[]>([]);
+    const [showHistoryDialog, setShowHistoryDialog] = useState<string | null>(null);
 
     const refreshProjects = useCallback(async () => {
         // If we have a PAT, we should wait until the cloud connection is ready
@@ -156,8 +159,8 @@ export function ProjectDashboard() {
         }
     };
 
-    const handleOpenProject = async (project: any) => {
-        setLoadingMessage(`Loading ${project.name}...`);
+    const handleOpenProject = async (project: any, versionSha?: string) => {
+        setLoadingMessage(`Loading ${project.name}${versionSha ? ' (Version)...' : '...'}`);
         try {
             const { StorageManager } = await import('@/lib/storage/StorageManager');
             const manager = StorageManager.getInstance();
@@ -171,8 +174,10 @@ export function ProjectDashboard() {
             } else {
                 // Own project
                 // Mark as opened
-                await adapter.updateMetadata(project.id, { lastOpenedAt: Date.now() });
-                data = await adapter.load(project.id);
+                if (!versionSha) {
+                    await adapter.updateMetadata(project.id, { lastOpenedAt: Date.now() });
+                }
+                data = await adapter.load(project.id, undefined, undefined, versionSha);
             }
 
             if (data) {
@@ -182,8 +187,8 @@ export function ProjectDashboard() {
                 if (codeToSet !== undefined) {
                     setCode(codeToSet);
                 }
-                toast.success(`Opened project: ${data.name || project.name}`);
-                refreshProjects();
+                toast.success(`Opened project: ${data.name || project.name}${versionSha ? ' (Read Only)' : ''}`);
+                if (!versionSha) refreshProjects();
             }
         } catch (error) {
             console.error("Failed to open project:", error);
@@ -397,11 +402,12 @@ export function ProjectDashboard() {
     };
 
     const navItems = [
+        { icon: Clock, label: 'Last Opened' },
         { icon: User, label: 'Created by me' },
         { icon: Star, label: 'Starred' },
         { icon: Users, label: 'Shared with me' },
         { icon: Tag, label: 'Tags' },
-        { icon: Globe, label: 'Public' },
+        { icon: Globe, label: 'Public by me' },
         { icon: Trash2, label: 'Trash' },
     ];
 
@@ -487,129 +493,87 @@ export function ProjectDashboard() {
             <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-[#1a1a1a]">
                 {dashboardMode === 'workspace' ? (
                     <>
-                        {/* Search and Navigation Tags */}
-                        <div className="space-y-4">
-                            <div className="max-w-xl relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-                                <Input
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder={`Search in my HiveCAD...`}
-                                    className="bg-[#222] border-zinc-800 pl-10 h-10 focus:ring-primary focus:border-zinc-700"
-                                />
+                        <div className="max-w-xl mx-auto w-full space-y-6">
+                            {/* Header Buttons */}
+                            <div className="grid grid-cols-2 gap-4 w-full">
+                                <Button
+                                    onClick={handleCreateProject}
+                                    className="col-span-1 bg-primary hover:bg-primary/90 text-white font-bold h-14 w-full shadow-lg shadow-primary/20 text-base"
+                                >
+                                    <Plus className="w-5 h-5 mr-2" />
+                                    New Project
+                                </Button>
+
+                                <Button
+                                    onClick={handleAddFolder}
+                                    variant="outline"
+                                    className="col-span-1 bg-zinc-800/50 border-zinc-700 hover:bg-zinc-800 text-zinc-300 hover:text-white h-14 w-full text-base"
+                                >
+                                    <Folder className="w-5 h-5 mr-2" />
+                                    New Folder
+                                </Button>
                             </div>
 
-                            <div className="flex flex-wrap gap-2">
-                                {navItems.map((item) => (
-                                    <button
-                                        key={item.label}
-                                        onClick={() => {
-                                            setActiveNav(item.label);
-                                            setActiveTags([]);
-                                        }}
-                                        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${activeNav === item.label && activeTags.length === 0
-                                            ? 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.2)]'
-                                            : 'bg-zinc-800/30 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'
-                                            }`}
-                                    >
-                                        <item.icon className="w-3 h-3" />
-                                        {item.label.toUpperCase()}
-                                    </button>
-                                ))}
-                            </div>
-
-                            {activeNav === 'Tags' && (
-                                <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-800/50 mt-4">
-                                    {tags.map(tag => {
-                                        const isSelected = activeTags.includes(tag.name);
-                                        return (
-                                            <button
-                                                key={tag.name}
-                                                onClick={() => {
-                                                    setActiveTags(prev =>
-                                                        isSelected
-                                                            ? prev.filter(t => t !== tag.name)
-                                                            : [...prev, tag.name]
-                                                    );
-                                                }}
-                                                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black transition-all border ${isSelected
-                                                    ? 'bg-white/10 border-white text-white shadow-lg'
-                                                    : 'bg-zinc-800/30 border-zinc-800 text-zinc-500 hover:text-zinc-300'
-                                                    }`}
-                                                style={{ borderColor: isSelected ? tag.color : undefined }}
-                                            >
-                                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: tag.color }} />
-                                                {tag.name.toUpperCase()}
-                                            </button>
-                                        );
-                                    })}
+                            {/* Search and Navigation Tags */}
+                            <div className="space-y-4 w-full">
+                                <div className="relative w-full">
+                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                                    <Input
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        placeholder={`Search in my HiveCAD...`}
+                                        className="bg-[#222] border-zinc-800 pl-12 h-12 w-full focus:ring-primary focus:border-zinc-700 text-base"
+                                    />
                                 </div>
-                            )}
-                        </div>
 
-                        {/* Recent Section - Filtered to non-deleted */}
-                        {activeNav === 'Created by me' && activeTags.length === 0 && searchQuery === '' && (
-                            <section>
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className="text-sm font-semibold flex items-center gap-2 text-zinc-400 uppercase tracking-wider">
-                                        <Clock className="w-4 h-4" /> Last opened by me
-                                    </h3>
-                                    {/* ... view mode buttons ... */}
+                                <div className="flex flex-wrap gap-2 justify-center">
+                                    {navItems.map((item) => (
+                                        <button
+                                            key={item.label}
+                                            onClick={() => {
+                                                setActiveNav(item.label);
+                                                setActiveTags([]);
+                                            }}
+                                            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all border ${activeNav === item.label && activeTags.length === 0
+                                                ? 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.2)]'
+                                                : 'bg-zinc-800/30 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'
+                                                }`}
+                                        >
+                                            <item.icon className="w-3.5 h-3.5" />
+                                            {item.label.toUpperCase()}
+                                        </button>
+                                    ))}
                                 </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                                    <div onClick={handleCreateProject} className="bg-primary/5 rounded-md overflow-hidden border border-primary/20 border-dashed hover:border-primary hover:bg-primary/10 cursor-pointer group transition-all hover:translate-y-[-4px] shadow-lg flex flex-col ring-1 ring-primary/10 hover:ring-primary/30 h-48">
-                                        <div className="flex-1 flex items-center justify-center relative overflow-hidden">
-                                            <Plus className="w-12 h-12 text-primary group-hover:scale-110 transition-transform duration-300" />
-                                        </div>
-                                        <div className="p-3 bg-[#2d2d2d] border-t border-zinc-800">
-                                            <div className="font-bold text-primary group-hover:text-white transition-colors truncate text-sm tracking-tight">+ New Project</div>
-                                            <div className="text-[10px] text-zinc-500 mt-1 uppercase tracking-widest font-black opacity-60">Create Space</div>
-                                        </div>
+
+                                {activeNav === 'Tags' && (
+                                    <div className="flex flex-wrap gap-2 justify-center pt-2 border-t border-zinc-800/50 mt-4">
+                                        {tags.map(tag => {
+                                            const isSelected = activeTags.includes(tag.name);
+                                            return (
+                                                <button
+                                                    key={tag.name}
+                                                    onClick={() => {
+                                                        setActiveTags(prev =>
+                                                            isSelected
+                                                                ? prev.filter(t => t !== tag.name)
+                                                                : [...prev, tag.name]
+                                                        );
+                                                    }}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black transition-all border ${isSelected
+                                                        ? 'bg-white/10 border-white text-white shadow-lg'
+                                                        : 'bg-zinc-800/30 border-zinc-800 text-zinc-500 hover:text-zinc-300'
+                                                        }`}
+                                                    style={{ borderColor: isSelected ? tag.color : undefined }}
+                                                >
+                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                                                    {tag.name.toUpperCase()}
+                                                </button>
+                                            );
+                                        })}
                                     </div>
-
-                                    {loading && <div className="col-span-1 h-48 bg-zinc-800/30 animate-pulse rounded-md" />}
-
-                                    {(() => {
-                                        const combined = [
-                                            ...userProjects.filter(p => !p.deletedAt).map(p => ({ ...p, type: 'user' })),
-                                            ...EXAMPLES
-                                                .filter(e => !userProjects.some(up => up.id === e.id)) // Filter out if user has a persistent copy
-                                                .map(e => ({ ...e, type: 'example' as const, lastOpenedAt: exampleOpenedAt[e.id] }))
-                                        ]
-                                            .sort((a, b) => {
-                                                const timeA = a.lastOpenedAt || (a as any).lastModified || 0;
-                                                const timeB = b.lastOpenedAt || (b as any).lastModified || 0;
-                                                return timeB - timeA;
-                                            })
-                                            .slice(0, 3);
-
-                                        return combined.map((project: any) => (
-                                            <ProjectCard
-                                                key={`${project.type}-${project.id}`}
-                                                project={project}
-                                                onOpen={() => project.type === 'example' ? handleOpenExample(project) : handleOpenProject(project)}
-                                                onToggleStar={(e) => handleToggleStar(e, project.name)}
-                                                isStarred={starredProjects.includes(project.name)}
-                                                onAction={() => project.type === 'user' ? setContextMenuProject(project.id === contextMenuProject ? null : project.id) : null}
-                                                showMenu={contextMenuProject === project.id}
-                                                onDelete={() => handleDeleteProject(project.id)}
-                                                onRename={() => {
-                                                    setShowRenameDialog(project);
-                                                    setRenameInput(project.name);
-                                                }}
-                                                onManageTags={() => {
-                                                    setShowTagDialog(project);
-                                                    setTagNameInput(""); // Reset creation input in dialog
-                                                }}
-                                                tags={tags}
-                                                projectThumbnails={projectThumbnails}
-                                                hasPAT={!!user?.pat}
-                                            />
-                                        ));
-                                    })()}
-                                </div>
-                            </section>
-                        )}
+                                )}
+                            </div>
+                        </div>
 
                         {/* Filtered Grid Section */}
                         <section>
@@ -640,9 +604,23 @@ export function ProjectDashboard() {
                                         if (activeNav === 'Starred') return isStarred;
                                         if (activeNav === 'Created by me') return p.type === 'user' || p.ownerId === 'Example Project';
                                         if (activeNav === 'Shared with me') return false;
+                                        if (activeNav === 'Last Opened') return (p.type === 'user' || p.ownerId === 'Example Project'); // All user projects + examples, will be sorted
                                         if (activeNav === 'Tags') return (p.type === 'user' || p.ownerId === 'Example Project') && projectTags.length > 0;
                                         if (activeNav === 'Public') return true;
                                         return true;
+                                    })
+                                    .sort((a: any, b: any) => {
+                                        if (activeNav === 'Last Opened') {
+                                            const timeA = a.lastOpenedAt || a.lastModified || 0;
+                                            const timeB = b.lastOpenedAt || b.lastModified || 0;
+                                            return timeB - timeA;
+                                        }
+                                        // Default sort (maybe name or creation?) - keeping existing behavior if any, 
+                                        // currently map produces an array.
+                                        // The previous separate "Recent" section did the sorting. 
+                                        // Now we should sort by default or by last opened if that's the view.
+                                        // Let's default to Last Modified if no specific sort is set for consistency.
+                                        return (b.lastModified || 0) - (a.lastModified || 0);
                                     })
                                     .map((project: any) => (
                                         <ProjectCard
@@ -926,11 +904,24 @@ export function ProjectDashboard() {
             )}
 
             {loadingMessage && <LoadingScreen message={loadingMessage} />}
+
+            <ProjectHistoryView
+                isOpen={!!showHistoryDialog}
+                onClose={() => setShowHistoryDialog(null)}
+                projectId={showHistoryDialog || ''}
+                onViewVersion={(sha) => {
+                    const project = userProjects.find(p => p.id === showHistoryDialog);
+                    if (project) {
+                        setShowHistoryDialog(null);
+                        handleOpenProject(project, sha);
+                    }
+                }}
+            />
         </div>
     );
 }
 
-function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showMenu, onDelete, onRename, onManageTags, tags, projectThumbnails, hasPAT }: any) {
+function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showMenu, onDelete, onRename, onManageTags, onViewHistory, tags, projectThumbnails, hasPAT }: any) {
     const isExample = project.type === 'example';
 
     // Thumbnail resolution order:
@@ -956,10 +947,10 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
 
     return (
         <div
-            className="group bg-[#2d2d2d] rounded-md overflow-hidden border border-zinc-800 hover:border-primary/50 cursor-pointer transition-all hover:translate-y-[-4px] shadow-lg flex flex-col relative h-48"
+            className={`group bg-[#2d2d2d] rounded-md border border-zinc-800 hover:border-primary/50 cursor-pointer transition-all hover:translate-y-[-4px] shadow-lg flex flex-col relative h-48 ${showMenu ? 'z-50' : ''}`}
             onClick={onOpen}
         >
-            <div className="flex-1 bg-[#222] flex items-center justify-center relative overflow-hidden">
+            <div className="flex-1 bg-[#222] flex items-center justify-center relative overflow-hidden rounded-t-md">
                 {thumbnail ? (
                     <img src={thumbnail} className="w-full h-full object-cover transition-transform group-hover:scale-110" alt={project.name} />
                 ) : (
@@ -968,7 +959,6 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
 
                 {/* Badges */}
                 <div className="absolute top-2 left-2 flex flex-wrap gap-1 max-w-[70%]">
-                    {/* Ensure project.tags is handled for both user and example projects */}
                     {(project.tags || []).map((tagName: string) => {
                         const tag = tags.find((t: any) => t.name === tagName);
                         return (
@@ -1006,30 +996,35 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
                 )}
             </div>
 
-            <div className="p-3 bg-[#2d2d2d] border-t border-zinc-800 relative">
+            <div className="p-3 bg-[#2d2d2d] border-t border-zinc-800 relative rounded-b-md">
                 <div className="font-bold text-white truncate text-sm tracking-tight">{project.name}</div>
                 <div className="text-[10px] text-zinc-500 mt-0.5 uppercase tracking-tighter font-black opacity-60 flex items-center justify-between">
                     <span>{project.ownerId || (isExample ? 'Example Project' : 'My Project')}</span>
                     {!isExample && !project.deletedAt && project.sha && <span className="text-green-500/80">Cloud</span>}
                 </div>
                 {deleteMessage && <div className="text-[9px] text-red-400 font-bold mt-1 uppercase tracking-tighter">{deleteMessage}</div>}
-
-                {/* Context Menu */}
-                {showMenu && (
-                    <div className="absolute bottom-full right-2 mb-2 w-48 bg-[#222] border border-zinc-800 rounded-lg shadow-2xl z-10 py-1.5 animate-in slide-in-from-bottom-2 duration-150">
-                        <button onClick={(e) => { e.stopPropagation(); onRename(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3">
-                            <Info className="w-3.5 h-3.5" /> RENAME PROJECT
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); onManageTags(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3">
-                            <Tag className="w-3.5 h-3.5 text-primary" /> MANAGE TAGS
-                        </button>
-                        <div className="h-px bg-zinc-800 my-1.5" />
-                        <button onClick={(e) => { e.stopPropagation(); onDelete(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 flex items-center gap-3">
-                            <Trash2 className="w-3.5 h-3.5" /> DELETE PROJECT
-                        </button>
-                    </div>
-                )}
             </div>
+
+            {/* Context Menu */}
+            {showMenu && (
+                <div className="absolute top-9 right-2 w-48 bg-[#222] border border-zinc-800 rounded-lg shadow-2xl z-50 py-1.5 animate-in slide-in-from-top-2 duration-150">
+                    <button onClick={(e) => { e.stopPropagation(); onRename(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3">
+                        <Info className="w-3.5 h-3.5" /> RENAME PROJECT
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); onManageTags(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3">
+                        <Tag className="w-3.5 h-3.5 text-primary" /> MANAGE TAGS
+                    </button>
+                    {hasPAT && (
+                        <button onClick={(e) => { e.stopPropagation(); onViewHistory(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3">
+                            <GitBranch className="w-3.5 h-3.5 text-blue-400" /> HISTORY & BRANCHES
+                        </button>
+                    )}
+                    <div className="h-px bg-zinc-800 my-1.5" />
+                    <button onClick={(e) => { e.stopPropagation(); onDelete(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 flex items-center gap-3">
+                        <Trash2 className="w-3.5 h-3.5" /> DELETE PROJECT
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
