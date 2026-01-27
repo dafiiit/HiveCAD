@@ -40,7 +40,7 @@ import {
   GitCommit,
   ArrowUpLeft
 } from "lucide-react";
-import { useCADStore, ToolType } from "@/hooks/useCADStore";
+import { useCADStore, useCADStoreApi, ToolType } from "@/hooks/useCADStore";
 import { toast } from "sonner";
 import {
   DropdownMenu,
@@ -158,15 +158,15 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
   };
 
   const handleJoin = () => {
-    useCADStore.getState().executeOperation('join');
+    useCADStoreApi().getState().executeOperation('join');
   };
 
   const handleCut = () => {
-    useCADStore.getState().executeOperation('cut');
+    useCADStoreApi().getState().executeOperation('cut');
   };
 
   const handleIntersect = () => {
-    useCADStore.getState().executeOperation('intersect');
+    useCADStoreApi().getState().executeOperation('intersect');
   };
 
   const handleMeasure = () => {

@@ -87,6 +87,12 @@
     @apply border-border;
   }
 
+  html,
+  body,
+  #root {
+    @apply h-full w-full;
+  }
+
   body {
     @apply bg-background text-foreground;
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -96,6 +102,7 @@
 }
 
 @layer components {
+
   /* CAD Toolbar Styles */
   .cad-toolbar {
     @apply bg-toolbar border-b border-toolbar-border;
@@ -179,10 +186,13 @@
   }
 
   @keyframes bounce-slow {
-    0%, 100% {
+
+    0%,
+    100% {
       transform: translateY(-5%);
       animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
     }
+
     50% {
       transform: translateY(0);
       animation-timing-function: cubic-bezier(0, 0, 0.2, 1);

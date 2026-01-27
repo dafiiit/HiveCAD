@@ -9,7 +9,7 @@ import {
   ZoomIn,
   ZoomOut
 } from "lucide-react";
-import { useCADStore } from "@/hooks/useCADStore";
+import { useCADStore, useCADStoreApi } from "@/hooks/useCADStore";
 import { toast } from "sonner";
 
 const StatusBar = () => {
@@ -54,7 +54,9 @@ const StatusBar = () => {
 
   const handleFitToScreen = () => {
     // fitToScreen(); - Replaced by Fullscreen logic
-    useCADStore.getState().toggleFullscreen();
+    // useCADStore.getState().toggleFullscreen();
+    useCADStoreApi().getState().toggleFullscreen();
+    useCADStoreApi().getState().toggleFullscreen();
     // toast("View fit to screen"); - Toast will be handled if needed, or self-evident
   };
 

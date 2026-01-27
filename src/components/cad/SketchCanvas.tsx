@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo, useLayoutEffect } fr
 import { useThree, ThreeEvent } from "@react-three/fiber";
 import { Html, Grid } from "@react-three/drei";
 import * as THREE from "three";
-import { useCADStore, SketchPrimitive, ToolType } from "../../hooks/useCADStore";
+import { useCADStore, useCADStoreApi, SketchPrimitive, ToolType } from "../../hooks/useCADStore";
 import { SnappingEngine, SnapResult } from "../../lib/snapping";
 import { toolRegistry } from "../../lib/tools";
 import SketchToolDialog, { TOOL_PARAMS } from "./SketchToolDialog";
@@ -335,7 +335,7 @@ const SketchCanvas = () => {
 
                 if (activeTool === 'dimension') {
                     // Check if we can apply a dimension with current selection
-                    const state = useCADStore.getState();
+                    const state = useCADStoreApi().getState();
                     // We need to fetch FRESH selectedIds from state because selectObject updates store asynchronously? 
                     // No, Zustand updates are synchronous usually.
                     // But we should use the updated selection.

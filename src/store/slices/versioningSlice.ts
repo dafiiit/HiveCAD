@@ -106,7 +106,9 @@ export const createVersioningSlice: StateCreator<
             if (isManual || Date.now() - state.lastSaveTime > 60000) {
                 if (message.includes('Not authenticated')) {
                     toast.error("GitHub account not linked. Please link your account to save.", { id: 'save-toast' });
-                    set({ showPATDialog: true });
+                    // Import dynamically to avoid circular dependency if needed, or just use useGlobalStore directly if safe
+                    const { useGlobalStore } = require('../useGlobalStore');
+                    useGlobalStore.getState().setShowPATDialog(true);
                 } else {
                     toast.error(`Save failed: ${message}`, { id: 'save-toast' });
                 }

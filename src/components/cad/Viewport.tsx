@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, f
 import { Canvas, useThree } from "@react-three/fiber";
 import { ArcballControls, Grid, PerspectiveCamera, GizmoHelper, GizmoViewcube } from "@react-three/drei";
 import * as THREE from "three";
-import { useCADStore, CADObject } from "../../hooks/useCADStore";
+import { useCADStore, useCADStoreApi, CADObject } from "../../hooks/useCADStore";
 import { toast } from "sonner";
 import { GitHubTokenDialog } from "../ui/GitHubTokenDialog";
 import SketchCanvas from "./SketchCanvas";
@@ -633,7 +633,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
       <Canvas
         gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
         style={{ background: "hsl(210, 30%, 16%)" }}
-        onPointerMissed={() => useCADStore.getState().clearSelection()}
+        onPointerMissed={() => useCADStoreApi().getState().clearSelection()}
       >
         <ThumbnailCapturer ref={capturerRef} onShowExitDialog={() => setShowExitDialog(true)} />
         {/* Camera - stays Y-up for stable ArcballControls */}

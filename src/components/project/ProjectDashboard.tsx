@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCADStore } from '@/hooks/useCADStore';
+import { useGlobalStore } from '@/store/useGlobalStore';
+import { useTabManager } from '@/components/layout/TabContext';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { UnifiedColorPicker } from '../ui/UnifiedColorPicker';
@@ -22,10 +24,11 @@ type DashboardMode = 'workspace' | 'discover';
 // No placeholders needed anymore as we have real projects
 
 export function ProjectDashboard() {
+    const { openProjectInNewTab } = useTabManager();
+    const { user, logout, showPATDialog, setShowPATDialog, isStorageConnected } = useGlobalStore();
     const {
-        user, logout, setFileName, setCode, projectThumbnails,
-        reset, showPATDialog, setShowPATDialog, isStorageConnected,
-        closeProject
+        setFileName, setCode, projectThumbnails,
+        reset, closeProject
     } = useCADStore();
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -193,12 +196,8 @@ export function ProjectDashboard() {
             }
 
             if (data) {
-                setFileName(data.name || project.name);
-                // Use data.files.code if it exists (modern storage structure) or fallback to data.code
-                const codeToSet = data.files?.code ?? (data as any).code;
-                if (codeToSet !== undefined) {
-                    setCode(codeToSet);
-                }
+                // Open in new tab via context
+                openProjectInNewTab(data);
                 toast.success(`Opened project: ${data.name || project.name}${versionSha ? ' (Read Only)' : ''}`);
                 if (!versionSha) refreshProjects();
             }
@@ -341,8 +340,15 @@ export function ProjectDashboard() {
             name = `Unnamed ${counter}`;
         }
 
-        setFileName(name);
-        reset();
+        const newProjectData: ProjectData = {
+            id: Math.random().toString(36).substr(2, 9),
+            name: name,
+            lastModified: Date.now(),
+            files: { code: 'const main = () => { return; };' },
+            version: '1.0.0',
+            ownerId: user?.id || 'anon'
+        };
+        openProjectInNewTab(newProjectData);
         toast.success(`Started new project: ${name}`);
     };
 

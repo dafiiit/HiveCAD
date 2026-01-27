@@ -1,8 +1,25 @@
-import { StateCreator } from 'zustand';
-import { CADState, AuthSlice } from '../types';
-import { AuthService } from '../../lib/auth/AuthService';
+import { create } from 'zustand';
+import { AuthService } from '../lib/auth/AuthService';
+import { User } from './types';
 
-export const createAuthSlice: StateCreator<CADState, [], [], AuthSlice> = (set, get) => ({
+export interface AuthState {
+    user: User | null;
+    authLoaded: boolean;
+    isAutosaveEnabled: boolean;
+    isStorageConnected: boolean;
+    showPATDialog: boolean;
+
+    loadSession: () => Promise<void>;
+    login: (email: string, pass: string) => Promise<void>;
+    signup: (email: string, pass: string) => Promise<void>;
+    signInWithOAuth: (provider: 'github') => Promise<void>;
+    logout: () => Promise<void>;
+    setShowPATDialog: (show: boolean) => void;
+    setStorageConnected: (connected: boolean) => void;
+    setPAT: (pat: string) => Promise<void>;
+}
+
+export const useGlobalStore = create<AuthState>((set, get) => ({
     user: null,
     isAutosaveEnabled: false,
     isStorageConnected: false,
@@ -43,7 +60,7 @@ export const createAuthSlice: StateCreator<CADState, [], [], AuthSlice> = (set, 
 
         if (pat) {
             // Verify token before saving
-            const { StorageManager } = await import('../../lib/storage/StorageManager');
+            const { StorageManager } = await import('../lib/storage/StorageManager');
             const githubAdapter = StorageManager.getInstance().getAdapter('github');
             if (githubAdapter) {
                 const connected = await githubAdapter.connect(pat);
@@ -56,4 +73,4 @@ export const createAuthSlice: StateCreator<CADState, [], [], AuthSlice> = (set, 
         await AuthService.updatePAT(user.email, pat);
         set({ user: { ...user, pat }, isAutosaveEnabled: !!pat });
     },
-});
+}));

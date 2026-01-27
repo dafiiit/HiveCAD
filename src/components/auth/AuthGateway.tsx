@@ -1,11 +1,13 @@
 import React, { useEffect } from 'react';
-import { useCADStore } from '@/hooks/useCADStore';
+// import { useCADStore, useCADStoreApi } from '@/hooks/useCADStore'; // Removed
+import { useGlobalStore } from '@/store/useGlobalStore';
 import { AuthDialog } from './AuthDialog';
 import { ProjectDashboard } from '../project/ProjectDashboard';
 import { GitHubTokenDialog } from '../ui/GitHubTokenDialog';
 
 export function AuthGateway({ children }: { children: React.ReactNode }) {
-    const { user, fileName, loadSession, authLoaded, isAutosaveEnabled, save, code, objects, showPATDialog, setShowPATDialog } = useCADStore();
+    const { user, loadSession, authLoaded, isAutosaveEnabled, showPATDialog, setShowPATDialog } = useGlobalStore();
+
 
     useEffect(() => {
         const initSession = async () => {
@@ -25,29 +27,19 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
                     const success = await githubAdapter.connect(user.pat);
                     if (success) {
                         console.log('[AuthGateway] GitHub storage connected successfully.');
-                        useCADStore.getState().setStorageConnected(true);
+                        useGlobalStore.getState().setStorageConnected(true);
                     } else {
                         console.error('[AuthGateway] GitHub storage connection failed.');
-                        useCADStore.getState().setStorageConnected(false);
+                        useGlobalStore.getState().setStorageConnected(false);
                     }
                 }
             } else {
                 console.log('[AuthGateway] No PAT found for user, skipped cloud connection.');
-                useCADStore.getState().setStorageConnected(false);
+                useGlobalStore.getState().setStorageConnected(false);
             }
         };
         if (authLoaded && user) connectStorage();
     }, [authLoaded, user]);
-
-    // Autosave effect
-    useEffect(() => {
-        if (isAutosaveEnabled && user && fileName !== 'Untitled') {
-            const timeout = setTimeout(() => {
-                save();
-            }, 2000); // 2 second debounce
-            return () => clearTimeout(timeout);
-        }
-    }, [code, objects, isAutosaveEnabled, user, fileName, save]);
 
     // Show nothing while loading session
     if (!authLoaded) return null;
@@ -57,12 +49,9 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
         return <AuthDialog />;
     }
 
-    // Determine what to render based on fileName
-    const content = fileName === 'Untitled' ? <ProjectDashboard /> : children;
-
     return (
         <>
-            {content}
+            {children}
             <GitHubTokenDialog
                 open={showPATDialog}
                 onOpenChange={setShowPATDialog}

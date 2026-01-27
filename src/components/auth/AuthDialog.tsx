@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { useCADStore } from '@/hooks/useCADStore';
+import { useGlobalStore } from '@/store/useGlobalStore';
 import { toast } from 'sonner';
 import { Github, Mail, Key, LogIn, UserPlus, ArrowRight } from 'lucide-react';
 
 export function AuthDialog() {
-    const { login, signup, authLoaded } = useCADStore();
+    const { login, signup, authLoaded } = useGlobalStore();
     const [step, setStep] = useState<'welcome' | 'auth'>('welcome');
     const [mode, setMode] = useState<'login' | 'signup'>('login');
     const [email, setEmail] = useState('');
@@ -75,7 +75,7 @@ export function AuthDialog() {
                             <Button
                                 variant="outline"
                                 className="w-full h-12 bg-white/5 border-zinc-800 hover:bg-white/10 text-white flex items-center justify-center gap-3"
-                                onClick={() => useCADStore.getState().signInWithOAuth('github')}
+                                onClick={() => useGlobalStore.getState().signInWithOAuth('github')}
                             >
                                 <Github className="w-5 h-5" />
                                 <span>Continue with GitHub</span>

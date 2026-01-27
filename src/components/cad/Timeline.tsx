@@ -8,7 +8,7 @@ import {
   Pencil,
   Settings
 } from "lucide-react";
-import { useCADStore, HistoryItem } from "@/hooks/useCADStore";
+import { useCADStore, useCADStoreApi, HistoryItem } from "@/hooks/useCADStore";
 import { toast } from "sonner";
 import { useState } from "react";
 
@@ -79,7 +79,7 @@ const Timeline = ({ items: propItems }: TimelineProps) => {
 
       // Auto-step through history
       const playInterval = setInterval(() => {
-        const state = useCADStore.getState();
+        const state = useCADStoreApi().getState();
         if (state.historyIndex >= state.history.length - 1) {
           setIsPlaying(false);
           clearInterval(playInterval);
@@ -162,10 +162,10 @@ const Timeline = ({ items: propItems }: TimelineProps) => {
               key={item.id}
               onClick={() => handleItemClick(index)}
               className={`flex items-center gap-1 px-2 py-0.5 rounded text-2xs cursor-pointer transition-colors ${index === historyIndex
-                  ? 'bg-primary text-primary-foreground'
-                  : index <= historyIndex
-                    ? 'bg-secondary text-foreground hover:bg-secondary/80'
-                    : 'bg-secondary/30 text-muted-foreground hover:bg-secondary/50'
+                ? 'bg-primary text-primary-foreground'
+                : index <= historyIndex
+                  ? 'bg-secondary text-foreground hover:bg-secondary/80'
+                  : 'bg-secondary/30 text-muted-foreground hover:bg-secondary/50'
                 }`}
             >
               <span className="opacity-60">{index + 1}</span>

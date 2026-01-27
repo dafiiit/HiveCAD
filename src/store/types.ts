@@ -1,4 +1,10 @@
 import * as THREE from 'three';
+
+export interface User {
+    id?: string;
+    email: string;
+    pat?: string | null;
+}
 import { ConstraintSolver, EntityId, SketchEntity, SketchConstraint, ConstraintType, SolveResult } from '../lib/solver';
 import { SnapPoint, SnappingEngine } from '../lib/snapping';
 import { AssemblyState, AssemblyComponent, AssemblyMate, ComponentId, MateId, MateType } from '../lib/assembly/types';
@@ -308,24 +314,7 @@ export interface AssemblySlice {
     solveAssembly: () => void;
 }
 
-import { Provider } from '@supabase/supabase-js';
+// AuthSlice removed and moved to useGlobalStore
 
-export interface AuthSlice {
-
-    user: { email: string; pat?: string | null } | null;
-    isAutosaveEnabled: boolean;
-    isStorageConnected: boolean;
-    authLoaded: boolean;
-    showPATDialog: boolean;
-    setShowPATDialog: (show: boolean) => void;
-    setStorageConnected: (connected: boolean) => void;
-    login: (email: string, password: string) => Promise<void>;
-    signup: (email: string, password: string) => Promise<void>;
-    signInWithOAuth: (provider: Provider) => Promise<void>;
-    logout: () => void;
-    setPAT: (pat: string | null) => Promise<void>;
-    loadSession: () => Promise<void>;
-}
-
-export type CADState = ObjectSlice & ViewSlice & VersioningSlice & SolverSlice & SketchSlice & SnappingSlice & AuthSlice;
+export type CADState = ObjectSlice & ViewSlice & VersioningSlice & SolverSlice & SketchSlice & SnappingSlice;
 // export type CADState = ObjectSlice & ViewSlice & VersioningSlice & SolverSlice & SketchSlice & SnappingSlice & AssemblySlice & AuthSlice;

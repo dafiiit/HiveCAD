@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from './button';
 import { Input } from './input';
 import { Github, Info, AlertTriangle, ExternalLink, Trash2 } from 'lucide-react';
-import { useCADStore } from '@/hooks/useCADStore';
+import { useGlobalStore } from '@/store/useGlobalStore';
 import { toast } from 'sonner';
 
 interface GitHubTokenDialogProps {
@@ -15,7 +15,7 @@ interface GitHubTokenDialogProps {
 }
 
 export function GitHubTokenDialog({ open, onOpenChange, mode, onConfirm, onSecondaryAction }: GitHubTokenDialogProps) {
-    const { setPAT, user } = useCADStore();
+    const { setPAT, user } = useGlobalStore();
     const [token, setToken] = useState('');
     const [verifying, setVerifying] = useState(false);
 

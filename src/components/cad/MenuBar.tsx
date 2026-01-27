@@ -10,10 +10,16 @@ import {
   Search,
   RefreshCw,
   AlertCircle,
-  GitBranch
+  GitBranch,
+  Home,
+  Box,
+  Plus,
+  X
 } from "lucide-react";
 import { ProjectHistoryView } from "../project/ProjectHistoryView";
-import { useCADStore } from "@/hooks/useCADStore";
+import { useCADStore, useCADStoreApi } from "@/hooks/useCADStore";
+import { useGlobalStore } from "@/store/useGlobalStore";
+import { useTabManager } from "@/components/layout/TabContext";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CloudConnectionsDialog } from "@/components/ui/CloudConnectionsDialog";
@@ -51,7 +57,6 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
     toggleHelp,
     toggleNotifications,
     objects,
-    user,
     isSaving,
     pendingSave,
     lastSaveError,
@@ -59,6 +64,9 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
     setFileName,
     runCode
   } = useCADStore();
+
+  const { activeTabId, closeTab, tabs, switchToTab, createNewTab } = useTabManager();
+  const { user } = useGlobalStore();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [cloudConnectionsOpen, setCloudConnectionsOpen] = useState(false);
@@ -165,12 +173,15 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
         onOpenChange={setCloudConnectionsOpen}
       />
 
-      <div className="h-8 bg-background flex items-center justify-between px-2 border-b border-border text-xs">
-        {/* Left section - App controls */}
-        <div className="flex items-center gap-1">
+      <div className="h-10 bg-background flex items-center justify-between px-2 text-xs relative z-30">
+        {/* Bottom border line that runs across but is redundant if we want fusion (kept for non-tab areas) */}
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-toolbar-border z-0" />
+
+        {/* Left section - App controls - Vertically Centered */}
+        <div className="flex items-center gap-1 h-full">
           <button
             className="p-1 hover:bg-secondary rounded transition-colors flex items-center justify-center"
-            onClick={() => window.dispatchEvent(new CustomEvent('hivecad-exit-project'))}
+            onClick={() => closeTab(activeTabId)}
             title="Exit to Dashboard"
           >
             <img src="/favicon.ico" alt="HiveCAD Logo" className="w-5 h-5 transition-transform hover:scale-110" />
@@ -197,14 +208,6 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
                 <AlertCircle className="w-3 h-3 text-red-500" />
               </div>
             )}
-          </button>
-
-          <button
-            className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
-            onClick={handleOpen}
-            title="Open (Ctrl+O)"
-          >
-            <FolderOpen className="w-4 h-4" />
           </button>
 
           <button
@@ -246,46 +249,96 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
             <Redo2 className="w-4 h-4" />
           </button>
 
+
+        </div>
+
+        {/* Center - Tabs */}
+        <div className="flex-1 flex items-end justify-center h-full gap-1 overflow-x-auto px-4 pb-[1px]">
+          {tabs.filter(t => t.type !== 'dashboard').map((tab, index, array) => {
+            const isActive = activeTabId === tab.id;
+
+            return (
+              <div key={tab.id} className="flex items-center">
+                {/* Divider before tab if not first and previous was not active (to avoid double dividers or clash with active tab) */}
+                {index > 0 && activeTabId !== array[index - 1].id && !isActive && (
+                  <div className="w-px h-4 bg-border mr-1" />
+                )}
+
+                <div
+                  onClick={() => switchToTab(tab.id)}
+                  className={cn(
+                    "group relative flex items-center justify-center gap-2 px-4 py-1.5 min-w-[180px] h-[34px] text-[13px] cursor-pointer select-none transition-all",
+                    isActive
+                      ? "bg-toolbar text-foreground rounded-t-2xl rounded-b-xl z-20 translate-y-[2px]"
+                      : "bg-transparent text-muted-foreground hover:bg-white/5 hover:text-foreground rounded-2xl"
+                  )}
+                >
+                  {/* Sticky fillets - always rendered but hidden when inactive to prevent layout thrashing */}
+                  <div className={cn("absolute -left-[14px] bottom-0 w-4 h-4 bg-[radial-gradient(circle_at_0_0,transparent_14px,hsl(var(--toolbar-bg))_14.5px)] pointer-events-none transition-opacity duration-200", isActive ? "opacity-100" : "opacity-0")} />
+                  <div className={cn("absolute -right-[14px] bottom-0 w-4 h-4 bg-[radial-gradient(circle_at_100%_0,transparent_14px,hsl(var(--toolbar-bg))_14.5px)] pointer-events-none transition-opacity duration-200", isActive ? "opacity-100" : "opacity-0")} />
+
+                  {/* Gap fillers */}
+                  <div className={cn("absolute left-0 bottom-0 w-4 h-2 bg-toolbar -z-10 rounded-bl-xl transition-opacity duration-200", isActive ? "opacity-100" : "opacity-0")} />
+                  <div className={cn("absolute right-0 bottom-0 w-4 h-2 bg-toolbar -z-10 rounded-br-xl transition-opacity duration-200", isActive ? "opacity-100" : "opacity-0")} />
+
+                  {!isEditingName || !isActive ? (
+                    <span
+                      className="truncate font-medium flex-1 text-center"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isActive) {
+                          setTempName(fileName);
+                          setIsEditingName(true);
+                        } else {
+                          switchToTab(tab.id);
+                        }
+                      }}
+                      title={isActive ? "Click to rename" : tab.title}
+                    >
+                      {isActive ? fileName : tab.title}
+                      {isActive && !isSaved && '*'}
+                    </span>
+                  ) : (
+                    <Input
+                      value={tempName}
+                      onChange={(e) => setTempName(e.target.value)}
+                      onBlur={handleNameSubmit}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleNameSubmit();
+                        if (e.key === 'Escape') setIsEditingName(false);
+                      }}
+                      className="h-6 w-full text-xs p-1 text-center"
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )}
+
+                  <button
+                    onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
+                    className={cn(
+                      "p-0.5 rounded-full hover:bg-zinc-700/50 text-muted-foreground/60 hover:text-foreground transition-opacity absolute right-2"
+                    )}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          <div className="w-px h-4 bg-border mx-1 self-center mb-1" />
+
           <button
-            className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
-            onClick={handleReset}
-            title="Reset"
+            onClick={createNewTab}
+            className="p-1.5 mb-1.5 ml-1 rounded-full hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+            title="New Tab"
           >
-            <RotateCcw className="w-4 h-4" />
+            <Plus className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Center - File name */}
-        <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${isSaved ? 'bg-green-500' : 'bg-yellow-500'}`} />
-          {isEditingName ? (
-            <Input
-              value={tempName}
-              onChange={(e) => setTempName(e.target.value)}
-              onBlur={handleNameSubmit}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleNameSubmit();
-                if (e.key === 'Escape') setIsEditingName(false);
-              }}
-              className="h-6 w-48 text-xs"
-              autoFocus
-            />
-          ) : (
-            <span
-              className="text-foreground font-medium cursor-pointer hover:underline hover:text-primary transition-colors"
-              onClick={() => {
-                setTempName(fileName);
-                setIsEditingName(true);
-              }}
-              title="Click to rename"
-            >
-              {fileName}{!isSaved && '*'}
-            </span>
-          )}
-        </div>
-
-        {/* Right section - User controls */}
-        <div className="flex items-center gap-1">
+        {/* Right section - User controls - Vertically Centered */}
+        <div className="flex items-center gap-1 h-full">
           <button
             className={`p-1.5 hover:bg-secondary rounded transition-colors ${searchOpen ? 'bg-secondary text-foreground' : 'text-icon-default hover:text-icon-hover'}`}
             onClick={toggleSearch}
@@ -353,7 +406,7 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
                     key={obj.id}
                     className="p-2 rounded hover:bg-secondary cursor-pointer text-sm flex items-center justify-between"
                     onClick={() => {
-                      useCADStore.getState().selectObject(obj.id);
+                      useCADStoreApi().getState().selectObject(obj.id);
                       toggleSearch();
                       toast(`Selected: ${obj.name}`);
                     }}
