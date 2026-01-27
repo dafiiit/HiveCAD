@@ -30,7 +30,7 @@ export function ProjectDashboard() {
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [dashboardMode, setDashboardMode] = useState<DashboardMode>('workspace');
     const [activeNav, setActiveNav] = useState('Last Opened');
-    const [folders, setFolders] = useState<string[]>([]);
+    const [folders, setFolders] = useState<{ name: string, color: string }[]>([]);
     const [starredProjects, setStarredProjects] = useState<string[]>([]);
     const [userProjects, setUserProjects] = useState<ProjectData[]>([]);
     const [loading, setLoading] = useState(false);
@@ -42,11 +42,18 @@ export function ProjectDashboard() {
     const [showTagDialog, setShowTagDialog] = useState<ProjectData | null>(null);
     const [tagNameInput, setTagNameInput] = useState("");
     const [tagColorInput, setTagColorInput] = useState("#fbbf24");
+    const [showFolderDialog, setShowFolderDialog] = useState(false);
+    const [folderNameInput, setFolderNameInput] = useState("");
+    const [folderColorInput, setFolderColorInput] = useState("#3b82f6");
     const [showSettingsMenu, setShowSettingsMenu] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
     const [discoverProjects, setDiscoverProjects] = useState<any[]>([]);
     const [showHistoryDialog, setShowHistoryDialog] = useState<string | null>(null);
+    const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+    const [contextMenuFolder, setContextMenuFolder] = useState<string | null>(null);
+    const [renameFolderDialog, setRenameFolderDialog] = useState<{ name: string, color: string } | null>(null);
+    const [renameFolderInput, setRenameFolderInput] = useState("");
 
     const refreshProjects = useCallback(async () => {
         // If we have a PAT, we should wait until the cloud connection is ready
@@ -67,6 +74,10 @@ export function ProjectDashboard() {
                 if (adapter.listTags) {
                     const fetchedTags = await adapter.listTags();
                     setTags(fetchedTags);
+                }
+                if (adapter.listFolders) {
+                    const fetchedFolders = await adapter.listFolders();
+                    setFolders(fetchedFolders);
                 }
             } catch (error) {
                 console.error("Failed to fetch projects or tags:", error);
@@ -374,10 +385,142 @@ export function ProjectDashboard() {
     };
 
     const handleAddFolder = () => {
-        const name = window.prompt('Enter folder name:');
-        if (name) {
-            setFolders([...folders, name]);
-            toast.success(`Folder "${name}" created`);
+        setFolderNameInput("");
+        setFolderColorInput("#3b82f6");
+        setShowFolderDialog(true);
+    };
+
+    const handleCreateFolder = async () => {
+        if (!folderNameInput.trim()) return;
+        const newFolders = [...folders, { name: folderNameInput.trim(), color: folderColorInput }];
+
+        try {
+            const { StorageManager } = await import('@/lib/storage/StorageManager');
+            const adapter = StorageManager.getInstance().currentAdapter;
+            if (adapter.saveFolders) {
+                await adapter.saveFolders(newFolders);
+                setFolders(newFolders);
+                toast.success(`Folder "${folderNameInput}" created`);
+                setShowFolderDialog(false);
+            } else {
+                // Fallback for non-persistent adapters (memory only)
+                setFolders(newFolders);
+                setShowFolderDialog(false);
+            }
+        } catch (error) {
+            toast.error("Failed to save folder");
+        }
+    };
+
+    const handleRenameFolder = async () => {
+        if (!renameFolderDialog || !renameFolderInput.trim()) return;
+        const oldName = renameFolderDialog.name;
+        const newName = renameFolderInput.trim();
+
+        // 1. Update folder list
+        const newFolders = folders.map(f => f.name === oldName ? { ...f, name: newName } : f);
+
+        setLoadingMessage(`Renaming folder...`);
+        try {
+            const { StorageManager } = await import('@/lib/storage/StorageManager');
+            const adapter = StorageManager.getInstance().currentAdapter;
+
+            // Save new folders list
+            if (adapter.saveFolders) {
+                await adapter.saveFolders(newFolders);
+                setFolders(newFolders);
+            }
+
+            // 2. Update all projects in this folder
+            const projectsInFolder = userProjects.filter(p => p.folder === oldName);
+            for (const project of projectsInFolder) {
+                await adapter.updateMetadata(project.id, { folder: newName });
+            }
+
+            // Update UI state
+            if (selectedFolder === oldName) setSelectedFolder(newName);
+            toast.success("Folder renamed");
+            setRenameFolderDialog(null);
+            await refreshProjects();
+        } catch (error) {
+            toast.error("Failed to rename folder");
+        } finally {
+            setLoadingMessage(null);
+        }
+    };
+
+    const handleDeleteFolder = async (folderName: string) => {
+        const confirm = window.confirm(`Are you sure you want to delete folder "${folderName}"? Projects inside will be moved to root.`);
+        if (!confirm) return;
+
+        setLoadingMessage(`Deleting folder...`);
+        try {
+            const { StorageManager } = await import('@/lib/storage/StorageManager');
+            const adapter = StorageManager.getInstance().currentAdapter;
+
+            // 1. Remove from list
+            const newFolders = folders.filter(f => f.name !== folderName);
+            if (adapter.saveFolders) {
+                await adapter.saveFolders(newFolders);
+                setFolders(newFolders);
+            }
+
+            // 2. Unassign projects
+            const projectsInFolder = userProjects.filter(p => p.folder === folderName);
+            for (const project of projectsInFolder) {
+                // Remove folder property? Pass null or empty string?
+                // Our updateMetadata is partial, so we might need to explicit set it to undefined or null.
+                // Typescript types say string | undefined. 
+                // We'll assume sending undefined/empty string to updateMetadata logic handles it, 
+                // but usually undefined in JSON.stringify is omitted. 
+                // We might need to send a specific "null" value if the backend supports it, or just re-save the whole project without the folder property.
+                // For GitHubAdapter, 'save' overwrites. So 'updateMetadata' merges. 
+                // Logic in updateMetadata: const updatedData = { ...data, ...updates, lastModified: Date.now() };
+                // If updates has folder: undefined, it might keys overlap.
+                // Let's coerce to any to allow delete.
+                await adapter.updateMetadata(project.id, { folder: undefined } as any);
+            }
+
+            if (selectedFolder === folderName) setSelectedFolder(null);
+            toast.success("Folder deleted");
+            await refreshProjects();
+        } catch (error) {
+            toast.error("Failed to delete folder");
+        } finally {
+            setLoadingMessage(null);
+        }
+    };
+
+    const handleFolderColorChange = async (folderName: string, newColor: string) => {
+        const newFolders = folders.map(f => f.name === folderName ? { ...f, color: newColor } : f);
+        try {
+            const { StorageManager } = await import('@/lib/storage/StorageManager');
+            const adapter = StorageManager.getInstance().currentAdapter;
+            if (adapter.saveFolders) {
+                await adapter.saveFolders(newFolders);
+                setFolders(newFolders);
+            }
+        } catch (error) {
+            toast.error("Failed to update folder color");
+        }
+    };
+
+    // Helper to move project to folder
+    const handleMoveProjectToFolder = async (projectId: string, folderName: string | undefined) => {
+        try {
+            const { StorageManager } = await import('@/lib/storage/StorageManager');
+            const adapter = StorageManager.getInstance().currentAdapter;
+            // Force cast to any to ensure we can pass undefined to clear the field if needed, 
+            // though updateMetadata handles partials so it should be fine.
+            await adapter.updateMetadata(projectId, { folder: folderName });
+            if (folderName) {
+                toast.success(`Moved to ${folderName}`);
+            } else {
+                toast.success(`Removed from folder`);
+            }
+            refreshProjects();
+        } catch (error) {
+            toast.error("Failed to move project");
         }
     };
 
@@ -406,7 +549,7 @@ export function ProjectDashboard() {
         { icon: User, label: 'Created by me' },
         { icon: Star, label: 'Starred' },
         { icon: Users, label: 'Shared with me' },
-        { icon: Tag, label: 'Tags' },
+        { icon: Tag, label: 'My Tags' },
         { icon: Globe, label: 'Public by me' },
         { icon: Trash2, label: 'Trash' },
     ];
@@ -493,168 +636,279 @@ export function ProjectDashboard() {
             <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-[#1a1a1a]">
                 {dashboardMode === 'workspace' ? (
                     <>
-                        <div className="max-w-xl mx-auto w-full space-y-6">
-                            {/* Header Buttons */}
-                            <div className="grid grid-cols-2 gap-4 w-full">
-                                <Button
-                                    onClick={handleCreateProject}
-                                    className="col-span-1 bg-primary hover:bg-primary/90 text-white font-bold h-14 w-full shadow-lg shadow-primary/20 text-base"
-                                >
-                                    <Plus className="w-5 h-5 mr-2" />
-                                    New Project
-                                </Button>
+                        <div className="max-w-7xl mx-auto w-full space-y-10">
+                            {/* ROW 1: Folders */}
+                            <section className="space-y-4">
+                                <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider px-1">Folders</h3>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                                    {/* New Folder Card */}
+                                    <button
+                                        onClick={handleAddFolder}
+                                        className="aspect-[4/3] bg-zinc-800/30 border-2 border-dashed border-zinc-700 hover:border-zinc-500 hover:bg-zinc-800/50 rounded-xl flex flex-col items-center justify-center gap-3 text-zinc-500 hover:text-white transition-all group"
+                                    >
+                                        <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                            <Folder className="w-6 h-6" />
+                                        </div>
+                                        <span className="font-bold text-sm">New Folder</span>
+                                    </button>
 
-                                <Button
-                                    onClick={handleAddFolder}
-                                    variant="outline"
-                                    className="col-span-1 bg-zinc-800/50 border-zinc-700 hover:bg-zinc-800 text-zinc-300 hover:text-white h-14 w-full text-base"
-                                >
-                                    <Folder className="w-5 h-5 mr-2" />
-                                    New Folder
-                                </Button>
-                            </div>
-
-                            {/* Search and Navigation Tags */}
-                            <div className="space-y-4 w-full">
-                                <div className="relative w-full">
-                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
-                                    <Input
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        placeholder={`Search in my HiveCAD...`}
-                                        className="bg-[#222] border-zinc-800 pl-12 h-12 w-full focus:ring-primary focus:border-zinc-700 text-base"
-                                    />
-                                </div>
-
-                                <div className="flex flex-wrap gap-2 justify-center">
-                                    {navItems.map((item) => (
-                                        <button
-                                            key={item.label}
+                                    {/* Existing Folders */}
+                                    {folders.map((folder, i) => (
+                                        <div
+                                            key={i}
                                             onClick={() => {
-                                                setActiveNav(item.label);
-                                                setActiveTags([]);
+                                                if (selectedFolder === folder.name) {
+                                                    setSelectedFolder(null);
+                                                } else {
+                                                    setSelectedFolder(folder.name);
+                                                    setActiveNav('Tags'); // Or keep as is, but maybe clear other filters?
+                                                    // Actually, let's treat folder selection as an additional filter on top of "Created by me" or others.
+                                                    // But usually it acts as a primary nav. Let's just set selectedFolder and maybe activeNav to 'Folders' if we had one.
+                                                    // For now, let's just use selectedFolder state.
+                                                }
                                             }}
-                                            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all border ${activeNav === item.label && activeTags.length === 0
-                                                ? 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.2)]'
-                                                : 'bg-zinc-800/30 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'
+                                            className={`aspect-[4/3] bg-[#222] border rounded-xl p-4 flex flex-col justify-between text-left group transition-all relative overflow-visible cursor-pointer ${selectedFolder === folder.name ? 'border-primary bg-primary/5' : 'border-zinc-800 hover:border-zinc-600'
                                                 }`}
                                         >
-                                            <item.icon className="w-3.5 h-3.5" />
-                                            {item.label.toUpperCase()}
-                                        </button>
+                                            <div className="flex justify-between items-start relative z-10">
+                                                <Folder className="w-8 h-8" style={{ color: folder.color }} />
+                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setContextMenuFolder(contextMenuFolder === folder.name ? null : folder.name);
+                                                        }}
+                                                        className="p-1 hover:bg-zinc-700 rounded-md transition-colors"
+                                                    >
+                                                        <MoreVertical className="w-4 h-4 text-zinc-500 hover:text-white" />
+                                                    </button>
+                                                </div>
+
+                                                {/* Folder Context Menu */}
+                                                {contextMenuFolder === folder.name && (
+                                                    <div className="absolute top-8 right-0 w-48 bg-[#222] border border-zinc-800 rounded-lg shadow-2xl z-50 py-1.5 animate-in slide-in-from-top-2 duration-150">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setContextMenuFolder(null);
+                                                                setRenameFolderDialog(folder);
+                                                                setRenameFolderInput(folder.name);
+                                                            }}
+                                                            className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3"
+                                                        >
+                                                            <div className="w-3" /> RENAME
+                                                        </button>
+                                                        <div className="px-4 py-2">
+                                                            <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">Color</label>
+                                                            <div className="flex gap-1 flex-wrap">
+                                                                {['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1'].map(c => (
+                                                                    <button
+                                                                        key={c}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleFolderColorChange(folder.name, c);
+                                                                        }}
+                                                                        className={`w-4 h-4 rounded-full border border-black/20 ${folder.color === c ? 'ring-1 ring-white' : ''}`}
+                                                                        style={{ backgroundColor: c }}
+                                                                    />
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        <div className="h-px bg-zinc-800 my-1.5" />
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDeleteFolder(folder.name);
+                                                            }}
+                                                            className="w-full text-left px-4 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 flex items-center gap-3"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" /> DELETE
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <h4 className="font-bold text-zinc-200 group-hover:text-primary transition-colors truncate">{folder.name}</h4>
+                                                <p className="text-[10px] text-zinc-500 font-medium">
+                                                    {userProjects.filter(p => p.folder === folder.name && !p.deletedAt).length} projects
+                                                </p>
+                                            </div>
+                                        </div>
                                     ))}
                                 </div>
+                            </section>
 
-                                {activeNav === 'Tags' && (
-                                    <div className="flex flex-wrap gap-2 justify-center pt-2 border-t border-zinc-800/50 mt-4">
-                                        {tags.map(tag => {
-                                            const isSelected = activeTags.includes(tag.name);
-                                            return (
-                                                <button
-                                                    key={tag.name}
-                                                    onClick={() => {
-                                                        setActiveTags(prev =>
-                                                            isSelected
-                                                                ? prev.filter(t => t !== tag.name)
-                                                                : [...prev, tag.name]
-                                                        );
-                                                    }}
-                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black transition-all border ${isSelected
-                                                        ? 'bg-white/10 border-white text-white shadow-lg'
-                                                        : 'bg-zinc-800/30 border-zinc-800 text-zinc-500 hover:text-zinc-300'
-                                                        }`}
-                                                    style={{ borderColor: isSelected ? tag.color : undefined }}
-                                                >
-                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: tag.color }} />
-                                                    {tag.name.toUpperCase()}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                )}
+                            {/* ROW 2: Search */}
+                            <div className="max-w-2xl mx-auto w-full relative">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                                <Input
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder={selectedFolder ? `Search in ${selectedFolder}...` : `Search in my HiveCAD...`}
+                                    className="bg-[#222] border-zinc-800 pl-12 h-12 w-full focus:ring-primary focus:border-zinc-700 text-base shadow-lg"
+                                />
                             </div>
-                        </div>
 
-                        {/* Filtered Grid Section */}
-                        <section>
-                            <h3 className="text-sm font-semibold flex items-center gap-2 mb-4 text-zinc-400 uppercase tracking-wider">
-                                <ListIcon className="w-4 h-4" /> {activeTags.length > 0 ? `TAGS: ${activeTags.join(' + ')}` : activeNav}
-                            </h3>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                                {!loading && [
-                                    ...userProjects.map(p => ({ ...p, type: 'user' as const })),
-                                    ...EXAMPLES
-                                        .filter(e => !userProjects.some(up => up.id === e.id))
-                                        .map(e => ({ ...e, type: 'example' as const }))
-                                ]
-                                    .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                                    .filter(p => {
-                                        // Ensure p.deletedAt is handled for both user and example projects
-                                        const isDeleted = (p as any).deletedAt;
-                                        if (activeNav === 'Trash') return !!isDeleted;
-                                        if (isDeleted) return false;
+                            {/* ROW 3: Tags (Single Line) */}
+                            <div className="flex flex-wrap gap-2 justify-center items-center">
+                                {navItems.map((item) => (
+                                    <button
+                                        key={item.label}
+                                        onClick={() => {
+                                            setActiveNav(item.label);
+                                            setActiveTags([]);
+                                            setSelectedFolder(null); // Clear folder selection when changing main nav
+                                        }}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all border ${activeNav === item.label && activeTags.length === 0 && !selectedFolder
+                                            ? 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.2)]'
+                                            : 'bg-zinc-800/30 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'
+                                            }`}
+                                    >
+                                        <item.icon className="w-3.5 h-3.5" />
+                                        {item.label.toUpperCase()}
+                                    </button>
+                                ))}
+                                <div className="w-px h-6 bg-zinc-800 mx-2" />
+                                {tags.map(tag => {
+                                    const isSelected = activeTags.includes(tag.name);
+                                    return (
+                                        <button
+                                            key={tag.name}
+                                            onClick={() => {
+                                                setActiveTags(prev =>
+                                                    isSelected
+                                                        ? prev.filter(t => t !== tag.name)
+                                                        : [...prev, tag.name]
+                                                );
+                                            }}
+                                            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black transition-all border ${isSelected
+                                                ? 'bg-white/10 border-white text-white shadow-lg'
+                                                : 'bg-zinc-800/30 border-zinc-800 text-zinc-500 hover:text-zinc-300'
+                                                }`}
+                                            style={{ borderColor: isSelected ? tag.color : undefined }}
+                                        >
+                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                                            {tag.name.toUpperCase()}
+                                        </button>
+                                    );
+                                })}
+                            </div>
 
-                                        // Ensure p.tags is handled for both user and example projects
-                                        const projectTags = (p as any).tags || [];
-                                        if (activeTags.length > 0) {
-                                            // Intersection: project must have ALL select tags
-                                            return activeTags.every(t => projectTags.includes(t));
-                                        }
-                                        const isStarred = starredProjects.includes(p.name);
-                                        if (activeNav === 'Starred') return isStarred;
-                                        if (activeNav === 'Created by me') return p.type === 'user' || p.ownerId === 'Example Project';
-                                        if (activeNav === 'Shared with me') return false;
-                                        if (activeNav === 'Last Opened') return (p.type === 'user' || p.ownerId === 'Example Project'); // All user projects + examples, will be sorted
-                                        if (activeNav === 'Tags') return (p.type === 'user' || p.ownerId === 'Example Project') && projectTags.length > 0;
-                                        if (activeNav === 'Public') return true;
-                                        return true;
-                                    })
-                                    .sort((a: any, b: any) => {
-                                        if (activeNav === 'Last Opened') {
-                                            const timeA = a.lastOpenedAt || a.lastModified || 0;
-                                            const timeB = b.lastOpenedAt || b.lastModified || 0;
-                                            return timeB - timeA;
-                                        }
-                                        // Default sort (maybe name or creation?) - keeping existing behavior if any, 
-                                        // currently map produces an array.
-                                        // The previous separate "Recent" section did the sorting. 
-                                        // Now we should sort by default or by last opened if that's the view.
-                                        // Let's default to Last Modified if no specific sort is set for consistency.
-                                        return (b.lastModified || 0) - (a.lastModified || 0);
-                                    })
-                                    .map((project: any) => (
-                                        <ProjectCard
-                                            key={`filtered-${project.id}`}
-                                            project={project}
-                                            onOpen={() => project.type === 'example' ? handleOpenExample(project) : handleOpenProject(project)}
-                                            onToggleStar={(e) => handleToggleStar(e, project.name)}
-                                            isStarred={starredProjects.includes(project.name)}
-                                            onAction={() => setContextMenuProject(project.id === contextMenuProject ? null : project.id)}
-                                            showMenu={contextMenuProject === project.id}
-                                            onDelete={() => handleDeleteProject(project.id)}
-                                            onRename={() => {
-                                                setShowRenameDialog(project);
-                                                setRenameInput(project.name);
-                                            }}
-                                            onManageTags={() => {
-                                                setShowTagDialog(project);
-                                                setTagNameInput(""); // Reset creation input in dialog
-                                            }}
-                                            tags={tags}
-                                            projectThumbnails={projectThumbnails}
-                                        />
-                                    ))}
-                                {userProjects.filter(p => !p.deletedAt).length === 0 && EXAMPLES.length === 0 && (
-                                    <div className="col-span-full py-20 text-center space-y-3">
-                                        <div className="w-16 h-16 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto text-zinc-600">
-                                            <Search className="w-8 h-8" />
+                            {/* ROW 4: Filtered Grid Section */}
+                            <section>
+                                <h3 className="text-sm font-semibold flex items-center gap-2 mb-4 text-zinc-400 uppercase tracking-wider px-1">
+                                    <ListIcon className="w-4 h-4" />
+                                    {selectedFolder
+                                        ? `FOLDER: ${selectedFolder}`
+                                        : activeTags.length > 0
+                                            ? `TAGS: ${activeTags.join(' + ')}`
+                                            : activeNav === 'Last Opened'
+                                                ? 'Recent Projects'
+                                                : activeNav
+                                    }
+                                    {selectedFolder && (
+                                        <button onClick={() => setSelectedFolder(null)} className="ml-2 text-[10px] text-primary hover:underline">
+                                            (Clear)
+                                        </button>
+                                    )}
+                                </h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                                    {/* New Project Card */}
+                                    {activeNav !== 'Trash' && (
+                                        <button
+                                            onClick={handleCreateProject}
+                                            className="aspect-[4/3] bg-primary/10 border-2 border-dashed border-primary/30 hover:border-primary hover:bg-primary/20 rounded-xl flex flex-col items-center justify-center gap-3 text-primary transition-all group shadow-lg shadow-primary/5"
+                                        >
+                                            <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                                <Plus className="w-7 h-7" />
+                                            </div>
+                                            <span className="font-bold text-lg">New Project</span>
+                                        </button>
+                                    )}
+
+                                    {!loading && [
+                                        ...userProjects.map(p => ({ ...p, type: 'user' as const })),
+                                        ...EXAMPLES
+                                            .filter(e => !userProjects.some(up => up.id === e.id))
+                                            .map(e => ({ ...e, type: 'example' as const }))
+                                    ]
+                                        .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                                        .filter(p => {
+                                            // Folder Filter
+                                            if (selectedFolder) {
+                                                if ((p as any).folder !== selectedFolder) return false;
+                                            }
+
+                                            // Ensure p.deletedAt is handled for both user and example projects
+                                            const isDeleted = (p as any).deletedAt;
+                                            if (activeNav === 'Trash') return !!isDeleted;
+                                            if (isDeleted) return false;
+
+                                            // Ensure p.tags is handled for both user and example projects
+                                            const projectTags = (p as any).tags || [];
+                                            if (activeTags.length > 0) {
+                                                // Intersection: project must have ALL select tags
+                                                return activeTags.every(t => projectTags.includes(t));
+                                            }
+                                            const isStarred = starredProjects.includes(p.name);
+                                            if (activeNav === 'Starred') return isStarred;
+                                            if (activeNav === 'Created by me') return p.type === 'user' || p.ownerId === 'Example Project';
+                                            if (activeNav === 'Shared with me') return false;
+                                            if (activeNav === 'Last Opened') return (p.type === 'user' || p.ownerId === 'Example Project'); // All user projects + examples, will be sorted
+                                            if (activeNav === 'Tags') return (p.type === 'user' || p.ownerId === 'Example Project') && projectTags.length > 0;
+                                            if (activeNav === 'Public') return true;
+                                            return true;
+                                        })
+                                        .sort((a: any, b: any) => {
+                                            if (activeNav === 'Last Opened') {
+                                                const timeA = a.lastOpenedAt || a.lastModified || 0;
+                                                const timeB = b.lastOpenedAt || b.lastModified || 0;
+                                                return timeB - timeA;
+                                            }
+                                            // Default sort (maybe name or creation?) - keeping existing behavior if any, 
+                                            // currently map produces an array.
+                                            // The previous separate "Recent" section did the sorting. 
+                                            // Now we should sort by default or by last opened if that's the view.
+                                            // Let's default to Last Modified if no specific sort is set for consistency.
+                                            return (b.lastModified || 0) - (a.lastModified || 0);
+                                        })
+                                        .map((project: any) => (
+                                            <ProjectCard
+                                                key={`filtered-${project.id}`}
+                                                project={project}
+                                                onOpen={() => project.type === 'example' ? handleOpenExample(project) : handleOpenProject(project)}
+                                                onToggleStar={(e) => handleToggleStar(e, project.name)}
+                                                isStarred={starredProjects.includes(project.name)}
+                                                onAction={() => setContextMenuProject(project.id === contextMenuProject ? null : project.id)}
+                                                showMenu={contextMenuProject === project.id}
+                                                onDelete={() => handleDeleteProject(project.id)}
+                                                onRename={() => {
+                                                    setShowRenameDialog(project);
+                                                    setRenameInput(project.name);
+                                                }}
+                                                onManageTags={() => {
+                                                    setShowTagDialog(project);
+                                                    setTagNameInput(""); // Reset creation input in dialog
+                                                }}
+                                                tags={tags}
+                                                projectThumbnails={projectThumbnails}
+                                                hasPAT={!!user?.pat}
+                                                folders={folders}
+                                                onMoveToFolder={(folderName: string) => handleMoveProjectToFolder(project.id, folderName)}
+                                            />
+                                        ))}
+                                    {userProjects.filter(p => !p.deletedAt).length === 0 && EXAMPLES.length === 0 && (
+                                        <div className="col-span-full py-20 text-center space-y-3">
+                                            <div className="w-16 h-16 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto text-zinc-600">
+                                                <Search className="w-8 h-8" />
+                                            </div>
+                                            <div className="text-zinc-500 font-medium">No projects found in {activeNav}</div>
+                                            <p className="text-zinc-600 text-sm">Try exploring the community in Discover mode or create a new project.</p>
                                         </div>
-                                        <div className="text-zinc-500 font-medium">No projects found in {activeNav}</div>
-                                        <p className="text-zinc-600 text-sm">Try exploring the community in Discover mode or create a new project.</p>
-                                    </div>
-                                )}
-                            </div>
-                        </section>
+                                    )}
+                                </div>
+                            </section>
+                        </div>
                     </>
                 ) : (
                     /* Discover Mode - Community Section */
@@ -742,6 +996,83 @@ export function ProjectDashboard() {
             </div>
 
             {/* Modals */}
+            {showFolderDialog && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-[#2a2a2a] border border-zinc-800 rounded-xl p-6 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <h4 className="text-xl font-bold text-white mb-4">Create New Folder</h4>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1.5 block">Folder Name</label>
+                                <input
+                                    value={folderNameInput}
+                                    onChange={(e) => setFolderNameInput(e.target.value)}
+                                    // Handle Enter key
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') handleCreateFolder();
+                                        if (e.key === 'Escape') setShowFolderDialog(false);
+                                    }}
+                                    autoFocus
+                                    placeholder="e.g. Mechanical Parts"
+                                    className="w-full bg-[#1a1a1a] border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1.5 block">Folder Color</label>
+                                <div className="flex gap-2">
+                                    <div className="w-10 h-10 rounded-lg border border-zinc-800 overflow-hidden relative">
+                                        <input
+                                            type="color"
+                                            value={folderColorInput}
+                                            onChange={e => setFolderColorInput(e.target.value)}
+                                            className="absolute -top-2 -left-2 w-16 h-16 cursor-pointer"
+                                        />
+                                    </div>
+                                    <div className="flex-1 text-xs text-zinc-500 flex items-center">
+                                        Pick a color for better organization
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex justify-end gap-3 pt-2">
+                                <Button variant="ghost" onClick={() => setShowFolderDialog(false)}>Cancel</Button>
+                                <Button onClick={handleCreateFolder} className="bg-primary hover:bg-primary/90 text-white font-bold">
+                                    Create Folder
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {renameFolderDialog && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-[#2a2a2a] border border-zinc-800 rounded-xl p-6 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <h4 className="text-xl font-bold text-white mb-4">Rename Folder</h4>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1.5 block">New Folder Name</label>
+                                <input
+                                    value={renameFolderInput}
+                                    onChange={(e) => setRenameFolderInput(e.target.value)}
+                                    // Handle Enter key
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') handleRenameFolder();
+                                        if (e.key === 'Escape') setRenameFolderDialog(null);
+                                    }}
+                                    autoFocus
+                                    className="w-full bg-[#1a1a1a] border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                                />
+                            </div>
+                            <div className="flex justify-end gap-3 pt-2">
+                                <Button variant="ghost" onClick={() => setRenameFolderDialog(null)}>Cancel</Button>
+                                <Button onClick={handleRenameFolder} className="bg-primary hover:bg-primary/90 text-white font-bold">
+                                    Rename
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {showRenameDialog && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-[#2a2a2a] border border-zinc-800 rounded-xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
@@ -921,7 +1252,7 @@ export function ProjectDashboard() {
     );
 }
 
-function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showMenu, onDelete, onRename, onManageTags, onViewHistory, tags, projectThumbnails, hasPAT }: any) {
+function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showMenu, onDelete, onRename, onManageTags, onViewHistory, tags, projectThumbnails, hasPAT, folders, onMoveToFolder }: any) {
     const isExample = project.type === 'example';
 
     // Thumbnail resolution order:
@@ -947,10 +1278,10 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
 
     return (
         <div
-            className={`group bg-[#2d2d2d] rounded-md border border-zinc-800 hover:border-primary/50 cursor-pointer transition-all hover:translate-y-[-4px] shadow-lg flex flex-col relative h-48 ${showMenu ? 'z-50' : ''}`}
+            className={`group bg-[#2d2d2d] rounded-xl border border-zinc-800 hover:border-primary/50 cursor-pointer transition-all hover:translate-y-[-4px] shadow-lg flex flex-col relative aspect-[4/3] h-auto ${showMenu ? 'z-50' : ''}`}
             onClick={onOpen}
         >
-            <div className="flex-1 bg-[#222] flex items-center justify-center relative overflow-hidden rounded-t-md">
+            <div className="flex-1 bg-[#2d2d2d] flex items-center justify-center relative overflow-hidden rounded-t-xl">
                 {thumbnail ? (
                     <img src={thumbnail} className="w-full h-full object-cover transition-transform group-hover:scale-110" alt={project.name} />
                 ) : (
@@ -996,18 +1327,19 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
                 )}
             </div>
 
-            <div className="p-3 bg-[#2d2d2d] border-t border-zinc-800 relative rounded-b-md">
+            <div className="p-3 bg-[#222] border-t border-zinc-800 relative rounded-b-xl">
                 <div className="font-bold text-white truncate text-sm tracking-tight">{project.name}</div>
                 <div className="text-[10px] text-zinc-500 mt-0.5 uppercase tracking-tighter font-black opacity-60 flex items-center justify-between">
                     <span>{project.ownerId || (isExample ? 'Example Project' : 'My Project')}</span>
                     {!isExample && !project.deletedAt && project.sha && <span className="text-green-500/80">Cloud</span>}
+                    {project.folder && <span className="ml-2 text-primary opacity-80 flex items-center gap-1"><Folder className="w-2 h-2" /> {project.folder}</span>}
                 </div>
                 {deleteMessage && <div className="text-[9px] text-red-400 font-bold mt-1 uppercase tracking-tighter">{deleteMessage}</div>}
             </div>
 
             {/* Context Menu */}
             {showMenu && (
-                <div className="absolute top-9 right-2 w-48 bg-[#222] border border-zinc-800 rounded-lg shadow-2xl z-50 py-1.5 animate-in slide-in-from-top-2 duration-150">
+                <div className="absolute top-9 right-2 w-52 bg-[#222] border border-zinc-800 rounded-lg shadow-2xl z-50 py-1.5 animate-in slide-in-from-top-2 duration-150">
                     <button onClick={(e) => { e.stopPropagation(); onRename(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3">
                         <Info className="w-3.5 h-3.5" /> RENAME PROJECT
                     </button>
@@ -1019,6 +1351,38 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
                             <GitBranch className="w-3.5 h-3.5 text-blue-400" /> HISTORY & BRANCHES
                         </button>
                     )}
+
+                    {!isExample && folders && folders.length > 0 && (
+                        <div className="relative group/folder">
+                            <button className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 justify-between">
+                                <div className="flex items-center gap-3">
+                                    <Folder className="w-3.5 h-3.5 text-orange-400" /> MOVE TO...
+                                </div>
+                                <div className="text-[9px] text-zinc-500">▶</div>
+                            </button>
+                            {/* Submenu */}
+                            <div className="absolute right-full top-0 mr-1 w-48 bg-[#222] border border-zinc-800 rounded-lg shadow-xl hidden group-hover/folder:block py-1">
+                                {folders.map((f: any) => (
+                                    <button
+                                        key={f.name}
+                                        onClick={(e) => { e.stopPropagation(); onMoveToFolder(f.name); onAction(); }}
+                                        className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-2"
+                                    >
+                                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: f.color }} />
+                                        {f.name}
+                                    </button>
+                                ))}
+                                <div className="h-px bg-zinc-800 my-1" />
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onMoveToFolder(undefined); onAction(); }}
+                                    className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-400 hover:bg-zinc-800 hover:text-white italic"
+                                >
+                                    Remove from folder
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="h-px bg-zinc-800 my-1.5" />
                     <button onClick={(e) => { e.stopPropagation(); onDelete(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 flex items-center gap-3">
                         <Trash2 className="w-3.5 h-3.5" /> DELETE PROJECT

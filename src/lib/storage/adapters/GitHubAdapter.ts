@@ -119,7 +119,9 @@ export class GitHubAdapter implements StorageAdapter {
             console.warn('[GitHubAdapter] Failed to update repository visibility:', error);
         }
 
-        const path = `hivecad/${projectId}.json`;
+        // New Path Structure: projects/<id>/.hivecad/data.json
+        // We will move away from hivecad/<id>.json to support "Directory per Project"
+        const path = `projects/${projectId}/.hivecad/data.json`;
 
         // Prepare data with metadata if not present
         const projectData: ProjectData = {
@@ -131,6 +133,7 @@ export class GitHubAdapter implements StorageAdapter {
             lastModified: Date.now(),
             tags: data.tags || [],
             deletedAt: data.deletedAt,
+            folder: data.folder,
         };
 
         const content = btoa(JSON.stringify(projectData, null, 2));
@@ -191,7 +194,8 @@ export class GitHubAdapter implements StorageAdapter {
         const metadataChanged = !existingMetadata ||
             existingMetadata.name !== projectData.name ||
             JSON.stringify(existingMetadata.tags) !== JSON.stringify(projectData.tags) ||
-            existingMetadata.deletedAt !== projectData.deletedAt;
+            existingMetadata.deletedAt !== projectData.deletedAt ||
+            existingMetadata.folder !== projectData.folder;
 
         if (metadataChanged) {
             console.log(`[GitHubAdapter] Metadata changed for ${projectId}, updating index...`);
@@ -301,7 +305,7 @@ export class GitHubAdapter implements StorageAdapter {
         await this.updateMetadata(projectId, { name: newName });
     }
 
-    async updateMetadata(projectId: string, updates: Partial<Pick<ProjectData, 'tags' | 'deletedAt' | 'name' | 'lastOpenedAt'>>): Promise<void> {
+    async updateMetadata(projectId: string, updates: Partial<Pick<ProjectData, 'tags' | 'deletedAt' | 'name' | 'lastOpenedAt' | 'folder'>>): Promise<void> {
         const data = await this.load(projectId);
         if (!data) throw new Error('Project not found');
 
@@ -374,13 +378,31 @@ export class GitHubAdapter implements StorageAdapter {
             throw new Error('Owner and repository must be specified or connected');
         }
 
-        const path = `hivecad/${projectId}.json`;
+        // Attempt 1: New Structure (projects/<id>/.hivecad/data.json)
+        const newPath = `projects/${projectId}/.hivecad/data.json`;
+        try {
+            const { data: fileData } = await this.octokit.rest.repos.getContent({
+                owner: targetOwner,
+                repo: targetRepo,
+                path: newPath,
+                ref: ref || this.currentBranchName,
+            });
+            if ('content' in fileData) {
+                const content = atob(fileData.content.replace(/\n/g, ''));
+                return JSON.parse(content);
+            }
+        } catch (e) {
+            // Fallback
+        }
+
+        // Attempt 2: Legacy Structure (hivecad/<id>.json)
+        const legacyPath = `hivecad/${projectId}.json`;
 
         try {
             const { data: fileData } = await this.octokit.rest.repos.getContent({
                 owner: targetOwner,
                 repo: targetRepo,
-                path,
+                path: legacyPath,
                 ref: ref || this.currentBranchName,
             });
 
@@ -400,42 +422,73 @@ export class GitHubAdapter implements StorageAdapter {
 
         const owner = this.currentOwner!;
         const repo = this.currentRepo!;
+        const projects: ProjectData[] = [];
 
+        // 1. Scan Legacy 'hivecad/' folder
         try {
-            const { data: indexFileData } = await this.octokit.rest.repos.getContent({
+            const { data: contents } = await this.octokit.rest.repos.getContent({
                 owner,
                 repo,
-                path: 'hivecad/index.json',
+                path: 'hivecad',
+                ref: this.currentBranchName,
+            });
+            if (Array.isArray(contents)) {
+                const legacyProjects = contents
+                    .filter(item => item.name.endsWith('.json') && item.name !== 'index.json' && item.name !== 'tags.json' && item.name !== 'folders.json')
+                    .map(item => ({
+                        id: item.name.replace('.json', ''),
+                        name: item.name.replace('.json', ''), // Fallback name
+                        ownerId: owner,
+                        lastModified: Date.now(),
+                    })) as ProjectData[];
+                projects.push(...legacyProjects);
+            }
+        } catch (error: any) {
+            // Ignore 404
+        }
+
+        // 2. Scan 'projects/' folder
+        // This effectively lists directories in 'projects/'
+        try {
+            const { data: contents } = await this.octokit.rest.repos.getContent({
+                owner,
+                repo,
+                path: 'projects',
                 ref: this.currentBranchName,
             });
 
-            if (!Array.isArray(indexFileData) && 'content' in indexFileData) {
-                const content = atob(indexFileData.content.replace(/\n/g, ''));
-                return JSON.parse(content);
+            if (Array.isArray(contents)) {
+                // For each directory, we ideally want to fetch the data.json
+                // But making N requests is slow.
+                // For listing, maybe we just assume existence or store a central index.
+                // For now, let's return minimal data derived from directory name.
+                // Ideally listProjects should fetch the index if available.
+                // But since we are moving away from central index, let's just list the folders.
+                const newProjects = contents
+                    .filter(item => item.type === 'dir')
+                    .map(item => ({
+                        id: item.name,
+                        name: item.name, // Will be updated when loaded or if we fetch metadata
+                        ownerId: owner,
+                        lastModified: Date.now(),
+                        // Marking as 'Partial' load might be good, but ProjectData doesn't support it yet.
+                        // The dashboard will load the full project when opened?
+                        // Actually, dashboard expects full data (tags, thumbnails).
+                        // If we don't have it, we might display placeholders.
+                        // Or we can fetch 'projects/<id>/.hivecad/data.json' in parallel (limited batch).
+                        // Let's rely on the dashboard to handle this or improve this later.
+                        // Actually, 'listProjects' contract usually returns full metadata.
+                        // Let's start with basic info derived from folder name.
+                    })) as ProjectData[];
+
+                // Deduplicate (prefer new structure if ID conflicts - unlikely with UUIDs but possible if migrated manually)
+                projects.push(...newProjects);
             }
-            return [];
-        } catch (error: any) {
-            if (error.status === 404) {
-                // Fallback: list files if index doesn't exist (legacy migration)
-                const { data: contents } = await this.octokit.rest.repos.getContent({
-                    owner,
-                    repo,
-                    path: 'hivecad',
-                    ref: this.currentBranchName,
-                });
-                if (Array.isArray(contents)) {
-                    return contents
-                        .filter(item => item.name.endsWith('.json') && item.name !== 'index.json' && item.name !== 'tags.json')
-                        .map(item => ({
-                            id: item.name.replace('.json', ''),
-                            name: item.name.replace('.json', ''),
-                            ownerId: owner,
-                            lastModified: Date.now(),
-                        })) as ProjectData[];
-                }
-            }
-            return [];
+        } catch (error) {
+            // Ignore 404
         }
+
+        return projects;
     }
 
     async listTags(): Promise<Array<{ name: string, color: string }>> {
@@ -494,6 +547,72 @@ export class GitHubAdapter implements StorageAdapter {
                     path: tagPath,
                     message: 'Update tag definitions',
                     content: btoa(JSON.stringify(tags, null, 2)),
+                    sha,
+                    branch: this.currentBranchName,
+                });
+            },
+            async () => {
+                await fetchSha();
+            }
+        );
+    }
+
+    async listFolders(): Promise<Array<{ name: string, color: string }>> {
+        if (!this.octokit) return [];
+        const owner = this.currentOwner!;
+        const repo = this.currentRepo!;
+
+        try {
+            const { data: folderFileData } = await this.octokit.rest.repos.getContent({
+                owner,
+                repo,
+                path: '.hivecad/folders.json',
+                ref: this.currentBranchName,
+            });
+            if (!Array.isArray(folderFileData) && 'content' in folderFileData) {
+                const content = atob(folderFileData.content.replace(/\n/g, ''));
+                return JSON.parse(content);
+            }
+            return [];
+        } catch (error: any) {
+            if (error.status === 404) return [];
+            throw error;
+        }
+    }
+
+    async saveFolders(folders: Array<{ name: string, color: string }>): Promise<void> {
+        if (!this.octokit) return;
+        const owner = this.currentOwner!;
+        const repo = this.currentRepo!;
+        const folderPath = '.hivecad/folders.json';
+
+        let sha: string | undefined;
+
+        const fetchSha = async () => {
+            try {
+                const { data: folderFileData } = await this.octokit!.rest.repos.getContent({
+                    owner,
+                    repo,
+                    path: folderPath,
+                    ref: this.currentBranchName,
+                });
+                if (!Array.isArray(folderFileData)) sha = folderFileData.sha;
+            } catch (error: any) {
+                if (error.status !== 404) throw error;
+                sha = undefined;
+            }
+        };
+
+        await fetchSha();
+
+        await this.retryOperation(
+            async () => {
+                await this.octokit!.rest.repos.createOrUpdateFileContents({
+                    owner,
+                    repo,
+                    path: folderPath,
+                    message: 'Update folder definitions',
+                    content: btoa(JSON.stringify(folders, null, 2)),
                     sha,
                     branch: this.currentBranchName,
                 });

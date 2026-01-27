@@ -20,6 +20,7 @@ export interface ProjectData {
     sha?: string;
     lastOpenedAt?: number;
     thumbnail?: string;
+    folder?: string;
 }
 
 export interface StorageAdapter {
@@ -36,7 +37,7 @@ export interface StorageAdapter {
     load(projectId: string, owner?: string, repo?: string, ref?: string): Promise<any>;
     delete(projectId: string): Promise<void>;
     rename(projectId: string, newName: string): Promise<void>;
-    updateMetadata(projectId: string, updates: Partial<Pick<ProjectData, 'tags' | 'deletedAt' | 'name' | 'lastOpenedAt'>>): Promise<void>;
+    updateMetadata(projectId: string, updates: Partial<Pick<ProjectData, 'tags' | 'deletedAt' | 'name' | 'lastOpenedAt' | 'folder'>>): Promise<void>;
     saveThumbnail(projectId: string, thumbnail: string): Promise<void>;
 
     // History and Branching (Optional, mostly for GitHub adapter)
@@ -53,6 +54,10 @@ export interface StorageAdapter {
     // Labels management
     listTags?(): Promise<Array<{ name: string, color: string }>>;
     saveTags?(tags: Array<{ name: string, color: string }>): Promise<void>;
+
+    // Folder management
+    listFolders?(): Promise<Array<{ name: string, color: string }>>;
+    saveFolders?(folders: Array<{ name: string, color: string }>): Promise<void>;
 
     // Versioning (Optional / Future)
     listVersions?(projectId: string): Promise<any[]>;
