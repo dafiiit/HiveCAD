@@ -8,12 +8,11 @@ import { UnifiedColorPicker } from '../ui/UnifiedColorPicker';
 import {
     Plus, Search, Clock, User, Users, Tag, Globe, Trash2,
     MoreVertical, Grid, List as ListIcon, Folder, ChevronDown,
-    Bell, HelpCircle, UserCircle, LayoutGrid, Info, Star, Settings, LogOut, RefreshCw, AlertTriangle
+    Bell, HelpCircle, UserCircle, LayoutGrid, Info, Star, Settings, LogOut, RefreshCw, AlertTriangle, Github
 } from 'lucide-react';
 import { EXAMPLES } from '@/lib/data/examples';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { GitHubTokenDialog } from '../ui/GitHubTokenDialog';
 import { ProjectData } from '@/lib/storage/types';
 import { LoadingScreen } from '../ui/LoadingScreen';
 import { ProjectHistoryView } from './ProjectHistoryView';
@@ -115,11 +114,6 @@ export function ProjectDashboard() {
     }, [refreshProjects]);
 
     const handleCreateProject = () => {
-        if (!user?.pat) {
-            setShowPATDialog(true);
-            return;
-        }
-
         createProject();
     };
 
@@ -132,11 +126,6 @@ export function ProjectDashboard() {
     });
 
     const handleForkProject = async (project: any) => {
-        if (!user?.pat) {
-            setShowPATDialog(true);
-            return;
-        }
-
         setLoadingMessage(`Forking ${project.name}...`);
         try {
             const { StorageManager } = await import('@/lib/storage/StorageManager');
@@ -677,6 +666,16 @@ export function ProjectDashboard() {
                                         onClick={() => setShowSettingsMenu(false)}
                                     />
                                     <div className="absolute right-0 mt-3 w-60 bg-popover border border-border rounded-xl shadow-2xl z-50 py-2 animate-in slide-in-from-top-2 duration-150">
+                                        <button
+                                            onClick={() => {
+                                                setShowSettingsMenu(false);
+                                                setShowPATDialog(true);
+                                            }}
+                                            className="w-full text-left px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary flex items-center gap-3"
+                                        >
+                                            <Github className="w-4 h-4" /> GitHub Settings
+                                        </button>
+                                        <div className="h-px bg-border my-1.5" />
                                         <button
                                             onClick={() => {
                                                 setShowSettingsMenu(false);

@@ -5,7 +5,6 @@ import * as THREE from "three";
 import { useCADStore, useCADStoreApi, CADObject } from "../../hooks/useCADStore";
 import { useGlobalStore } from '@/store/useGlobalStore';
 import { toast } from "sonner";
-import { GitHubTokenDialog } from "../ui/GitHubTokenDialog";
 import SketchCanvas from "./SketchCanvas";
 import type { ArcballControls as ArcballControlsImpl } from "three-stdlib";
 
@@ -576,7 +575,7 @@ const OperationPreview = () => {
 
 const ThumbnailCapturer = forwardRef<any, { onShowExitDialog: () => void }>((props, ref) => {
   const { gl } = useThree();
-  const { fileName, updateThumbnail, closeProject, code, objects, save } = useCADStore();
+  const { fileName, updateThumbnail, closeProject, code, objects, triggerSave } = useCADStore();
   const { user } = useGlobalStore();
 
   // Define the core exit logic
@@ -585,12 +584,12 @@ const ThumbnailCapturer = forwardRef<any, { onShowExitDialog: () => void }>((pro
       console.log('[ThumbnailCapturer] Finalizing exit with save');
       const screenshot = gl.domElement.toDataURL('image/jpeg', 0.5);
       updateThumbnail(fileName, screenshot);
-      save();
+      triggerSave();
     } else {
       console.log('[ThumbnailCapturer] Finalizing exit with DISCARD');
     }
     closeProject();
-  }, [gl, fileName, updateThumbnail, save, closeProject]);
+  }, [gl, fileName, updateThumbnail, triggerSave, closeProject]);
 
   useImperativeHandle(ref, () => ({
     finalizeExit
@@ -608,9 +607,9 @@ const ThumbnailCapturer = forwardRef<any, { onShowExitDialog: () => void }>((pro
         return;
       }
 
-      // If non-empty but NO PAT, trigger parent to show dialog
+      // If non-empty but NO PAT (should not happen in mandatory flow), just exit
       if (!user?.pat) {
-        props.onShowExitDialog();
+        finalizeExit(false);
         return;
       }
 
@@ -716,14 +715,6 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
           />
         </GizmoHelper>
       </Canvas>
-
-      <GitHubTokenDialog
-        open={showExitDialog}
-        onOpenChange={setShowExitDialog}
-        mode="exit"
-        onConfirm={() => capturerRef.current?.finalizeExit(true)}
-        onSecondaryAction={() => capturerRef.current?.finalizeExit(false)}
-      />
     </div>
   );
 };

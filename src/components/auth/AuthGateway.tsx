@@ -3,7 +3,6 @@ import React, { useEffect } from 'react';
 import { useGlobalStore } from '@/store/useGlobalStore';
 import { AuthDialog } from './AuthDialog';
 import { ProjectDashboard } from '../project/ProjectDashboard';
-import { GitHubTokenDialog } from '../ui/GitHubTokenDialog';
 
 export function AuthGateway({ children }: { children: React.ReactNode }) {
     const { user, loadSession, authLoaded, isAutosaveEnabled, showPATDialog, setShowPATDialog } = useGlobalStore();
@@ -52,19 +51,19 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
     // Show nothing while loading session
     if (!authLoaded) return null;
 
-    // If no user, show AuthDialog
+    // If no user, show AuthDialog (welcome/auth)
     if (!user) {
         return <AuthDialog />;
+    }
+
+    // If user exists but no PAT (or explicit update requested), show AuthDialog (pat step)
+    if (!user.pat || showPATDialog) {
+        return <AuthDialog forcePAT={!user.pat} />;
     }
 
     return (
         <>
             {children}
-            <GitHubTokenDialog
-                open={showPATDialog}
-                onOpenChange={setShowPATDialog}
-                mode="create"
-            />
         </>
     );
 }
