@@ -18,7 +18,7 @@ import { ProjectData } from '@/lib/storage/types';
 import { LoadingScreen } from '../ui/LoadingScreen';
 import { ProjectHistoryView } from './ProjectHistoryView';
 import { GitBranch } from 'lucide-react';
-import { get as idbGet } from 'idb-keyval';
+import { get as idbGet, set as idbSet } from 'idb-keyval';
 import { CacheManager } from '@/lib/storage/CacheManager';
 
 type DashboardMode = 'workspace' | 'discover';
@@ -192,9 +192,10 @@ export function ProjectDashboard() {
                 data = await manager.openExternalProject(project.owner, project.repo, project.id);
             } else {
                 // Own project
-                // Mark as opened
+                // Mark as opened - Fire and Forget (Optimistic)
                 if (!versionSha) {
-                    await adapter.updateMetadata(project.id, { lastOpenedAt: Date.now() });
+                    adapter.updateMetadata(project.id, { lastOpenedAt: Date.now() })
+                        .catch(e => console.warn("[ProjectDashboard] Failed to update lastOpenedAt", e));
                 }
 
                 // Check local storage first
@@ -223,6 +224,17 @@ export function ProjectDashboard() {
                     // So we might need to set that flag when opening.
                 } else {
                     data = await adapter.load(project.id, undefined, undefined, versionSha);
+
+                    // Read-Through Caching: Save to local immediatelly
+                    if (data && !versionSha) {
+                        try {
+                            // Ensure we cache with the stable ID-based key
+                            console.log(`[ProjectDashboard] Caching project ${project.id} locally`);
+                            await idbSet(`project:${project.id}`, data);
+                        } catch (e) {
+                            console.warn("Failed to update local cache", e);
+                        }
+                    }
                 }
             }
 

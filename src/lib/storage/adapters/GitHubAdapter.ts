@@ -409,9 +409,30 @@ export class GitHubAdapter implements StorageAdapter {
 
         const owner = this.currentOwner!;
         const repo = this.currentRepo!;
+
+        // 1. Try to read from central index first (FAST)
+        try {
+            const indexPath = 'hivecad/index.json';
+            const { data: indexFileData } = await this.octokit.rest.repos.getContent({
+                owner,
+                repo,
+                path: indexPath,
+                ref: this.currentBranchName,
+            });
+
+            if (!Array.isArray(indexFileData) && 'content' in indexFileData) {
+                const content = atob(indexFileData.content.replace(/\n/g, ''));
+                const index = JSON.parse(content);
+                console.log('[GitHubAdapter] Loaded projects from index.json');
+                return index;
+            }
+        } catch (error: any) {
+            console.warn('[GitHubAdapter] Failed to read index.json, falling back to directory scan:', error.status);
+        }
+
         const projects: ProjectData[] = [];
 
-        // 1. Scan Legacy 'hivecad/' folder
+        // 2. Scan Legacy 'hivecad/' folder
         try {
             const { data: contents } = await this.octokit.rest.repos.getContent({
                 owner,
@@ -434,7 +455,7 @@ export class GitHubAdapter implements StorageAdapter {
             // Ignore 404
         }
 
-        // 2. Scan 'projects/' folder
+        // 3. Scan 'projects/' folder
         // This effectively lists directories in 'projects/'
         try {
             const { data: contents } = await this.octokit.rest.repos.getContent({
@@ -445,12 +466,7 @@ export class GitHubAdapter implements StorageAdapter {
             });
 
             if (Array.isArray(contents)) {
-                // For each directory, we ideally want to fetch the data.json
-                // But making N requests is slow.
-                // For listing, maybe we just assume existence or store a central index.
-                // For now, let's return minimal data derived from directory name.
-                // Ideally listProjects should fetch the index if available.
-                // But since we are moving away from central index, let's just list the folders.
+
                 const newProjects = contents
                     .filter(item => item.type === 'dir')
                     .map(item => ({
