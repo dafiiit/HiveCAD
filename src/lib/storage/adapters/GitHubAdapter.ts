@@ -42,6 +42,11 @@ export class GitHubAdapter implements StorageAdapter {
 
             this._isAuthenticated = true;
             console.log(`[GitHubAdapter] Connected as ${this.authenticatedUser}`);
+
+            // Initialize repository (ensure exists, set visibility, etc.)
+            // We do this once per session to avoid overhead on every save.
+            await this.initializeRepository();
+
             return true;
         } catch (error: any) {
             console.error('[GitHubAdapter] Connection failed error:', error);
@@ -105,19 +110,8 @@ export class GitHubAdapter implements StorageAdapter {
             throw new Error('Can only save to repositories owned by the authenticated user');
         }
 
-        await this.ensureRepoExists(owner, repo);
-
-        // Ensure repository is public and has the correct topic
-        try {
-            await this.octokit.rest.repos.update({
-                owner,
-                repo,
-                private: false,
-                description: 'HiveCAD Projects (Decentralized Storage)',
-            });
-        } catch (error) {
-            console.warn('[GitHubAdapter] Failed to update repository visibility:', error);
-        }
+        // Repo setup is now handled in connect/initializeRepository
+        // We assume it exists and is configured correctly.
 
         // New Path Structure: projects/<id>/.hivecad/data.json
         // We will move away from hivecad/<id>.json to support "Directory per Project"
@@ -203,13 +197,6 @@ export class GitHubAdapter implements StorageAdapter {
         } else {
             console.log(`[GitHubAdapter] Metadata unchanged for ${projectId}, skipping index update.`);
         }
-
-        // Ensure topic is present (idempotent)
-        await this.octokit.rest.repos.replaceAllTopics({
-            owner,
-            repo,
-            names: ['hivecad-project'],
-        });
 
         console.log(`[GitHubAdapter] Saved ${projectId} to ${owner}/${repo}`);
 
@@ -734,6 +721,41 @@ export class GitHubAdapter implements StorageAdapter {
             }
             console.error('[GitHubAdapter] Failed to reset repository:', error);
             throw error;
+        }
+    }
+
+    private async initializeRepository(): Promise<void> {
+        if (!this.octokit || !this.currentOwner || !this.currentRepo) return;
+
+        const owner = this.currentOwner;
+        const repo = this.currentRepo;
+
+        console.log('[GitHubAdapter] Initializing repository...');
+
+        try {
+            await this.ensureRepoExists(owner, repo);
+
+            // Ensure repository is public and has the correct topic
+            // We run this once at connection time.
+            await this.octokit.rest.repos.update({
+                owner,
+                repo,
+                private: false,
+                description: 'HiveCAD Projects (Decentralized Storage)',
+                // Updating topics here might be cleaner than separate call if supported, 
+                // but replaceAllTopics is the standard way to set topics.
+            });
+
+            await this.octokit.rest.repos.replaceAllTopics({
+                owner,
+                repo,
+                names: ['hivecad-project'],
+            });
+
+        } catch (error) {
+            console.warn('[GitHubAdapter] Repository initialization warning:', error);
+            // We don't throw here to allow app to function even if repo settings update fails
+            // (e.g. if user has limited permissions but can read/write files)
         }
     }
     async getHistory(projectId: string): Promise<CommitInfo[]> {

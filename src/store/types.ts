@@ -224,7 +224,10 @@ export interface VersioningSlice {
     skipToEnd: () => void;
     stepBack: () => void;
     stepForward: () => void;
-    save: (isManual?: boolean) => Promise<void>;
+    syncToCloud: () => Promise<void>;
+    hasUnpushedChanges: boolean;
+    syncStatus: 'idle' | 'saving_local' | 'pushing_cloud' | 'error';
+    saveToLocal: () => Promise<void>;
     triggerSave: () => void;
     saveAs: (name: string) => void;
     open: () => void;

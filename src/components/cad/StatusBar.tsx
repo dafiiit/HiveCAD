@@ -7,10 +7,15 @@ import {
   Maximize2,
   Settings,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  RefreshCw,
+  AlertCircle,
+  Cloud,
+  CheckCircle
 } from "lucide-react";
 import { useCADStore, useCADStoreApi } from "@/hooks/useCADStore";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils"; // Assuming cn utility is available here
 
 const StatusBar = () => {
   const {
@@ -20,11 +25,14 @@ const StatusBar = () => {
     toggleGrid,
     activeTool,
     setActiveTool,
-    save,
-    fitToScreen,
+    syncToCloud,
+    fitToScreen, // Still in store, but logic changed
     objects,
     selectedIds,
-    isSaved
+    isSaved, // Not directly used in new JSX, but might be in syncToCloud
+    syncStatus, // New state from store
+    hasUnpushedChanges, // New state from store
+    isSaving // New state from store
   } = useCADStore();
 
   const handlePan = () => {
@@ -38,7 +46,7 @@ const StatusBar = () => {
   };
 
   const handleSave = () => {
-    save();
+    syncToCloud();
     toast.success("Project saved");
   };
 
@@ -59,10 +67,8 @@ const StatusBar = () => {
 
   const handleFitToScreen = () => {
     // fitToScreen(); - Replaced by Fullscreen logic
-    // useCADStore.getState().toggleFullscreen();
     useCADStoreApi().getState().toggleFullscreen();
-    useCADStoreApi().getState().toggleFullscreen();
-    // toast("View fit to screen"); - Toast will be handled if needed, or self-evident
+    // toast("View fit to screen");
   };
 
   const handleZoomIn = () => {
@@ -77,8 +83,43 @@ const StatusBar = () => {
     toast("Status bar settings");
   };
 
+  // Sync status helpers
+  const getSyncStatusIcon = () => {
+    // Offline check if desired, but user object usually implies auth
+    // if (!user) return <CloudOff ... />;
+
+    switch (syncStatus) {
+      case 'saving_local':
+        return <RefreshCw className="w-3.5 h-3.5 text-blue-400 animate-spin" />;
+      case 'pushing_cloud':
+        return <RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin" />;
+      case 'error':
+        return <AlertCircle className="w-3.5 h-3.5 text-red-500" />;
+      case 'idle':
+      default:
+        if (hasUnpushedChanges) {
+          return <Cloud className="w-3.5 h-3.5 text-amber-400" />; // Pending push
+        }
+        return <CheckCircle className="w-3.5 h-3.5 text-green-500" />; // All synced
+    }
+  };
+
+  const getSyncStatusText = () => {
+    // if (!user) return 'Offline';
+
+    switch (syncStatus) {
+      case 'saving_local': return 'Saving locally...';
+      case 'pushing_cloud': return 'Syncing...';
+      case 'error': return 'Sync failed';
+      case 'idle':
+      default:
+        if (hasUnpushedChanges) return 'Unsynced changes';
+        return 'All saved';
+    }
+  };
+
   return (
-    <div className="h-6 bg-background border-t border-border flex items-center justify-between px-2 text-2xs">
+    <div className="h-6 bg-background border-t border-border flex items-center justify-between px-2 text-2xs z-50 relative">
       {/* Left section */}
       <div className="flex items-center gap-2">
         <button
@@ -92,18 +133,33 @@ const StatusBar = () => {
           <Hand className="w-3 h-3" />
           <span>Pan</span>
         </button>
-        <button
-          className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors ${isSaved
-            ? 'text-muted-foreground/50 cursor-default'
-            : 'hover:bg-secondary text-muted-foreground hover:text-foreground'
-            }`}
-          onClick={handleSave}
-          disabled={isSaved}
-          title="Save (Ctrl+S)"
-        >
-          <Save className="w-3 h-3" />
-          <span>{isSaved ? 'Saved' : 'Save'}</span>
-        </button>
+
+        {/* Sync Status / Save Button */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 mr-2" title={getSyncStatusText()}>
+            {getSyncStatusIcon()}
+            <span className={cn(
+              "hidden sm:inline transition-colors",
+              syncStatus === 'error' ? "text-red-500" :
+                hasUnpushedChanges ? "text-amber-400" : "text-muted-foreground"
+            )}>
+              {getSyncStatusText()}
+            </span>
+          </div>
+
+          <button
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors ${hasUnpushedChanges
+              ? 'hover:bg-primary/20 text-primary hover:text-primary'
+              : 'hover:bg-secondary text-muted-foreground hover:text-foreground'
+              }`}
+            onClick={handleSave}
+            disabled={isSaving || (!hasUnpushedChanges && syncStatus === 'idle')}
+            title="Save (Ctrl+S)"
+          >
+            <Save className="w-3 h-3" />
+            <span>{isSaving ? 'Saving...' : 'Save'}</span>
+          </button>
+        </div>
 
         <div className="w-px h-3 bg-border" />
 

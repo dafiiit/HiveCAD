@@ -18,6 +18,8 @@ import { ProjectData } from '@/lib/storage/types';
 import { LoadingScreen } from '../ui/LoadingScreen';
 import { ProjectHistoryView } from './ProjectHistoryView';
 import { GitBranch } from 'lucide-react';
+import { get as idbGet } from 'idb-keyval';
+import { CacheManager } from '@/lib/storage/CacheManager';
 
 type DashboardMode = 'workspace' | 'discover';
 
@@ -108,6 +110,8 @@ export function ProjectDashboard() {
 
     useEffect(() => {
         refreshProjects();
+        // Prune cache heavily
+        CacheManager.pruneCache();
     }, [refreshProjects]);
 
     const handleCreateProject = () => {
@@ -192,7 +196,34 @@ export function ProjectDashboard() {
                 if (!versionSha) {
                     await adapter.updateMetadata(project.id, { lastOpenedAt: Date.now() });
                 }
-                data = await adapter.load(project.id, undefined, undefined, versionSha);
+
+                // Check local storage first
+                let localData: ProjectData | undefined;
+                try {
+                    // We check both ID-based and Name-based keys for backward compatibility
+                    localData = await idbGet(`project:${project.id}`);
+                    if (!localData && project.name) {
+                        localData = await idbGet(`project:${project.name}`);
+                    }
+                } catch (e) {
+                    console.warn("Failed to check local storage", e);
+                }
+
+                // If loading main version (not history) and we have local data
+                if (!versionSha && localData) {
+                    console.log("Loading from local cache (skipping remote fetch).");
+                    data = localData;
+
+                    // Safety: Trigger background sync to ensure local changes are pushed
+                    // We must wait until the tab is opened and store initialized, 
+                    // or we can do it via a flag. 
+                    // Since openProjectInNewTab initializes memory, we can rely on `useBackgroundSync` 
+                    // picking up `hasUnpushedChanges`.
+                    // But `localData` from IDB doesn't necessarily have `hasUnpushedChanges` set to true in the object itself (it's a store flag).
+                    // So we might need to set that flag when opening.
+                } else {
+                    data = await adapter.load(project.id, undefined, undefined, versionSha);
+                }
             }
 
             if (data) {

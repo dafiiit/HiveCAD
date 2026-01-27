@@ -1,5 +1,6 @@
 import { StateCreator } from 'zustand';
 import { toast } from 'sonner';
+import { get as idbGet, set as idbSet } from 'idb-keyval';
 import { CADState, VersioningSlice, VersionCommit, Comment } from '../types';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -15,7 +16,10 @@ export const createVersioningSlice: StateCreator<
     history: [],
     historyIndex: -1,
     fileName: 'Untitled',
+    projectId: null,
     isSaved: true,
+    hasUnpushedChanges: false,
+    syncStatus: 'idle',
     comments: [],
     commentsExpanded: false,
     versions: [],
@@ -51,23 +55,43 @@ export const createVersioningSlice: StateCreator<
     stepBack: () => { },
     stepForward: () => { },
 
-    save: async (isManual = false) => {
+    saveToLocal: async () => {
         const state = get();
-
-        // Prevent concurrent saves
-        if (state.isSaving) {
-            set({ pendingSave: true });
-            return;
+        set({ syncStatus: 'saving_local' }); // Status update
+        try {
+            const projectData = {
+                fileName: state.fileName,
+                objects: state.objects,
+                code: state.code,
+                versions: state.versions,
+                branches: state.branches,
+                currentBranch: state.currentBranch,
+                currentVersionId: state.currentVersionId,
+            };
+            await idbSet(`project:${state.projectId || state.fileName}`, projectData);
+            set({
+                isSaved: true, // Saved locally
+                hasUnpushedChanges: true,
+                syncStatus: 'idle', // Back to idle after local save, but waiting for push
+                lastSaveTime: Date.now()
+            });
+            console.log("Saved to local storage");
+        } catch (error) {
+            console.error("Local save failed", error);
+            set({ syncStatus: 'error' });
         }
+    },
+
+    syncToCloud: async () => {
+        const state = get();
+        if (state.isSaving) return;
+        set({ isSaving: true, syncStatus: 'pushing_cloud' });
 
         try {
-            set({ isSaving: true, lastSaveError: null });
             const { StorageManager } = await import('@/lib/storage/StorageManager');
             const adapter = StorageManager.getInstance().currentAdapter;
 
-            if (isManual) {
-                toast.loading(`Saving to ${adapter.name}...`, { id: 'save-toast' });
-            }
+            toast.loading(`Syncing to ${adapter.name}...`, { id: 'save-toast' });
 
             const projectData = {
                 fileName: state.fileName,
@@ -80,65 +104,76 @@ export const createVersioningSlice: StateCreator<
                 // thumbnail is removed from here to reduce payload size
             };
 
-            await adapter.save(state.fileName, projectData);
+            await adapter.save(state.projectId || state.fileName, projectData);
 
-            set({ isSaved: true, isSaving: false, lastSaveTime: Date.now() });
+            set({ isSaved: true, hasUnpushedChanges: false, isSaving: false, syncStatus: 'idle', lastSaveTime: Date.now() });
 
-            if (isManual) {
-                toast.success(`Saved to ${adapter.name}`, { id: 'save-toast' });
-            } else {
-                // Remove any existing error toast if auto-save finally succeeded
-                toast.dismiss('save-toast');
-            }
+            // Update thumbnail if needed (optional)
+            toast.success(`Synced to ${adapter.name}`, { id: 'save-toast' });
 
             // Check if a save was requested while we were saving
             if (get().pendingSave) {
                 set({ pendingSave: false });
-                get().save(false);
+                get().syncToCloud();
             }
         } catch (error: any) {
             console.error("Save failed:", error);
             const message = error.message || String(error);
             set({ isSaving: false, lastSaveError: message });
 
-            // Only notify if it's a manual save or if it's been failing for a while
-            // For now, let's always show error on failure if it's GitHub
-            if (isManual || Date.now() - state.lastSaveTime > 60000) {
-                if (message.includes('Not authenticated')) {
-                    toast.error("GitHub account not linked. Please link your account to save.", { id: 'save-toast' });
-                    // Import dynamically to avoid circular dependency if needed, or just use useGlobalStore directly if safe
-                    const { useGlobalStore } = require('../useGlobalStore');
-                    useGlobalStore.getState().setShowPATDialog(true);
-                } else {
-                    toast.error(`Save failed: ${message}`, { id: 'save-toast' });
-                }
+            if (message.includes('Not authenticated')) {
+                toast.error("GitHub account not linked. Please link your account to save.", { id: 'save-toast' });
+                // Import dynamically to avoid circular dependency if needed, or just use useGlobalStore directly if safe
+                const { useGlobalStore } = require('../useGlobalStore');
+                useGlobalStore.getState().setShowPATDialog(true);
+            } else {
+                toast.error(`Sync failed: ${message}`, { id: 'save-toast' });
             }
         }
     },
+
+    // Updated triggerSave to use local save only
     triggerSave: () => {
         const state = get();
-        if (state.pendingSave || state.isSaving) return;
+        // If we are already pending a local save, usually we just let the usage extend the timer or similar.
+        // But here we just set a timeout.
 
         if (saveTimeout) clearTimeout(saveTimeout);
 
         set({ pendingSave: true });
 
-        saveTimeout = setTimeout(() => {
+        // Auto-save to local IDB after 1s
+        saveTimeout = setTimeout(async () => {
             const currentState = get();
             set({ pendingSave: false });
-            currentState.save(false);
-        }, 3000);
+            await currentState.saveToLocal();
+        }, 1000);
     },
     saveAs: (name) => set({ fileName: name, isSaved: true }),
     open: async () => {
         const { StorageManager } = await import('@/lib/storage/StorageManager');
         const adapter = StorageManager.getInstance().currentAdapter;
+
+        // Check local version first
+        const currentState = get();
+        try {
+            const localData: any = await idbGet(`project:${currentState.fileName}`);
+            if (localData) {
+                // TODO: Compare with cloud version timestamp if available
+                // For now, if we have local data and it matches filename, maybe load it?
+                // Actually `open` usually isn't called for the current project, it's for opening *another* project.
+                // This method body was empty/placeholder before. 
+                // We should probably rely on the Caller (UI) to handle loading data.
+            }
+        } catch (e) { }
+
         toast.info(`Open from ${adapter.name} not fully implemented yet`);
     },
     reset: () => {
         set({ objects: [], code: 'const main = () => { return; };' });
     },
     setFileName: (name) => set({ fileName: name }),
+    setProjectId: (id) => set({ projectId: id }),
     closeProject: async () => {
         const state = get();
         // Take a final thumbnail before closing if possible

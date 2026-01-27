@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { BackgroundSyncHandler } from '@/components/layout/BackgroundSyncHandler';
+import { UnsavedChangesListener } from '@/components/layout/UnsavedChangesListener';
 import { StoreApi } from 'zustand';
 import { Plus, X, Home, Box } from 'lucide-react';
 import { CADStoreProvider } from '@/store/CADStoreContext';
@@ -16,6 +18,12 @@ export const TabManager = () => {
     ]);
     const [activeTabId, setActiveTabId] = useState('dashboard');
     const { user } = useGlobalStore();
+
+    // Enable background sync
+    // Background sync moved inside provider
+
+    // Warn on unsaved changes
+
 
     const createNewTab = () => {
         const newTabId = `tab-${Date.now()}`;
@@ -40,7 +48,19 @@ export const TabManager = () => {
                 const store: StoreApi<any> = tab.store;
                 // Initialize store with project data
                 store.getState().setFileName(project.name);
+                store.getState().setProjectId(project.id);
                 if (project.files?.code) store.getState().setCode(project.files.code);
+
+                // If we loaded from local cache (which we assume if it has data but maybe not synced), 
+                // we should check if we need to sync. 
+                // Ideally `ProjectDashboard` passes a flag `isLocal`. 
+                // But for now, let's assume if it opens, we just mark it as potentially having changes 
+                // if we want to be safe, OR we assume `ProjectDashboard` will handle it.
+                // Re-reading plan: "Automatically load ... and immediately schedule a background push".
+                // So we should set `hasUnpushedChanges: true` on mount?
+                // A safer bet: The sync logic relies on `hasUnpushedChanges`.
+                // If we set it to true here, `useBackgroundSync` will pick it up.
+                store.setState({ hasUnpushedChanges: true });
                 // Objects loading would happen here if we had them in ProjectData fully, or via storage adapter loading
 
                 return {
@@ -122,6 +142,8 @@ export const TabManager = () => {
                             }}
                         >
                             <CADStoreProvider store={tab.store}>
+                                <BackgroundSyncHandler />
+                                <UnsavedChangesListener />
                                 {tab.type === 'dashboard' ? <ProjectDashboard /> : <CADLayout />}
                             </CADStoreProvider>
                         </div>
