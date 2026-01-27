@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useCADStore } from '@/hooks/useCADStore';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { UnifiedColorPicker } from '../ui/UnifiedColorPicker';
 import {
     Plus, Search, Clock, User, Users, Tag, Globe, Trash2,
     MoreVertical, Grid, List as ListIcon, Folder, ChevronDown,
@@ -549,7 +550,6 @@ export function ProjectDashboard() {
         { icon: User, label: 'Created by me' },
         { icon: Star, label: 'Starred' },
         { icon: Users, label: 'Shared with me' },
-        { icon: Tag, label: 'My Tags' },
         { icon: Globe, label: 'Public by me' },
         { icon: Trash2, label: 'Trash' },
     ];
@@ -558,41 +558,41 @@ export function ProjectDashboard() {
     return (
         <div className="flex h-screen w-screen bg-[#1a1a1a] text-zinc-300 overflow-hidden font-sans flex-col">
             {/* Main Header */}
-            <header className="h-14 border-b border-zinc-800 flex items-center justify-between px-6 bg-[#222] shrink-0">
+            <header className="h-16 border-b border-border/40 flex items-center justify-between px-6 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shrink-0 z-50">
                 <div className="flex items-center gap-3 w-64">
-                    <img src="/favicon.ico" alt="HiveCAD Logo" className="w-8 h-8 rounded-md" />
-                    <span className="font-bold text-white text-lg tracking-tight">HiveCAD</span>
+                    <img src="/favicon.ico" alt="HiveCAD Logo" className="w-9 h-9 rounded-xl shadow-sm" />
+                    <span className="font-bold text-foreground text-xl tracking-tight">HiveCAD</span>
                 </div>
                 <div className="flex-1 flex justify-center">
-                    <div className="bg-[#1a1a1a] p-1 rounded-lg flex border border-zinc-800">
+                    <div className="bg-muted/50 p-1.5 rounded-full flex border border-border/50 backdrop-blur-sm">
                         <button
                             onClick={() => setDashboardMode('workspace')}
-                            className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${dashboardMode === 'workspace' ? 'bg-primary text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
+                            className={`px-6 py-2 text-sm font-bold rounded-full transition-all duration-300 ${dashboardMode === 'workspace' ? 'bg-background text-foreground shadow-sm ring-1 ring-black/5' : 'text-muted-foreground hover:text-foreground hover:bg-background/50'}`}
                         >
                             MY WORKSPACE
                         </button>
                         <button
                             onClick={() => setDashboardMode('discover')}
-                            className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${dashboardMode === 'discover' ? 'bg-primary text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
+                            className={`px-6 py-2 text-sm font-bold rounded-full transition-all duration-300 ${dashboardMode === 'discover' ? 'bg-background text-foreground shadow-sm ring-1 ring-black/5' : 'text-muted-foreground hover:text-foreground hover:bg-background/50'}`}
                         >
                             DISCOVER
                         </button>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4 text-zinc-400 w-64 justify-end">
-                    <Bell className="w-5 h-5 hover:text-white cursor-pointer" />
-                    <HelpCircle className="w-5 h-5 hover:text-white cursor-pointer" />
-                    <div className="flex items-center gap-2 pl-2 border-l border-zinc-700 ml-2 relative">
-                        <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs text-white">
+                <div className="flex items-center gap-4 text-muted-foreground w-64 justify-end">
+                    <Bell className="w-5 h-5 hover:text-foreground cursor-pointer transition-colors" />
+                    <HelpCircle className="w-5 h-5 hover:text-foreground cursor-pointer transition-colors" />
+                    <div className="flex items-center gap-3 pl-4 border-l border-border ml-2 relative">
+                        <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center text-sm font-semibold text-foreground ring-2 ring-background">
                             {user?.email[0].toUpperCase()}
                         </div>
-                        <span className="text-sm hidden sm:inline whitespace-nowrap">{user?.email}</span>
+                        <span className="text-sm hidden sm:inline whitespace-nowrap font-medium text-foreground">{user?.email}</span>
 
                         <div className="relative">
                             <button
                                 onClick={() => setShowSettingsMenu(!showSettingsMenu)}
-                                className="p-1.5 hover:bg-zinc-800 rounded-md transition-colors"
+                                className="p-2 hover:bg-secondary rounded-full transition-colors"
                                 title="Settings"
                             >
                                 <Settings className="w-5 h-5" />
@@ -604,25 +604,25 @@ export function ProjectDashboard() {
                                         className="fixed inset-0 z-40"
                                         onClick={() => setShowSettingsMenu(false)}
                                     />
-                                    <div className="absolute right-0 mt-2 w-56 bg-[#222] border border-zinc-800 rounded-lg shadow-2xl z-50 py-1.5 animate-in slide-in-from-top-2 duration-150">
+                                    <div className="absolute right-0 mt-3 w-60 bg-popover border border-border rounded-xl shadow-2xl z-50 py-2 animate-in slide-in-from-top-2 duration-150">
                                         <button
                                             onClick={() => {
                                                 setShowSettingsMenu(false);
                                                 logout();
                                             }}
-                                            className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3"
+                                            className="w-full text-left px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary flex items-center gap-3"
                                         >
-                                            <LogOut className="w-3.5 h-3.5" /> LOG OUT
+                                            <LogOut className="w-4 h-4" /> Log Out
                                         </button>
-                                        <div className="h-px bg-zinc-800 my-1.5" />
+                                        <div className="h-px bg-border my-1.5" />
                                         <button
                                             onClick={() => {
                                                 setShowSettingsMenu(false);
                                                 setShowResetConfirm(true);
                                             }}
-                                            className="w-full text-left px-4 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 flex items-center gap-3"
+                                            className="w-full text-left px-4 py-2.5 text-sm font-medium text-destructive hover:bg-destructive/10 flex items-center gap-3"
                                         >
-                                            <RefreshCw className="w-3.5 h-3.5" /> RESET REPOSITORY
+                                            <RefreshCw className="w-4 h-4" /> Reset Repository
                                         </button>
                                     </div>
                                 </>
@@ -633,21 +633,21 @@ export function ProjectDashboard() {
             </header>
 
             {/* Dashboard Scroll Area */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-[#1a1a1a]">
+            <div className="flex-1 overflow-y-auto p-6 space-y-10 bg-background/50">
                 {dashboardMode === 'workspace' ? (
                     <>
                         <div className="max-w-7xl mx-auto w-full space-y-10">
                             {/* ROW 1: Folders */}
-                            <section className="space-y-4">
-                                <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider px-1">Folders</h3>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                            <section className="space-y-6">
+                                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">Folders</h3>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
                                     {/* New Folder Card */}
                                     <button
                                         onClick={handleAddFolder}
-                                        className="aspect-[4/3] bg-zinc-800/30 border-2 border-dashed border-zinc-700 hover:border-zinc-500 hover:bg-zinc-800/50 rounded-xl flex flex-col items-center justify-center gap-3 text-zinc-500 hover:text-white transition-all group"
+                                        className="aspect-[4/3] bg-card border-2 border-dashed border-border hover:border-primary/50 hover:bg-secondary/50 rounded-2xl flex flex-col items-center justify-center gap-3 text-muted-foreground hover:text-foreground transition-all group"
                                     >
-                                        <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                            <Folder className="w-6 h-6" />
+                                        <div className="w-14 h-14 rounded-full bg-secondary flex items-center justify-center group-hover:scale-110 transition-transform shadow-inner">
+                                            <Folder className="w-7 h-7" />
                                         </div>
                                         <span className="font-bold text-sm">New Folder</span>
                                     </button>
@@ -661,13 +661,10 @@ export function ProjectDashboard() {
                                                     setSelectedFolder(null);
                                                 } else {
                                                     setSelectedFolder(folder.name);
-                                                    setActiveNav('Tags'); // Or keep as is, but maybe clear other filters?
-                                                    // Actually, let's treat folder selection as an additional filter on top of "Created by me" or others.
-                                                    // But usually it acts as a primary nav. Let's just set selectedFolder and maybe activeNav to 'Folders' if we had one.
-                                                    // For now, let's just use selectedFolder state.
+                                                    setActiveNav('Tags');
                                                 }
                                             }}
-                                            className={`aspect-[4/3] bg-[#222] border rounded-xl p-4 flex flex-col justify-between text-left group transition-all relative overflow-visible cursor-pointer ${selectedFolder === folder.name ? 'border-primary bg-primary/5' : 'border-zinc-800 hover:border-zinc-600'
+                                            className={`aspect-[4/3] bg-card border rounded-2xl p-5 flex flex-col justify-between text-left group transition-all relative overflow-visible cursor-pointer shadow-sm hover:shadow-lg ${selectedFolder === folder.name ? 'border-primary ring-2 ring-primary/20 bg-primary/5' : 'border-border hover:border-primary/30'
                                                 }`}
                                         >
                                             <div className="flex justify-between items-start relative z-10">
@@ -686,7 +683,7 @@ export function ProjectDashboard() {
 
                                                 {/* Folder Context Menu */}
                                                 {contextMenuFolder === folder.name && (
-                                                    <div className="absolute top-8 right-0 w-48 bg-[#222] border border-zinc-800 rounded-lg shadow-2xl z-50 py-1.5 animate-in slide-in-from-top-2 duration-150">
+                                                    <div className="absolute top-8 right-0 w-56 bg-popover border border-border rounded-xl shadow-2xl z-50 py-2 animate-in slide-in-from-top-2 duration-150 ring-1 ring-black/5">
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -699,28 +696,19 @@ export function ProjectDashboard() {
                                                             <div className="w-3" /> RENAME
                                                         </button>
                                                         <div className="px-4 py-2">
-                                                            <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">Color</label>
-                                                            <div className="flex gap-1 flex-wrap">
-                                                                {['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1'].map(c => (
-                                                                    <button
-                                                                        key={c}
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            handleFolderColorChange(folder.name, c);
-                                                                        }}
-                                                                        className={`w-4 h-4 rounded-full border border-black/20 ${folder.color === c ? 'ring-1 ring-white' : ''}`}
-                                                                        style={{ backgroundColor: c }}
-                                                                    />
-                                                                ))}
-                                                            </div>
+                                                            <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-2">Color</label>
+                                                            <UnifiedColorPicker
+                                                                color={folder.color}
+                                                                onChange={(c) => handleFolderColorChange(folder.name, c)}
+                                                            />
                                                         </div>
-                                                        <div className="h-px bg-zinc-800 my-1.5" />
+                                                        <div className="h-px bg-border my-1.5" />
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 handleDeleteFolder(folder.name);
                                                             }}
-                                                            className="w-full text-left px-4 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 flex items-center gap-3"
+                                                            className="w-full text-left px-4 py-2 text-xs font-bold text-destructive hover:bg-destructive/10 flex items-center gap-3"
                                                         >
                                                             <Trash2 className="w-3.5 h-3.5" /> DELETE
                                                         </button>
@@ -739,13 +727,13 @@ export function ProjectDashboard() {
                             </section>
 
                             {/* ROW 2: Search */}
-                            <div className="max-w-2xl mx-auto w-full relative">
-                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                            <div className="max-w-2xl mx-auto w-full relative group">
+                                <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
                                 <Input
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     placeholder={selectedFolder ? `Search in ${selectedFolder}...` : `Search in my HiveCAD...`}
-                                    className="bg-[#222] border-zinc-800 pl-12 h-12 w-full focus:ring-primary focus:border-zinc-700 text-base shadow-lg"
+                                    className="bg-card/50 border-border pl-14 h-14 w-full focus:ring-2 focus:ring-primary/20 focus:border-primary rounded-full text-lg shadow-sm transition-all hover:bg-card hover:shadow-md placeholder:text-muted-foreground/50"
                                 />
                             </div>
 
@@ -781,13 +769,13 @@ export function ProjectDashboard() {
                                                         : [...prev, tag.name]
                                                 );
                                             }}
-                                            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black transition-all border ${isSelected
-                                                ? 'bg-white/10 border-white text-white shadow-lg'
-                                                : 'bg-zinc-800/30 border-zinc-800 text-zinc-500 hover:text-zinc-300'
+                                            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all border ${isSelected
+                                                ? 'bg-primary/10 border-primary text-primary shadow-sm'
+                                                : 'bg-card border-border text-muted-foreground hover:text-foreground hover:bg-secondary'
                                                 }`}
                                             style={{ borderColor: isSelected ? tag.color : undefined }}
                                         >
-                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                                            <div className="w-2.5 h-2.5 rounded-full ring-2 ring-background" style={{ backgroundColor: tag.color }} />
                                             {tag.name.toUpperCase()}
                                         </button>
                                     );
@@ -797,13 +785,13 @@ export function ProjectDashboard() {
                             {/* ROW 4: Filtered Grid Section */}
                             <section>
                                 <h3 className="text-sm font-semibold flex items-center gap-2 mb-4 text-zinc-400 uppercase tracking-wider px-1">
-                                    <ListIcon className="w-4 h-4" />
+                                    {activeNav === 'Last Opened' && !selectedFolder && activeTags.length === 0 ? <Clock className="w-4 h-4" /> : <ListIcon className="w-4 h-4" />}
                                     {selectedFolder
                                         ? `FOLDER: ${selectedFolder}`
                                         : activeTags.length > 0
                                             ? `TAGS: ${activeTags.join(' + ')}`
                                             : activeNav === 'Last Opened'
-                                                ? 'Recent Projects'
+                                                ? 'Last Opened'
                                                 : activeNav
                                     }
                                     {selectedFolder && (
@@ -998,11 +986,11 @@ export function ProjectDashboard() {
             {/* Modals */}
             {showFolderDialog && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#2a2a2a] border border-zinc-800 rounded-xl p-6 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
-                        <h4 className="text-xl font-bold text-white mb-4">Create New Folder</h4>
+                    <div className="bg-popover border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <h4 className="text-xl font-bold text-popover-foreground mb-4">Create New Folder</h4>
                         <div className="space-y-4">
                             <div>
-                                <label className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1.5 block">Folder Name</label>
+                                <label className="text-xs text-muted-foreground font-bold uppercase tracking-wider mb-1.5 block">Folder Name</label>
                                 <input
                                     value={folderNameInput}
                                     onChange={(e) => setFolderNameInput(e.target.value)}
@@ -1013,28 +1001,19 @@ export function ProjectDashboard() {
                                     }}
                                     autoFocus
                                     placeholder="e.g. Mechanical Parts"
-                                    className="w-full bg-[#1a1a1a] border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                                    className="w-full bg-input/50 border border-input rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/50"
                                 />
                             </div>
                             <div>
-                                <label className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1.5 block">Folder Color</label>
-                                <div className="flex gap-2">
-                                    <div className="w-10 h-10 rounded-lg border border-zinc-800 overflow-hidden relative">
-                                        <input
-                                            type="color"
-                                            value={folderColorInput}
-                                            onChange={e => setFolderColorInput(e.target.value)}
-                                            className="absolute -top-2 -left-2 w-16 h-16 cursor-pointer"
-                                        />
-                                    </div>
-                                    <div className="flex-1 text-xs text-zinc-500 flex items-center">
-                                        Pick a color for better organization
-                                    </div>
-                                </div>
+                                <label className="text-xs text-muted-foreground font-bold uppercase tracking-wider mb-1.5 block">Folder Color</label>
+                                <UnifiedColorPicker
+                                    color={folderColorInput}
+                                    onChange={setFolderColorInput}
+                                />
                             </div>
-                            <div className="flex justify-end gap-3 pt-2">
+                            <div className="flex justify-end gap-3 pt-4">
                                 <Button variant="ghost" onClick={() => setShowFolderDialog(false)}>Cancel</Button>
-                                <Button onClick={handleCreateFolder} className="bg-primary hover:bg-primary/90 text-white font-bold">
+                                <Button onClick={handleCreateFolder} className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-full px-6">
                                     Create Folder
                                 </Button>
                             </div>
@@ -1045,11 +1024,11 @@ export function ProjectDashboard() {
 
             {renameFolderDialog && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#2a2a2a] border border-zinc-800 rounded-xl p-6 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
-                        <h4 className="text-xl font-bold text-white mb-4">Rename Folder</h4>
+                    <div className="bg-popover border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <h4 className="text-xl font-bold text-popover-foreground mb-4">Rename Folder</h4>
                         <div className="space-y-4">
                             <div>
-                                <label className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1.5 block">New Folder Name</label>
+                                <label className="text-xs text-muted-foreground font-bold uppercase tracking-wider mb-1.5 block">New Folder Name</label>
                                 <input
                                     value={renameFolderInput}
                                     onChange={(e) => setRenameFolderInput(e.target.value)}
@@ -1059,12 +1038,12 @@ export function ProjectDashboard() {
                                         if (e.key === 'Escape') setRenameFolderDialog(null);
                                     }}
                                     autoFocus
-                                    className="w-full bg-[#1a1a1a] border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                                    className="w-full bg-input/50 border border-input rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                                 />
                             </div>
-                            <div className="flex justify-end gap-3 pt-2">
+                            <div className="flex justify-end gap-3 pt-4">
                                 <Button variant="ghost" onClick={() => setRenameFolderDialog(null)}>Cancel</Button>
-                                <Button onClick={handleRenameFolder} className="bg-primary hover:bg-primary/90 text-white font-bold">
+                                <Button onClick={handleRenameFolder} className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-full px-6">
                                     Rename
                                 </Button>
                             </div>
@@ -1099,35 +1078,31 @@ export function ProjectDashboard() {
 
             {showTagDialog && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#2a2a2a] border border-zinc-800 rounded-xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+                    <div className="bg-popover border border-border rounded-xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
                         <h4 className="text-xl font-bold text-white mb-1">Manage Tags</h4>
                         <p className="text-zinc-500 text-xs mb-6 font-medium uppercase tracking-widest">For: {showTagDialog.name}</p>
 
                         <div className="flex-1 overflow-y-auto space-y-6 pr-2 custom-scrollbar">
                             {/* Create New Tag Section */}
-                            <div className="bg-[#1a1a1a] p-4 rounded-xl border border-zinc-800/50 space-y-4">
-                                <h5 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Create New Tag</h5>
-                                <div className="flex gap-2">
-                                    <div className="flex-1 relative">
+                            <div className="bg-card p-4 rounded-xl border border-border space-y-4">
+                                <h5 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Create New Tag</h5>
+                                <div className="flex gap-2 items-center">
+                                    <div className="flex-1">
                                         <input
                                             value={tagNameInput}
                                             onChange={e => setTagNameInput(e.target.value)}
                                             onKeyDown={e => e.key === 'Enter' && handleCreateTag()}
                                             placeholder="Tag name..."
-                                            className="w-full bg-[#222] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:ring-1 focus:ring-primary outline-none"
+                                            className="w-full bg-input/50 border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary outline-none"
                                         />
                                     </div>
-                                    <div className="flex items-center gap-2 bg-[#222] border border-zinc-800 rounded-lg px-2">
-                                        <input
-                                            type="color"
-                                            value={tagColorInput}
-                                            onChange={e => setTagColorInput(e.target.value)}
-                                            className="w-6 h-6 bg-transparent border-none cursor-pointer"
-                                        />
-                                    </div>
+                                    <UnifiedColorPicker
+                                        color={tagColorInput}
+                                        onChange={setTagColorInput}
+                                    />
                                     <Button
                                         onClick={handleCreateTag}
-                                        className="h-9 w-9 p-0 bg-primary/20 hover:bg-primary text-primary hover:text-white"
+                                        className="h-9 w-9 p-0 bg-primary/20 hover:bg-primary text-primary hover:text-primary-foreground rounded-full"
                                     >
                                         <Plus className="w-5 h-5" />
                                     </Button>
@@ -1172,10 +1147,10 @@ export function ProjectDashboard() {
                             </div>
                         </div>
 
-                        <div className="flex justify-end gap-3 pt-6 border-t border-zinc-800 mt-6 bg-[#2a2a2a]">
+                        <div className="flex justify-end gap-3 pt-6 mt-6">
                             <Button variant="ghost" onClick={() => setShowTagDialog(null)}>Cancel</Button>
                             <Button
-                                className="bg-primary hover:bg-primary/90 text-white font-bold px-6"
+                                className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-8 rounded-full"
                                 onClick={() => {
                                     handleUpdateTags(showTagDialog.id, showTagDialog.tags || []);
                                     setShowTagDialog(null);
@@ -1190,39 +1165,39 @@ export function ProjectDashboard() {
 
             {showResetConfirm && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[100] p-4">
-                    <div className="bg-[#1a1a1a] border-2 border-red-500/30 rounded-2xl p-8 w-full max-w-lg shadow-[0_0_50px_rgba(239,68,68,0.2)] animate-in fade-in zoom-in duration-200">
+                    <div className="bg-card border-2 border-destructive/30 rounded-2xl p-8 w-full max-w-lg shadow-[0_0_50px_rgba(239,68,68,0.2)] animate-in fade-in zoom-in duration-200">
                         <div className="flex flex-col items-center text-center space-y-6">
-                            <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center text-red-500 animate-pulse">
+                            <div className="w-20 h-20 bg-destructive/10 rounded-full flex items-center justify-center text-destructive animate-pulse">
                                 <AlertTriangle className="w-10 h-10" />
                             </div>
 
                             <div className="space-y-2">
-                                <h4 className="text-2xl font-black text-white uppercase tracking-tighter">Extreme Danger</h4>
-                                <p className="text-zinc-400 text-sm leading-relaxed">
-                                    You are about to <span className="text-red-400 font-bold underline">delete your entire HiveCAD repository</span> from GitHub.
+                                <h4 className="text-2xl font-black text-foreground uppercase tracking-tighter">Extreme Danger</h4>
+                                <p className="text-muted-foreground text-sm leading-relaxed">
+                                    You are about to <span className="text-destructive font-bold underline">delete your entire HiveCAD repository</span> from GitHub.
                                     This will permanently erase all projects, tags, and settings history. This action cannot be undone.
                                 </p>
                             </div>
 
-                            <div className="w-full bg-red-500/5 border border-red-500/10 rounded-lg p-4 text-left">
-                                <ul className="text-[10px] text-red-300 font-black uppercase tracking-widest space-y-2">
-                                    <li className="flex items-center gap-2"><div className="w-1 h-1 bg-red-500 rounded-full" /> All JSON project files will be deleted</li>
-                                    <li className="flex items-center gap-2"><div className="w-1 h-1 bg-red-500 rounded-full" /> Central index.json will be wiped</li>
-                                    <li className="flex items-center gap-2"><div className="w-1 h-1 bg-red-500 rounded-full" /> Tag definitions will be destroyed</li>
+                            <div className="w-full bg-destructive/5 border border-destructive/10 rounded-lg p-4 text-left">
+                                <ul className="text-[10px] text-destructive/80 font-black uppercase tracking-widest space-y-2">
+                                    <li className="flex items-center gap-2"><div className="w-1 h-1 bg-destructive rounded-full" /> All JSON project files will be deleted</li>
+                                    <li className="flex items-center gap-2"><div className="w-1 h-1 bg-destructive rounded-full" /> Central index.json will be wiped</li>
+                                    <li className="flex items-center gap-2"><div className="w-1 h-1 bg-destructive rounded-full" /> Tag definitions will be destroyed</li>
                                 </ul>
                             </div>
 
                             <div className="flex gap-4 w-full pt-4">
                                 <Button
                                     variant="ghost"
-                                    className="flex-1 h-12 border border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                                    className="flex-1 h-12 border border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
                                     onClick={() => setShowResetConfirm(false)}
                                     disabled={!!loadingMessage}
                                 >
                                     ABORT MISSION
                                 </Button>
                                 <Button
-                                    className="flex-1 h-12 bg-red-600 hover:bg-red-500 text-white font-black shadow-[0_0_20px_rgba(220,38,38,0.4)]"
+                                    className="flex-1 h-12 bg-destructive hover:bg-destructive/90 text-destructive-foreground font-black shadow-lg"
                                     onClick={handleResetRepository}
                                     disabled={!!loadingMessage}
                                 >
@@ -1278,7 +1253,7 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
 
     return (
         <div
-            className={`group bg-[#2d2d2d] rounded-xl border border-zinc-800 hover:border-primary/50 cursor-pointer transition-all hover:translate-y-[-4px] shadow-lg flex flex-col relative aspect-[4/3] h-auto ${showMenu ? 'z-50' : ''}`}
+            className={`group bg-card rounded-xl border border-border hover:border-primary/50 cursor-pointer transition-all hover:translate-y-[-4px] shadow-lg flex flex-col relative aspect-[4/3] h-auto ${showMenu ? 'z-50' : ''}`}
             onClick={onOpen}
         >
             <div className="flex-1 bg-[#2d2d2d] flex items-center justify-center relative overflow-hidden rounded-t-xl">
@@ -1327,9 +1302,9 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
                 )}
             </div>
 
-            <div className="p-3 bg-[#222] border-t border-zinc-800 relative rounded-b-xl">
-                <div className="font-bold text-white truncate text-sm tracking-tight">{project.name}</div>
-                <div className="text-[10px] text-zinc-500 mt-0.5 uppercase tracking-tighter font-black opacity-60 flex items-center justify-between">
+            <div className="p-3 bg-card border-t border-border relative rounded-b-xl">
+                <div className="font-bold text-foreground truncate text-sm tracking-tight">{project.name}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-tighter font-black opacity-60 flex items-center justify-between">
                     <span>{project.ownerId || (isExample ? 'Example Project' : 'My Project')}</span>
                     {!isExample && !project.deletedAt && project.sha && <span className="text-green-500/80">Cloud</span>}
                     {project.folder && <span className="ml-2 text-primary opacity-80 flex items-center gap-1"><Folder className="w-2 h-2" /> {project.folder}</span>}
