@@ -28,8 +28,13 @@ const StatusBar = () => {
   } = useCADStore();
 
   const handlePan = () => {
-    setActiveTool('pan');
-    toast("Pan mode: drag to move view");
+    if (activeTool === 'pan') {
+      setActiveTool('select');
+      toast("Select mode");
+    } else {
+      setActiveTool('pan');
+      toast("Pan mode: drag to move view");
+    }
   };
 
   const handleSave = () => {

@@ -3,6 +3,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { ArcballControls, Grid, PerspectiveCamera, GizmoHelper, GizmoViewcube } from "@react-three/drei";
 import * as THREE from "three";
 import { useCADStore, useCADStoreApi, CADObject } from "../../hooks/useCADStore";
+import { useGlobalStore } from '@/store/useGlobalStore';
 import { toast } from "sonner";
 import { GitHubTokenDialog } from "../ui/GitHubTokenDialog";
 import SketchCanvas from "./SketchCanvas";
@@ -575,7 +576,8 @@ const OperationPreview = () => {
 
 const ThumbnailCapturer = forwardRef<any, { onShowExitDialog: () => void }>((props, ref) => {
   const { gl } = useThree();
-  const { fileName, updateThumbnail, closeProject, code, objects, user, save } = useCADStore();
+  const { fileName, updateThumbnail, closeProject, code, objects, save } = useCADStore();
+  const { user } = useGlobalStore();
 
   // Define the core exit logic
   const finalizeExit = useCallback((shouldSave: boolean) => {
@@ -627,6 +629,36 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
   const controlsRef = useRef<ArcballControlsImpl>(null);
   const capturerRef = useRef<any>(null);
   const [showExitDialog, setShowExitDialog] = useState(false);
+  const activeTool = useCADStore(state => state.activeTool);
+
+  // Configure mouse buttons based on active tool
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    // We need to cast to any because setMouseAction is marked private in three-stdlib types
+    const c = controls as any;
+
+    // Check if setMouseAction exists
+    if (typeof c.setMouseAction === 'function') {
+      try {
+        if (activeTool === 'pan') {
+          // Pan Tool: Left Click = Pan
+          // Remap: Left(0) -> PAN, Right(2) -> ROTATE
+
+          // Note: unsetMouseAction does not exist in ArcballControls, setMouseAction replaces existing bindings
+          c.setMouseAction('PAN', 0); // Left = Pan
+          c.setMouseAction('ROTATE', 2); // Right = Rotate
+        } else {
+          // Default: Left Click = Rotate
+          c.setMouseAction('ROTATE', 0); // Left = Rotate
+          c.setMouseAction('PAN', 2); // Right = Pan
+        }
+      } catch (err) {
+        console.warn("Failed to configure ArcballControls:", err);
+      }
+    }
+  }, [activeTool]);
 
   return (
     <div className="cad-viewport w-full h-full relative">
