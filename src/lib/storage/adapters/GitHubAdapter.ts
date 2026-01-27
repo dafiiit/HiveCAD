@@ -1,6 +1,7 @@
 import { Octokit } from 'octokit';
 import { StorageAdapter, StorageType, ProjectData, CommitInfo, BranchInfo } from '../types';
 import { supabase } from '../../auth/supabase';
+import { EXAMPLES } from '../../data/examples';
 
 export class GitHubAdapter implements StorageAdapter {
     readonly type: StorageType = 'github';
@@ -676,19 +677,28 @@ export class GitHubAdapter implements StorageAdapter {
         const owner = this.currentOwner;
         const repo = this.currentRepo;
 
-        try {
-            console.log(`[GitHubAdapter] Resetting repository ${owner}/${repo}...`);
+        console.log(`[GitHubAdapter] Resetting repository ${owner}/${repo}...`);
 
-            // List all files in the hivecad/ directory
+        try {
+            await this.cleanDirectory('', owner, repo);
+            console.log(`[GitHubAdapter] Repository ${owner}/${repo} reset successfully.`);
+        } catch (error: any) {
+            console.error('[GitHubAdapter] Failed to reset repository:', error);
+            throw error;
+        }
+    }
+
+    private async cleanDirectory(path: string, owner: string, repo: string): Promise<void> {
+        if (!this.octokit) return;
+
+        try {
             const { data: contents } = await this.octokit.rest.repos.getContent({
                 owner,
                 repo,
-                path: 'hivecad',
+                path,
             });
 
             if (Array.isArray(contents)) {
-                // Delete each file
-                // Delete each file/directory
                 for (const item of contents) {
                     if (item.type === 'file') {
                         await this.octokit.rest.repos.deleteFile({
@@ -698,44 +708,16 @@ export class GitHubAdapter implements StorageAdapter {
                             message: `Clean up ${item.path} for repo reset`,
                             sha: item.sha,
                         });
-                        console.log(`[GitHubAdapter] Deleted ${item.path}`);
+                        console.log(`[GitHubAdapter] Deleted file ${item.path}`);
                     } else if (item.type === 'dir') {
-                        // Recursively delete contents of directory (e.g. thumbnails)
-                        try {
-                            const { data: dirContents } = await this.octokit.rest.repos.getContent({
-                                owner,
-                                repo,
-                                path: item.path,
-                            });
-
-                            if (Array.isArray(dirContents)) {
-                                for (const subItem of dirContents) {
-                                    if (subItem.type === 'file') {
-                                        await this.octokit.rest.repos.deleteFile({
-                                            owner,
-                                            repo,
-                                            path: subItem.path,
-                                            message: `Clean up ${subItem.path} for repo reset`,
-                                            sha: subItem.sha,
-                                        });
-                                        console.log(`[GitHubAdapter] Deleted ${subItem.path}`);
-                                    }
-                                }
-                            }
-                        } catch (err) {
-                            console.warn(`[GitHubAdapter] Failed to clean up directory ${item.path}`, err);
-                        }
+                        // Recursively clean directory
+                        await this.cleanDirectory(item.path, owner, repo);
                     }
                 }
             }
-
-            console.log(`[GitHubAdapter] Repository ${owner}/${repo} reset successfully.`);
         } catch (error: any) {
-            if (error.status === 404) {
-                console.log('[GitHubAdapter] hivecad/ directory not found, nothing to reset.');
-                return;
-            }
-            console.error('[GitHubAdapter] Failed to reset repository:', error);
+            // If path not found (empty), that's fine
+            if (error.status === 404) return;
             throw error;
         }
     }
@@ -758,8 +740,6 @@ export class GitHubAdapter implements StorageAdapter {
                 repo,
                 private: false,
                 description: 'HiveCAD Projects (Decentralized Storage)',
-                // Updating topics here might be cleaner than separate call if supported, 
-                // but replaceAllTopics is the standard way to set topics.
             });
 
             await this.octokit.rest.repos.replaceAllTopics({
@@ -768,11 +748,43 @@ export class GitHubAdapter implements StorageAdapter {
                 names: ['hivecad-project'],
             });
 
+            // Check if repo is empty (specifically looking for hivecad structure)
+            try {
+                await this.octokit.rest.repos.getContent({
+                    owner,
+                    repo,
+                    path: 'hivecad',
+                });
+            } catch (error: any) {
+                if (error.status === 404) {
+                    console.log('[GitHubAdapter] Empty repository detected, initializing defaults...');
+                    await this.populateDefaultContent();
+                }
+            }
+
         } catch (error) {
             console.warn('[GitHubAdapter] Repository initialization warning:', error);
             // We don't throw here to allow app to function even if repo settings update fails
-            // (e.g. if user has limited permissions but can read/write files)
         }
+    }
+
+    private async populateDefaultContent(): Promise<void> {
+        if (!this.octokit || !this.authenticatedUser) return;
+
+        console.log('[GitHubAdapter] Populating default content...');
+
+        // 1. Create folders.json (empty)
+        await this.saveFolders([]);
+
+        // 2. Create tags.json (empty, as requested)
+        await this.saveTags([]);
+
+        // 3. Save Example Projects
+        // Note: We no longer auto-populate examples into the user's repo during initialization.
+        // This keeps the examples identified as "Example Project" with local previews.
+        // Users can still fork/save them manually if they wish.
+
+        console.log('[GitHubAdapter] Default content populated (folders/tags/index).');
     }
     async getHistory(projectId: string): Promise<CommitInfo[]> {
         if (!this.octokit || !this.currentOwner || !this.currentRepo) return [];

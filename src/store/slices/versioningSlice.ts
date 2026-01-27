@@ -108,7 +108,23 @@ export const createVersioningSlice: StateCreator<
 
             set({ isSaved: true, hasUnpushedChanges: false, isSaving: false, syncStatus: 'idle', lastSaveTime: Date.now() });
 
-            // Update thumbnail if needed (optional)
+            // Ensure thumbnail exists
+            const currentThumbnail = state.projectThumbnails[state.fileName];
+            if (adapter.saveThumbnail) {
+                if (currentThumbnail) {
+                    await adapter.saveThumbnail(state.projectId || state.fileName, currentThumbnail);
+                } else {
+                    // Upload default if none exists
+                    const DEFAULT_THUMBNAIL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='; // Red pixel as placeholder
+                    await adapter.saveThumbnail(state.projectId || state.fileName, DEFAULT_THUMBNAIL);
+
+                    // Update local state too
+                    const newThumbnails = { ...state.projectThumbnails, [state.fileName]: DEFAULT_THUMBNAIL };
+                    set({ projectThumbnails: newThumbnails });
+                    localStorage.setItem('hivecad_thumbnails', JSON.stringify(newThumbnails));
+                }
+            }
+
             toast.success(`Synced to ${adapter.name}`, { id: 'save-toast' });
 
             // Check if a save was requested while we were saving

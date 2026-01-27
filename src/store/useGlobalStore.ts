@@ -71,6 +71,10 @@ export const useGlobalStore = create<AuthState>((set, get) => ({
         }
 
         await AuthService.updatePAT(user.email, pat);
-        set({ user: { ...user, pat }, isAutosaveEnabled: !!pat });
+        set({
+            user: { ...user, pat },
+            isAutosaveEnabled: !!pat,
+            isStorageConnected: !!pat
+        });
     },
 }));

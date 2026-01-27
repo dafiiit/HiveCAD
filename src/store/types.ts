@@ -195,6 +195,7 @@ export interface VersioningSlice {
     history: HistoryItem[];
     historyIndex: number;
     fileName: string;
+    projectId: string | null;
     isSaved: boolean;
     comments: Comment[];
     commentsExpanded: boolean;

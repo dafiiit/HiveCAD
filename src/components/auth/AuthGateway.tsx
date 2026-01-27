@@ -22,15 +22,23 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
             if (user?.pat && user.pat.trim() !== '') {
                 const { StorageManager } = await import('@/lib/storage/StorageManager');
                 const githubAdapter = StorageManager.getInstance().getAdapter('github');
-                if (githubAdapter && !githubAdapter.isAuthenticated()) {
-                    console.log('[AuthGateway] Auto-connecting GitHub storage with PAT...');
-                    const success = await githubAdapter.connect(user.pat);
-                    if (success) {
-                        console.log('[AuthGateway] GitHub storage connected successfully.');
-                        useGlobalStore.getState().setStorageConnected(true);
+                if (githubAdapter) {
+                    if (!githubAdapter.isAuthenticated()) {
+                        console.log('[AuthGateway] Auto-connecting GitHub storage with PAT...');
+                        const success = await githubAdapter.connect(user.pat);
+                        if (success) {
+                            console.log('[AuthGateway] GitHub storage connected successfully.');
+                            useGlobalStore.getState().setStorageConnected(true);
+                        } else {
+                            console.error('[AuthGateway] GitHub storage connection failed.');
+                            useGlobalStore.getState().setStorageConnected(false);
+                        }
                     } else {
-                        console.error('[AuthGateway] GitHub storage connection failed.');
-                        useGlobalStore.getState().setStorageConnected(false);
+                        // Already authenticated (e.g. via setPAT), ensure store is in sync
+                        if (!useGlobalStore.getState().isStorageConnected) {
+                            console.log('[AuthGateway] Storage already authenticated, syncing state.');
+                            useGlobalStore.getState().setStorageConnected(true);
+                        }
                     }
                 }
             } else {

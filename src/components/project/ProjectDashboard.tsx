@@ -391,6 +391,20 @@ export function ProjectDashboard() {
             version: '1.0.0',
             ownerId: user?.id || 'anon'
         };
+
+        // Set default thumbnail to prevent broken images before first save
+        // This is a simple 1x1 transparent pixel, or could be a branded placeholder
+        const DEFAULT_THUMBNAIL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+        // We'll rely on openProjectInNewTab's internal logic, but we can also pre-seed the local storage
+        try {
+            const currentThumbnails = JSON.parse(localStorage.getItem('hivecad_thumbnails') || '{}');
+            currentThumbnails[name] = DEFAULT_THUMBNAIL;
+            localStorage.setItem('hivecad_thumbnails', JSON.stringify(currentThumbnails));
+        } catch (e) {
+            console.warn("Failed to set default thumbnail", e);
+        }
+
         openProjectInNewTab(newProjectData);
         toast.success(`Started new project: ${name}`);
     };
@@ -579,8 +593,17 @@ export function ProjectDashboard() {
         setExampleOpenedAt(newOpens);
         localStorage.setItem('hivecad_example_opens', JSON.stringify(newOpens));
 
-        setFileName(example.name);
-        setCode(example.code);
+        const projectData: ProjectData = {
+            id: example.id,
+            name: example.name,
+            ownerId: 'Example Project',
+            files: { code: example.code },
+            version: '1.0.0',
+            lastModified: Date.parse(example.modified),
+            thumbnail: example.thumbnail
+        };
+
+        openProjectInNewTab(projectData);
         toast.success(`Opened ${example.name}`);
     };
 
@@ -1277,7 +1300,7 @@ export function ProjectDashboard() {
 }
 
 function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showMenu, onDelete, onRename, onManageTags, onViewHistory, tags, projectThumbnails, hasPAT, folders, onMoveToFolder }: any) {
-    const isExample = project.type === 'example';
+    const isExample = project.id?.startsWith('example-') || project.type === 'example' || project.ownerId === 'Example Project';
 
     // Thumbnail resolution order:
     // 1. Explicit project.thumbnail (if present, usually from modern storage index)
@@ -1286,8 +1309,7 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
     // 4. Fallback to constructed URL if project is on GitHub
     let thumbnail = project.thumbnail || projectThumbnails[project.name];
 
-    if (!thumbnail && isExample && !hasPAT) {
-        if (project.id === 'example-watering-can') thumbnail = '/previews/watering-can.png';
+    if (!thumbnail && isExample) {
         if (project.id === 'example-gridfinity') thumbnail = '/previews/gridfinity.png';
     }
 
@@ -1307,7 +1329,21 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
         >
             <div className="flex-1 bg-[#2d2d2d] flex items-center justify-center relative overflow-hidden rounded-t-xl">
                 {thumbnail ? (
-                    <img src={thumbnail} className="w-full h-full object-cover transition-transform group-hover:scale-110" alt={project.name} />
+                    <img
+                        src={thumbnail}
+                        className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                        alt={project.name}
+                        onError={(e) => {
+                            // If cloud thumbnail fails, try example fallback again or show icon
+                            const target = e.target as HTMLImageElement;
+                            if (isExample && target.src !== window.location.origin + '/previews/gridfinity.png') {
+                                if (project.id === 'example-gridfinity') target.src = '/previews/gridfinity.png';
+                                else target.style.display = 'none';
+                            } else {
+                                target.style.display = 'none';
+                            }
+                        }}
+                    />
                 ) : (
                     <LayoutGrid className={cn("w-12 h-12 transition-opacity", isExample ? "text-zinc-700" : "text-primary/40")} />
                 )}
@@ -1354,7 +1390,7 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
             <div className="p-3 bg-card border-t border-border relative rounded-b-xl">
                 <div className="font-bold text-foreground truncate text-sm tracking-tight">{project.name}</div>
                 <div className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-tighter font-black opacity-60 flex items-center justify-between">
-                    <span>{project.ownerId || (isExample ? 'Example Project' : 'My Project')}</span>
+                    <span>{isExample ? 'Example Project' : (project.ownerId || 'My Project')}</span>
                     {!isExample && !project.deletedAt && project.sha && <span className="text-green-500/80">Cloud</span>}
                     {project.folder && <span className="ml-2 text-primary opacity-80 flex items-center gap-1"><Folder className="w-2 h-2" /> {project.folder}</span>}
                 </div>
