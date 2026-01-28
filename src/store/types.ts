@@ -176,7 +176,7 @@ export interface ViewSlice {
     };
     sketchOptions: { lookAt: boolean };
 
-    projectionMode: 'perspective' | 'orthographic';
+    projectionMode: 'perspective' | 'orthographic' | 'perspective-with-ortho-faces';
     backgroundMode: 'default' | 'dark' | 'light' | 'blue' | 'studio' | 'nature' | 'city' | 'sunset' | 'warehouse';
     sectionViewEnabled: boolean;
     showMeasurements: boolean;
@@ -194,7 +194,7 @@ export interface ViewSlice {
     setPlaneVisibility: (plane: 'XY' | 'XZ' | 'YZ', visible: boolean) => void;
     fitToScreen: () => void;
     toggleFullscreen: () => void;
-    setProjectionMode: (mode: 'perspective' | 'orthographic') => void;
+    setProjectionMode: (mode: 'perspective' | 'orthographic' | 'perspective-with-ortho-faces') => void;
     setBackgroundMode: (mode: 'default' | 'dark' | 'light' | 'blue' | 'studio' | 'nature' | 'city' | 'sunset' | 'warehouse') => void;
     toggleSectionView: () => void;
     toggleMeasurements: () => void;

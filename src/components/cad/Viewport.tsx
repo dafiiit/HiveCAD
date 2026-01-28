@@ -600,17 +600,51 @@ const ThumbnailCapturer = () => {
 
 const SceneController = ({ controlsRef }: { controlsRef: React.RefObject<ArcballControlsImpl | null> }) => {
   const { camera, scene } = useThree();
-  const { zoom, activeTool, currentView, fitToScreenSignal } = useCADStore();
+  const { zoom, activeTool, currentView, projectionMode, fitToScreenSignal } = useCADStore();
+
+  // Handle Projection Mode / Hybrid Mode
+  useEffect(() => {
+    if (projectionMode !== 'perspective-with-ortho-faces') return;
+
+    const controls = controlsRef.current as any;
+    if (!controls) return;
+
+    const checkOrientation = () => {
+      if (projectionMode !== 'perspective-with-ortho-faces') return;
+
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+
+      // Check if aligned with major axes
+      const threshold = 0.999; // Very close to aligned
+      const isAligned = (
+        Math.abs(dir.x) > threshold ||
+        Math.abs(dir.y) > threshold ||
+        Math.abs(dir.z) > threshold
+      );
+
+      // In hybrid mode, we just adjust the FOV of the perspective camera if it's perspective
+      // or we could technically swap but FOV trick is smoother
+      if (camera instanceof THREE.PerspectiveCamera) {
+        const targetFov = isAligned ? 5 : 45;
+        if (Math.abs(camera.fov - targetFov) > 0.1) {
+          camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.1);
+          camera.updateProjectionMatrix();
+        }
+      }
+    };
+
+    // Register listener for controls change
+    controls.addEventListener('change', checkOrientation);
+    return () => controls.removeEventListener('change', checkOrientation);
+  }, [projectionMode, camera, controlsRef]);
 
   // Sync camera zoom with store
   useEffect(() => {
     const controls = controlsRef.current as any;
     if (!controls) return;
 
-    // Use the camera from useThree() if controls.object is missing (though it should be the same)
-    const targetCamera = controls.object || camera;
-
-    // Safety check just in case
+    const targetCamera = camera;
     if (!targetCamera) return;
 
     if (targetCamera instanceof THREE.PerspectiveCamera) {
@@ -618,9 +652,12 @@ const SceneController = ({ controlsRef }: { controlsRef: React.RefObject<Arcball
       if (!target) return;
       const distance = targetCamera.position.distanceTo(target);
       const baseDistance = 85;
-      const desiredDistance = baseDistance * (100 / zoom);
 
-      if (Math.abs(distance - desiredDistance) > 1) {
+      // FoV adjustment for hybrid mode means we need to compensate zoom
+      const fovFactor = projectionMode === 'perspective-with-ortho-faces' ? (targetCamera.fov / 45) : 1;
+      const desiredDistance = (baseDistance * (100 / zoom)) / fovFactor;
+
+      if (Math.abs(distance - desiredDistance) > 0.1) {
         const direction = new THREE.Vector3().subVectors(targetCamera.position, target).normalize();
         const newPos = target.clone().add(direction.multiplyScalar(desiredDistance));
         targetCamera.position.copy(newPos);
@@ -632,7 +669,7 @@ const SceneController = ({ controlsRef }: { controlsRef: React.RefObject<Arcball
         targetCamera.updateProjectionMatrix();
       }
     }
-  }, [zoom, camera, controlsRef]);
+  }, [zoom, camera, controlsRef, projectionMode]);
 
   // Handle View Changes (Home)
   useEffect(() => {
@@ -640,7 +677,7 @@ const SceneController = ({ controlsRef }: { controlsRef: React.RefObject<Arcball
       const controls = controlsRef.current as any;
       if (!controls) return;
 
-      const targetCamera = controls.object || camera;
+      const targetCamera = camera;
       if (!targetCamera) return;
 
       // Reset to default isometric view
@@ -648,7 +685,10 @@ const SceneController = ({ controlsRef }: { controlsRef: React.RefObject<Arcball
       controls.target.set(0, 0, 0);
       targetCamera.up.set(0, 1, 0);
 
-      if (targetCamera instanceof THREE.OrthographicCamera) {
+      if (targetCamera instanceof THREE.PerspectiveCamera) {
+        targetCamera.fov = 45;
+        targetCamera.updateProjectionMatrix();
+      } else if (targetCamera instanceof THREE.OrthographicCamera) {
         targetCamera.zoom = 20;
         targetCamera.updateProjectionMatrix();
       }
@@ -664,7 +704,7 @@ const SceneController = ({ controlsRef }: { controlsRef: React.RefObject<Arcball
     const controls = controlsRef.current as any;
     if (!controls) return;
 
-    const targetCamera = controls.object || camera;
+    const targetCamera = camera;
     if (!targetCamera) return;
 
     // Use the scene from useThree
@@ -674,8 +714,14 @@ const SceneController = ({ controlsRef }: { controlsRef: React.RefObject<Arcball
     const sphere = new THREE.Sphere();
     box.getBoundingSphere(sphere);
 
-    const distance = sphere.radius / Math.tan(Math.PI * 45 / 360);
-    targetCamera.position.set(sphere.center.x + distance, sphere.center.y + distance, sphere.center.z + distance);
+    if (targetCamera instanceof THREE.PerspectiveCamera) {
+      const distance = sphere.radius / Math.tan(Math.PI * targetCamera.fov / 360);
+      targetCamera.position.set(sphere.center.x + distance, sphere.center.y + distance, sphere.center.z + distance);
+    } else {
+      const distance = sphere.radius * 2;
+      targetCamera.position.set(sphere.center.x + distance, sphere.center.y + distance, sphere.center.z + distance);
+    }
+
     controls.target.copy(sphere.center);
     controls.update();
   }, [fitToScreenSignal, camera, scene, controlsRef]);
@@ -782,6 +828,24 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
           <OperationPreview />
           <SketchCanvas />
         </group>
+
+        {/* Standard Perspective Camera */}
+        <PerspectiveCamera
+          makeDefault={projectionMode === 'perspective' || projectionMode === 'perspective-with-ortho-faces'}
+          position={[50, 50, 50]}
+          fov={45}
+          near={0.1}
+          far={1000}
+        />
+
+        {/* Standard Orthographic Camera */}
+        <OrthographicCamera
+          makeDefault={projectionMode === 'orthographic'}
+          position={[50, 50, 50]}
+          zoom={20}
+          near={0.1}
+          far={1000}
+        />
 
         {/* Controls - Y-up compatible */}
         <ArcballControls

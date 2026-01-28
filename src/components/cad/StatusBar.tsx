@@ -154,13 +154,13 @@ const StatusBar = () => {
               </DropdownMenuSubTrigger>
               <DropdownMenuPortal>
                 <DropdownMenuSubContent className="ml-2">
-                  <DropdownMenuItem onClick={() => setProjectionMode('orthographic')}>
+                  <DropdownMenuItem onClick={() => setProjectionMode('orthographic')} className={cn(projectionMode === 'orthographic' && "bg-accent")}>
                     Orthogonal
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setProjectionMode('perspective')}>
+                  <DropdownMenuItem onClick={() => setProjectionMode('perspective')} className={cn(projectionMode === 'perspective' && "bg-accent")}>
                     Perspective
                   </DropdownMenuItem>
-                  <DropdownMenuItem className="opacity-50">
+                  <DropdownMenuItem onClick={() => setProjectionMode('perspective-with-ortho-faces')} className={cn(projectionMode === 'perspective-with-ortho-faces' && "bg-accent")}>
                     Perspective with orthogonal Surfaces
                   </DropdownMenuItem>
                 </DropdownMenuSubContent>
