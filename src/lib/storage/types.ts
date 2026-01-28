@@ -50,6 +50,7 @@ export interface StorageAdapter {
     // Discovery
     listProjects?(): Promise<ProjectData[]>;
     searchCommunityProjects?(query: string): Promise<any[]>;
+    updateIndex?(projectId: string, updates: Partial<ProjectData>, isDelete?: boolean): Promise<void>;
 
     // Labels management
     listTags?(): Promise<Array<{ name: string, color: string }>>;

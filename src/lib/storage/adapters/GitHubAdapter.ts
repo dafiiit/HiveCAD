@@ -195,7 +195,7 @@ export class GitHubAdapter implements StorageAdapter {
 
         if (metadataChanged) {
             console.log(`[GitHubAdapter] Metadata changed for ${projectId}, updating index...`);
-            await this.updateIndex(projectData);
+            await this.updateIndex(projectId, projectData);
         } else {
             console.log(`[GitHubAdapter] Metadata unchanged for ${projectId}, skipping index update.`);
         }
@@ -228,7 +228,7 @@ export class GitHubAdapter implements StorageAdapter {
         }
     }
 
-    private async updateIndex(project: ProjectData, isDelete = false): Promise<void> {
+    async updateIndex(projectId: string, updates: Partial<ProjectData>, isDelete = false): Promise<void> {
         if (!this.octokit) return;
         const owner = this.currentOwner!;
         const repo = this.currentRepo!;
@@ -256,16 +256,17 @@ export class GitHubAdapter implements StorageAdapter {
                 }
 
                 // Update or remove the project
-                const existingIndex = index.findIndex(p => p.id === project.id);
+                const existingIndex = index.findIndex(p => p.id === projectId);
                 if (isDelete) {
                     if (existingIndex > -1) index.splice(existingIndex, 1);
                 } else {
-                    const entry = { ...project };
-                    delete entry.files; // Don't store full data in index
+                    const existingEntry = existingIndex > -1 ? index[existingIndex] : { id: projectId } as ProjectData;
+                    const entry = { ...existingEntry, ...updates };
+                    delete (entry as any).files; // Don't store full data in index
                     if (existingIndex > -1) {
-                        index[existingIndex] = entry;
+                        index[existingIndex] = entry as ProjectData;
                     } else {
-                        index.push(entry);
+                        index.push(entry as ProjectData);
                     }
                 }
 
@@ -273,14 +274,14 @@ export class GitHubAdapter implements StorageAdapter {
                     owner,
                     repo,
                     path: indexPath,
-                    message: isDelete ? `Remove ${project.id} from index` : `Update ${project.id} in index`,
+                    message: isDelete ? `Remove ${projectId} from index` : `Update ${projectId} in index`,
                     content: btoa(JSON.stringify(index, null, 2)),
                     sha,
                     branch: this.currentBranchName,
                 });
             },
             async () => {
-                // No specific state needed to refresh here as we re-fetch everything inside the loop
+                // No specific state needed here
             }
         );
     }
@@ -341,7 +342,7 @@ export class GitHubAdapter implements StorageAdapter {
                     this.thumbnailSavePromises.delete(projectId);
                     reject(error);
                 }
-            }, 500);
+            }, 2000);
 
             this.thumbnailDebounceTimers.set(projectId, timer);
         });

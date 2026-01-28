@@ -57,7 +57,7 @@ export const createVersioningSlice: StateCreator<
 
     saveToLocal: async () => {
         const state = get();
-        set({ syncStatus: 'saving_local' }); // Status update
+        set({ syncStatus: 'saving_local' });
         try {
             const projectData = {
                 fileName: state.fileName,
@@ -69,11 +69,9 @@ export const createVersioningSlice: StateCreator<
                 currentVersionId: state.currentVersionId,
             };
 
-            // Capture thumbnail if possible
             if (state.thumbnailCapturer) {
                 const thumbnail = state.thumbnailCapturer();
                 if (thumbnail) {
-                    // Update local state and storage
                     state.updateThumbnail(state.fileName, thumbnail);
                 }
             }
@@ -81,9 +79,9 @@ export const createVersioningSlice: StateCreator<
             const projectIdentifier = state.projectId || state.fileName || 'unnamed';
             await idbSet(`project:${projectIdentifier}`, projectData);
             set({
-                isSaved: true, // Saved locally
+                isSaved: true,
                 hasUnpushedChanges: true,
-                syncStatus: 'idle', // Back to idle after local save, but waiting for push
+                syncStatus: 'idle',
                 lastSaveTime: Date.now()
             });
             console.log("Saved to local storage");
@@ -105,24 +103,35 @@ export const createVersioningSlice: StateCreator<
             toast.loading(`Syncing to ${adapter.name}...`, { id: 'save-toast' });
 
             const projectData = {
-                name: state.fileName,         // ✓ User-visible name
-                fileName: state.fileName,     // ✓ Keep for compatibility
+                name: state.fileName,
+                fileName: state.fileName,
                 objects: state.objects,
                 code: state.code,
                 versions: state.versions,
                 branches: state.branches,
                 currentBranch: state.currentBranch,
                 currentVersionId: state.currentVersionId,
-                // thumbnail is removed from here to reduce payload size
             };
 
-            // ✓ CRITICAL: Pass projectId (stable), not fileName (mutable)
             const saveIdentifier = state.projectId || state.fileName || 'unnamed';
             await adapter.save(saveIdentifier, projectData);
 
             console.log(`[versioningSlice] Synced project ${saveIdentifier}`);
 
-            // Capture and save thumbnail
+            // CRITICAL: Update index.json to register the project
+            if (adapter.updateIndex && state.projectId && state.fileName !== 'Untitled') {
+                try {
+                    await adapter.updateIndex(state.projectId, {
+                        id: state.projectId,
+                        name: state.fileName,
+                        lastModified: Date.now(),
+                    });
+                    console.log(`[versioningSlice] Updated index.json for project ${state.projectId}`);
+                } catch (indexError) {
+                    console.warn('[versioningSlice] Failed to update index.json', indexError);
+                }
+            }
+
             let currentThumbnail = state.projectThumbnails[state.fileName];
             if (state.thumbnailCapturer) {
                 const captured = state.thumbnailCapturer();
@@ -134,16 +143,13 @@ export const createVersioningSlice: StateCreator<
 
             set({ isSaved: true, hasUnpushedChanges: false, isSaving: false, syncStatus: 'idle', lastSaveTime: Date.now() });
 
-            // Ensure thumbnail exists
             if (adapter.saveThumbnail) {
                 if (currentThumbnail) {
                     await adapter.saveThumbnail(saveIdentifier, currentThumbnail);
                 } else {
-                    // Upload default if none exists
-                    const DEFAULT_THUMBNAIL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='; // Red pixel as placeholder
+                    const DEFAULT_THUMBNAIL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
                     await adapter.saveThumbnail(saveIdentifier, DEFAULT_THUMBNAIL);
 
-                    // Update local state too
                     const newThumbnails = { ...state.projectThumbnails, [state.fileName]: DEFAULT_THUMBNAIL };
                     set({ projectThumbnails: newThumbnails });
                     localStorage.setItem('hivecad_thumbnails', JSON.stringify(newThumbnails));
@@ -152,7 +158,6 @@ export const createVersioningSlice: StateCreator<
 
             toast.success(`Synced to ${adapter.name}`, { id: 'save-toast' });
 
-            // Check if a save was requested while we were saving
             if (get().pendingSave) {
                 set({ pendingSave: false });
                 get().syncToCloud(_force);
@@ -176,53 +181,46 @@ export const createVersioningSlice: StateCreator<
         return get().syncToCloud(force);
     },
 
-    // Updated triggerSave to use local save only
     triggerSave: () => {
         const state = get();
-        // If we are already pending a local save, usually we just let the usage extend the timer or similar.
-        // But here we just set a timeout.
-
         if (saveTimeout) clearTimeout(saveTimeout);
 
         set({ pendingSave: true });
 
-        // Auto-save to local IDB after 1s
         saveTimeout = setTimeout(async () => {
             const currentState = get();
             set({ pendingSave: false });
             await currentState.saveToLocal();
         }, 1000);
     },
+
     saveAs: (name) => set({ fileName: name, isSaved: true }),
+
     open: async () => {
         const { StorageManager } = await import('@/lib/storage/StorageManager');
         const adapter = StorageManager.getInstance().currentAdapter;
 
-        // Check local version first
         const currentState = get();
         try {
             const localData: any = await idbGet(`project:${currentState.fileName}`);
             if (localData) {
-                // TODO: Compare with cloud version timestamp if available
-                // For now, if we have local data and it matches filename, maybe load it?
-                // Actually `open` usually isn't called for the current project, it's for opening *another* project.
-                // This method body was empty/placeholder before. 
-                // We should probably rely on the Caller (UI) to handle loading data.
+                // Local data exists
             }
         } catch (e) { }
 
         toast.info(`Open from ${adapter.name} not fully implemented yet`);
     },
+
     reset: () => {
         set({ objects: [], code: 'const main = () => { return; };' });
     },
+
     setFileName: (name) => {
         const state = get();
         const oldName = state.fileName;
 
         if (oldName === name) return;
 
-        // Migrate thumbnail
         const oldThumb = state.projectThumbnails[oldName];
         if (oldThumb) {
             const newThumbs = { ...state.projectThumbnails };
@@ -234,22 +232,20 @@ export const createVersioningSlice: StateCreator<
 
         set({ fileName: name });
 
-        // ✓ ONLY generate projectId if this is truly a NEW project
-        // Don't auto-generate when just changing the name of an existing project
-        // ✓ ALWAYS ensure we have a projectId when a project is named
         if (!state.projectId) {
             const newProjectId = generateId();
             set({ projectId: newProjectId });
             console.log(`[versioningSlice] Generated missing projectId: ${newProjectId}`);
         }
 
-        // Trigger save to update GitHub index with new name
         get().triggerSave();
     },
+
     setProjectId: (id) => {
         set({ projectId: id });
         console.log(`[versioningSlice] Set projectId: ${id}`);
     },
+
     closeProject: async () => {
         const state = get();
 
@@ -259,29 +255,44 @@ export const createVersioningSlice: StateCreator<
             saveTimeout = null;
         }
 
-        // 2. FORCE SAVE if there are pending changes
-        if (state.pendingSave) {
+        // 2. CAPTURE CURRENT PROJECT DATA BEFORE CLEARING STATE
+        const currentProjectId = state.projectId;
+        const currentFileName = state.fileName;
+        const hasUnsavedChanges = state.pendingSave || !state.isSaved;
+
+        // 3. FORCE SAVE if there are pending changes OR if not saved
+        if (hasUnsavedChanges && currentProjectId && currentFileName !== 'Untitled') {
+            console.log(`[versioningSlice] Saving project ${currentProjectId} before close`);
+
+            // Save to local IDB first
             await state.saveToLocal();
+
+            // Then push to cloud
+            try {
+                await state.syncToCloud(true); // Force sync
+            } catch (e) {
+                console.warn('[versioningSlice] Failed to sync to cloud on close', e);
+            }
         }
 
-        // Take a final thumbnail before closing if possible
-        const thumbnail = state.projectThumbnails[state.fileName];
-        if (thumbnail) {
+        // 4. Save final thumbnail
+        const thumbnail = state.projectThumbnails[currentFileName];
+        if (thumbnail && currentProjectId) {
             try {
                 const { StorageManager } = await import('@/lib/storage/StorageManager');
                 const adapter = StorageManager.getInstance().currentAdapter;
                 if (adapter.saveThumbnail) {
-                    const identifier = state.projectId || state.fileName || 'unnamed';
-                    await adapter.saveThumbnail(identifier, thumbnail);
+                    await adapter.saveThumbnail(currentProjectId, thumbnail);
                 }
             } catch (e) {
                 console.warn('[versioningSlice] Failed to save final thumbnail on close', e);
             }
         }
 
+        // 5. NOW clear the state (after all saves are complete)
         set({
             fileName: 'Untitled',
-            projectId: null, // Ensure this is null so we don't overwrite the old ID
+            projectId: null,
             objects: [],
             code: 'const main = () => { return; };',
             history: [],
@@ -293,13 +304,15 @@ export const createVersioningSlice: StateCreator<
             currentBranch: 'main',
             currentVersionId: null,
         });
+
+        console.log('[versioningSlice] Project closed successfully');
     },
+
     updateThumbnail: async (name, thumbnail) => {
         const thumbnails = { ...get().projectThumbnails, [name]: thumbnail };
         localStorage.setItem('hivecad_thumbnails', JSON.stringify(thumbnails));
         set({ projectThumbnails: thumbnails });
 
-        // Also save to adapter if connected
         try {
             const { StorageManager } = await import('@/lib/storage/StorageManager');
             const adapter = StorageManager.getInstance().currentAdapter;
@@ -324,6 +337,7 @@ export const createVersioningSlice: StateCreator<
         };
         set({ comments: [...state.comments, comment] });
     },
+
     deleteComment: (id) => set(state => ({ comments: state.comments.filter(c => c.id !== id) })),
     toggleComments: () => set(state => ({ commentsExpanded: !state.commentsExpanded })),
 
@@ -385,7 +399,6 @@ export const createVersioningSlice: StateCreator<
             currentBranch: version.branch
         });
 
-        // Trigger runCode to update view
         get().runCode();
     },
 
@@ -408,7 +421,6 @@ export const createVersioningSlice: StateCreator<
     },
 
     getVersionTree: () => {
-        // TODO: Implement tree generation if needed
         return null;
     }
 });
