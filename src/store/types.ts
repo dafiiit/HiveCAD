@@ -176,6 +176,11 @@ export interface ViewSlice {
     };
     sketchOptions: { lookAt: boolean };
 
+    projectionMode: 'perspective' | 'orthographic';
+    backgroundMode: 'default' | 'dark' | 'light' | 'blue';
+    sectionViewEnabled: boolean;
+    showMeasurements: boolean;
+
     setView: (view: ViewType) => void;
     setCameraRotation: (rotation: { x: number; y: number; z: number }) => void;
     setCameraQuaternion: (quaternion: [number, number, number, number]) => void;
@@ -188,6 +193,10 @@ export interface ViewSlice {
     setPlaneVisibility: (plane: 'XY' | 'XZ' | 'YZ', visible: boolean) => void;
     fitToScreen: () => void;
     toggleFullscreen: () => void;
+    setProjectionMode: (mode: 'perspective' | 'orthographic') => void;
+    setBackgroundMode: (mode: 'default' | 'dark' | 'light' | 'blue') => void;
+    toggleSectionView: () => void;
+    toggleMeasurements: () => void;
     setSketchOption: (key: 'lookAt', value: boolean) => void;
 
     // Screenshot capability

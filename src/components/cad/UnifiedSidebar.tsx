@@ -3,12 +3,14 @@ import BrowserPanel from "./BrowserPanel";
 import CodeEditorPanel from "./CodeEditorPanel";
 import VersioningPanel from "./VersioningPanel";
 import CommentsPanel from "./CommentsPanel";
-import { ChevronRight, Minus, Code, FolderTree, GitBranch, MessageSquare } from "lucide-react";
+import { ChevronRight, Minus, Code, FolderTree, GitBranch, MessageSquare, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useCADStore } from "@/hooks/useCADStore";
 
 const UnifiedSidebar = () => {
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [activeTab, setActiveTab] = useState<'browser' | 'code' | 'versioning' | 'comments'>('browser');
+    const { objects, selectedIds } = useCADStore();
 
     const toggleCollapse = () => {
         setIsCollapsed(!isCollapsed);
@@ -167,6 +169,27 @@ const UnifiedSidebar = () => {
                     <CommentsPanel />
                 </div>
             </div>
+
+            {activeTab === 'browser' && (
+                <div className={cn(
+                    "mt-auto px-3 py-2 flex flex-col gap-2",
+                    isCollapsed && "px-0 items-center"
+                )}>
+                    <div className="flex items-center gap-2 text-muted-foreground" title={`${objects.length} Objects, ${selectedIds.size} Selected`}>
+                        <Box className="w-3 h-3" />
+                        {!isCollapsed && (
+                            <div className="flex items-center gap-1 text-[10px]">
+                                <span>{objects.length} Objects</span>
+                                {selectedIds.size > 0 && (
+                                    <span className="text-primary font-medium">
+                                        ({selectedIds.size})
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

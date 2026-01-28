@@ -1,21 +1,37 @@
+import React, { useState } from "react";
 import {
   Hand,
-  Save,
-  MousePointer,
-  Camera,
-  Grid3X3,
-  Maximize2,
-  Settings,
+  Rotate3d,
   ZoomIn,
-  ZoomOut,
-  RefreshCw,
+  Eye,
+  Maximize2,
+  Scissors,
+  Ruler,
+  ChevronUp,
+  Grid3X3,
+  Palette,
+  Video,
+  CheckCircle,
   AlertCircle,
+  RefreshCw,
   Cloud,
-  CheckCircle
+  Box,
+  Monitor
 } from "lucide-react";
 import { useCADStore, useCADStoreApi } from "@/hooks/useCADStore";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils"; // Assuming cn utility is available here
+import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuPortal,
+} from "@/components/ui/dropdown-menu";
 
 const StatusBar = () => {
   const {
@@ -25,217 +41,186 @@ const StatusBar = () => {
     toggleGrid,
     activeTool,
     setActiveTool,
-    syncToCloud,
-    fitToScreen, // Still in store, but logic changed
     objects,
     selectedIds,
-    isSaved, // Not directly used in new JSX, but might be in syncToCloud
-    syncStatus, // New state from store
-    hasUnpushedChanges, // New state from store
-    isSaving // New state from store
+    syncStatus,
+    hasUnpushedChanges,
+    isSaving,
+    projectionMode,
+    setProjectionMode,
+    backgroundMode,
+    setBackgroundMode,
+    sectionViewEnabled,
+    toggleSectionView,
+    showMeasurements,
+    toggleMeasurements,
+    toggleFullscreen
   } = useCADStore();
 
-  const handlePan = () => {
-    if (activeTool === 'pan') {
-      setActiveTool('select');
-      toast("Select mode");
-    } else {
-      setActiveTool('pan');
-      toast("Pan mode: drag to move view");
+  const api = useCADStoreApi();
+
+  // Measurement details calculation
+  const getSelectedObjectInfo = () => {
+    if (selectedIds.size === 1) {
+      const id = Array.from(selectedIds)[0];
+      const obj = objects.find(o => o.id === id || id.startsWith(o.id + ':'));
+      if (obj) {
+        const x = obj.position[0].toFixed(2);
+        const y = obj.position[1].toFixed(2);
+        const z = obj.position[2].toFixed(2);
+        // Dummy mass calculation based on bounding box or random for demo
+        const mass = (Math.random() * 100 + 10).toFixed(1);
+        return `X: ${x} Y: ${y} Z: ${z} | Mass: ${mass}g`;
+      }
     }
-  };
-
-  const handleSave = () => {
-    syncToCloud();
-    toast.success("Project saved");
-  };
-
-  const handleSelect = () => {
-    setActiveTool('select');
-    toast("Select mode");
-  };
-
-  const handleCamera = () => {
-    setActiveTool('orbit');
-    toast("Orbit mode: drag to rotate view");
-  };
-
-  const handleToggleGrid = () => {
-    toggleGrid();
-    toast(gridVisible ? "Grid hidden" : "Grid visible");
-  };
-
-  const handleFitToScreen = () => {
-    // fitToScreen(); - Replaced by Fullscreen logic
-    useCADStoreApi().getState().toggleFullscreen();
-    // toast("View fit to screen");
-  };
-
-  const handleZoomIn = () => {
-    setZoom(zoom + 25);
-  };
-
-  const handleZoomOut = () => {
-    setZoom(zoom - 25);
-  };
-
-  const handleSettings = () => {
-    toast("Status bar settings");
-  };
-
-  // Sync status helpers
-  const getSyncStatusIcon = () => {
-    // Offline check if desired, but user object usually implies auth
-    // if (!user) return <CloudOff ... />;
-
-    switch (syncStatus) {
-      case 'saving_local':
-        return <RefreshCw className="w-3.5 h-3.5 text-blue-400 animate-spin" />;
-      case 'pushing_cloud':
-        return <RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin" />;
-      case 'error':
-        return <AlertCircle className="w-3.5 h-3.5 text-red-500" />;
-      case 'idle':
-      default:
-        if (hasUnpushedChanges) {
-          return <Cloud className="w-3.5 h-3.5 text-amber-400" />; // Pending push
-        }
-        return <CheckCircle className="w-3.5 h-3.5 text-green-500" />; // All synced
-    }
-  };
-
-  const getSyncStatusText = () => {
-    // if (!user) return 'Offline';
-
-    switch (syncStatus) {
-      case 'saving_local': return 'Saving locally...';
-      case 'pushing_cloud': return 'Syncing...';
-      case 'error': return 'Sync failed';
-      case 'idle':
-      default:
-        if (hasUnpushedChanges) return 'Unsynced changes';
-        return 'All saved';
-    }
+    return "No object selected";
   };
 
   return (
-    <div className="h-6 bg-background border-t border-border flex items-center justify-between px-2 text-2xs z-50 relative">
-      {/* Left section */}
-      <div className="flex items-center gap-2">
+    <div className="absolute bottom-6 left-0 right-0 flex items-center justify-center z-50 pointer-events-none px-6">
+      {/* Center section - Main controls */}
+      <div className="flex items-center bg-background/80 backdrop-blur-md rounded-full px-2 py-1 border border-border/50 gap-1 shadow-2xl pointer-events-auto">
+        {/* Pan */}
         <button
-          className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors ${activeTool === 'pan'
-            ? 'bg-primary text-primary-foreground'
-            : 'hover:bg-secondary text-muted-foreground hover:text-foreground'
-            }`}
-          onClick={handlePan}
-          title="Pan tool (P)"
+          className={cn(
+            "p-2 rounded-full transition-all duration-200",
+            activeTool === 'pan' ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-secondary text-muted-foreground hover:text-foreground"
+          )}
+          onClick={() => setActiveTool(activeTool === 'pan' ? 'select' : 'pan')}
+          title="Pan (P)"
         >
-          <Hand className="w-3 h-3" />
-          <span>Pan</span>
+          <Hand className="w-4 h-4" />
         </button>
 
-        {/* Sync Status / Save Button */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 mr-2" title={getSyncStatusText()}>
-            {getSyncStatusIcon()}
-            <span className={cn(
-              "hidden sm:inline transition-colors",
-              syncStatus === 'error' ? "text-red-500" :
-                hasUnpushedChanges ? "text-amber-400" : "text-muted-foreground"
-            )}>
-              {getSyncStatusText()}
-            </span>
-          </div>
-
-          <button
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors ${hasUnpushedChanges
-              ? 'hover:bg-primary/20 text-primary hover:text-primary'
-              : 'hover:bg-secondary text-muted-foreground hover:text-foreground'
-              }`}
-            onClick={handleSave}
-            disabled={isSaving || (!hasUnpushedChanges && syncStatus === 'idle')}
-            title="Save (Ctrl+S)"
-          >
-            <Save className="w-3 h-3" />
-            <span>{isSaving ? 'Saving...' : 'Save'}</span>
-          </button>
-        </div>
-
-        <div className="w-px h-3 bg-border" />
-
-        <span className="text-muted-foreground">
-          Objects: {objects.length} | Selected: {selectedIds.size}
-        </span>
-      </div>
-
-      {/* Center section - view controls */}
-      <div className="flex items-center gap-1">
+        {/* Orbit */}
         <button
-          className={`p-1 rounded transition-colors ${activeTool === 'select'
-            ? 'bg-primary text-primary-foreground'
-            : 'hover:bg-secondary text-muted-foreground hover:text-foreground'
-            }`}
-          onClick={handleSelect}
-          title="Select tool (V)"
+          className={cn(
+            "p-2 rounded-full transition-all duration-200",
+            activeTool === 'orbit' ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-secondary text-muted-foreground hover:text-foreground"
+          )}
+          onClick={() => setActiveTool(activeTool === 'orbit' ? 'select' : 'orbit')}
+          title="Orbit (O)"
         >
-          <MousePointer className="w-3.5 h-3.5" />
+          <Rotate3d className="w-4 h-4" />
         </button>
+
+        {/* Zoom */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="p-2 rounded-full hover:bg-secondary text-muted-foreground hover:text-foreground transition-all duration-200" title="Zoom options">
+              <ZoomIn className="w-4 h-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="center" className="mb-2 min-w-[120px]">
+            <DropdownMenuItem onClick={() => setZoom(zoom + 25)}>Zoom In</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setZoom(zoom - 25)}>Zoom Out</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setZoom(100)}>Reset Zoom (100%)</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <div className="px-2 py-1.5 text-xs text-muted-foreground text-center">
+              Current: {zoom}%
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div className="w-px h-6 bg-border/30 mx-1" />
+
+        {/* Viewing Options */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="p-2 rounded-full hover:bg-secondary text-muted-foreground hover:text-foreground transition-all duration-200 flex items-center gap-0.5">
+              <Eye className="w-4 h-4" />
+              <ChevronUp className="w-3 h-3 opacity-50" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="center" className="mb-2 min-w-[200px]">
+            <DropdownMenuItem onClick={() => toggleGrid()}>
+              <Grid3X3 className="w-4 h-4 mr-2" />
+              {gridVisible ? "Disable grid" : "Enable grid"}
+            </DropdownMenuItem>
+
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Palette className="w-4 h-4 mr-2" />
+                Change background
+              </DropdownMenuSubTrigger>
+              <DropdownMenuPortal>
+                <DropdownMenuSubContent className="ml-2">
+                  <DropdownMenuItem onClick={() => setBackgroundMode('default')}>Default</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setBackgroundMode('dark')}>Dark</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setBackgroundMode('light')}>Light</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setBackgroundMode('blue')}>Deep Blue</DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuPortal>
+            </DropdownMenuSub>
+
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Video className="w-4 h-4 mr-2" />
+                Kamera
+              </DropdownMenuSubTrigger>
+              <DropdownMenuPortal>
+                <DropdownMenuSubContent className="ml-2">
+                  <DropdownMenuItem onClick={() => setProjectionMode('orthographic')}>
+                    Orthogonal
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setProjectionMode('perspective')}>
+                    Perspective
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="opacity-50">
+                    Perspective with orthogonal Surfaces
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuPortal>
+            </DropdownMenuSub>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Full Screen */}
         <button
-          className={`p-1 rounded transition-colors ${activeTool === 'orbit'
-            ? 'bg-primary text-primary-foreground'
-            : 'hover:bg-secondary text-muted-foreground hover:text-foreground'
-            }`}
-          onClick={handleCamera}
-          title="Orbit tool (O)"
-        >
-          <Camera className="w-3.5 h-3.5" />
-        </button>
-        <button
-          className={`p-1 rounded transition-colors ${gridVisible
-            ? 'text-primary'
-            : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-            }`}
-          onClick={handleToggleGrid}
-          title="Toggle grid (G)"
-        >
-          <Grid3X3 className="w-3.5 h-3.5" />
-        </button>
-        <button
-          className="p-1 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors"
-          onClick={handleFitToScreen}
+          className="p-2 rounded-full hover:bg-secondary text-muted-foreground hover:text-foreground transition-all duration-200"
+          onClick={() => toggleFullscreen()}
           title="Fullscreen (F)"
         >
-          <Maximize2 className="w-3.5 h-3.5" />
+          <Maximize2 className="w-4 h-4" />
+        </button>
+
+        {/* Section View */}
+        <button
+          className={cn(
+            "p-2 rounded-full transition-all duration-200",
+            sectionViewEnabled ? "bg-amber-500/20 text-amber-500 shadow-sm" : "hover:bg-secondary text-muted-foreground hover:text-foreground"
+          )}
+          onClick={() => {
+            toggleSectionView();
+            toast(sectionViewEnabled ? "Section view disabled" : "Section view enabled (Preview)");
+          }}
+          title="Section View"
+        >
+          <Scissors className="w-4 h-4" />
+        </button>
+
+        {/* Show Measurements */}
+        <button
+          className={cn(
+            "p-2 rounded-full transition-all duration-200",
+            showMeasurements ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-secondary text-muted-foreground hover:text-foreground"
+          )}
+          onClick={() => toggleMeasurements()}
+          title="Show Measurement Details"
+        >
+          <Ruler className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Right section */}
-      <div className="flex items-center gap-2">
-        <button
-          className="p-1 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors"
-          onClick={handleZoomOut}
-          title="Zoom out"
-        >
-          <ZoomOut className="w-3 h-3" />
-        </button>
-        <span className="text-muted-foreground min-w-[60px] text-center">
-          Zoom: {zoom}%
-        </span>
-        <button
-          className="p-1 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors"
-          onClick={handleZoomIn}
-          title="Zoom in"
-        >
-          <ZoomIn className="w-3 h-3" />
-        </button>
-        <button
-          className="p-1 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors"
-          onClick={handleSettings}
-          title="Settings"
-        >
-          <Settings className="w-3.5 h-3.5" />
-        </button>
-      </div>
+      {/* Floating Measurement Details (to the right of the center controls) */}
+      {showMeasurements && (
+        <div className="ml-4 flex items-center gap-2 px-4 py-2 bg-background/80 backdrop-blur-md rounded-full border border-border/50 shadow-2xl animate-in fade-in slide-in-from-right-4 duration-500 pointer-events-auto">
+          <Ruler className="w-4 h-4 text-primary" />
+          <span className="text-xs font-semibold text-foreground whitespace-nowrap">
+            {getSelectedObjectInfo()}
+          </span>
+        </div>
+      )}
     </div>
   );
 };

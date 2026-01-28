@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import { ArcballControls, Grid, PerspectiveCamera, GizmoHelper, GizmoViewcube } from "@react-three/drei";
+import { ArcballControls, Grid, PerspectiveCamera, OrthographicCamera, GizmoHelper, GizmoViewcube } from "@react-three/drei";
 import * as THREE from "three";
 import { useCADStore, useCADStoreApi, CADObject } from "../../hooks/useCADStore";
 import { useGlobalStore } from '@/store/useGlobalStore';
@@ -43,19 +43,19 @@ const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
   );
 };
 
-const SceneObjects = () => {
+const SceneObjects = ({ clippingPlanes = [] }: { clippingPlanes?: THREE.Plane[] }) => {
   const objects = useCADStore((state) => state.objects);
 
   return (
     <group>
       {objects.map((obj) => (
-        <CADObjectRenderer key={obj.id} object={obj} />
+        <CADObjectRenderer key={obj.id} object={obj} clippingPlanes={clippingPlanes} />
       ))}
     </group>
   );
 };
 
-const FaceHighlighter = ({ object, faceIds }: { object: CADObject, faceIds: number[] }) => {
+const FaceHighlighter = ({ object, faceIds, clippingPlanes = [] }: { object: CADObject, faceIds: number[], clippingPlanes?: THREE.Plane[] }) => {
   const geometry = React.useMemo(() => {
     if (!object.geometry || !object.faceMapping) return null;
 
@@ -94,12 +94,13 @@ const FaceHighlighter = ({ object, faceIds }: { object: CADObject, faceIds: numb
         opacity={0.5}
         depthTest={false} // Overlay effect
         side={THREE.DoubleSide}
+        clippingPlanes={clippingPlanes}
       />
     </mesh>
   );
 };
 
-const EdgeHighlighter = ({ object, edgeIds }: { object: CADObject, edgeIds: number[] }) => {
+const EdgeHighlighter = ({ object, edgeIds, clippingPlanes = [] }: { object: CADObject, edgeIds: number[], clippingPlanes?: THREE.Plane[] }) => {
   const geometry = React.useMemo(() => {
     if (!object.edgeGeometry || !object.edgeMapping) return null;
 
@@ -127,12 +128,12 @@ const EdgeHighlighter = ({ object, edgeIds }: { object: CADObject, edgeIds: numb
 
   return (
     <lineSegments geometry={geometry} renderOrder={1}>
-      <lineBasicMaterial color="#ffff00" linewidth={3} depthTest={false} />
+      <lineBasicMaterial color="#ffff00" linewidth={3} depthTest={false} clippingPlanes={clippingPlanes} />
     </lineSegments>
   );
 };
 
-const CADObjectRenderer = ({ object }: { object: CADObject }) => {
+const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject, clippingPlanes?: THREE.Plane[] }) => {
   const { selectObject, selectedIds, isSketchMode, sketchPlane, sketchesVisible, bodiesVisible, originVisible } = useCADStore();
   const isSketch = object.type === 'sketch';
   const isSelected = selectedIds.has(object.id);
@@ -269,11 +270,13 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
               polygonOffset={true}
               polygonOffsetFactor={1}
               polygonOffsetUnits={1}
+              clippingPlanes={clippingPlanes}
+              clipShadows={true}
             />
           </mesh>
 
           {selectedFaces.length > 0 && (
-            <FaceHighlighter object={object} faceIds={selectedFaces} />
+            <FaceHighlighter object={object} faceIds={selectedFaces} clippingPlanes={clippingPlanes} />
           )}
         </>
       )}
@@ -293,10 +296,11 @@ const CADObjectRenderer = ({ object }: { object: CADObject }) => {
               opacity={isSketch ? 0.8 : 1.0}
               depthTest={true}
               linewidth={2}
+              clippingPlanes={clippingPlanes}
             />
           </lineSegments>
           {selectedEdges.length > 0 && (
-            <EdgeHighlighter object={object} edgeIds={selectedEdges} />
+            <EdgeHighlighter object={object} edgeIds={selectedEdges} clippingPlanes={clippingPlanes} />
           )}
         </>
       )}
@@ -599,7 +603,29 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
   const controlsRef = useRef<ArcballControlsImpl>(null);
   const api = useCADStoreApi();
   const [showExitDialog, setShowExitDialog] = useState(false);
-  const activeTool = useCADStore(state => state.activeTool);
+  const { activeTool, backgroundMode, projectionMode, sectionViewEnabled } = useCADStore();
+
+  const getBackgroundColor = () => {
+    switch (backgroundMode) {
+      case 'dark': return "hsl(210, 20%, 8%)";
+      case 'light': return "hsl(210, 10%, 90%)";
+      case 'blue': return "hsl(220, 40%, 25%)";
+      default: return "hsl(210, 30%, 16%)";
+    }
+  };
+
+  // Section view clipping planes
+  const clippingPlanes = React.useMemo(() => {
+    if (!sectionViewEnabled) return [];
+    // Just a simple X-plane for now as a demo
+    return [new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0)];
+  }, [sectionViewEnabled]);
+
+  useEffect(() => {
+    // Apply clipping planes to all materials? 
+    // This is hard with SceneObjects being deeply nested.
+    // Three.js gl.localClippingEnabled must be true.
+  }, [sectionViewEnabled]);
 
   // Configure mouse buttons based on active tool
   useEffect(() => {
@@ -634,19 +660,29 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
   return (
     <div className="cad-viewport w-full h-full relative">
       <Canvas
-        gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
-        style={{ background: "hsl(210, 30%, 16%)" }}
+        gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true, localClippingEnabled: true }}
+        style={{ background: getBackgroundColor() }}
         onPointerMissed={() => api.getState().clearSelection()}
       >
         <ThumbnailCapturer />
         {/* Camera - stays Y-up for stable ArcballControls */}
-        <PerspectiveCamera
-          makeDefault
-          position={[50, 50, 50]}
-          fov={45}
-          near={0.1}
-          far={2000}
-        />
+        {projectionMode === 'perspective' ? (
+          <PerspectiveCamera
+            makeDefault
+            position={[50, 50, 50]}
+            fov={45}
+            near={0.1}
+            far={2000}
+          />
+        ) : (
+          <OrthographicCamera
+            makeDefault
+            position={[50, 50, 50]}
+            zoom={20}
+            near={0.1}
+            far={2000}
+          />
+        )}
 
         {/* Lighting - outside rotation group for consistent lighting */}
         <ambientLight intensity={0.4} />
@@ -657,7 +693,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
         <group rotation={Z_UP_ROTATION}>
           <CADGrid isSketchMode={isSketchMode} />
           <PlaneSelector />
-          <SceneObjects />
+          <SceneObjects clippingPlanes={clippingPlanes} />
           <OperationPreview />
           <SketchCanvas />
         </group>

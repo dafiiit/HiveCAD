@@ -25,6 +25,10 @@ export const createViewSlice: StateCreator<
     sketchOptions: {
         lookAt: true,
     },
+    projectionMode: 'perspective',
+    backgroundMode: 'default',
+    sectionViewEnabled: false,
+    showMeasurements: false,
 
     setView: (view) => set({ currentView: view }),
     setCameraRotation: (rotation) => set({ cameraRotation: rotation }),
@@ -41,6 +45,10 @@ export const createViewSlice: StateCreator<
 
     fitToScreen: () => console.log("fitToScreen"), // This might need implementation or bridge to UI
     toggleFullscreen: () => set(state => ({ isFullscreen: !state.isFullscreen })),
+    setProjectionMode: (mode) => set({ projectionMode: mode }),
+    setBackgroundMode: (mode) => set({ backgroundMode: mode }),
+    toggleSectionView: () => set(state => ({ sectionViewEnabled: !state.sectionViewEnabled })),
+    toggleMeasurements: () => set(state => ({ showMeasurements: !state.showMeasurements })),
 
     setSketchOption: (key, value) => set(state => ({
         sketchOptions: { ...state.sketchOptions, [key]: value }

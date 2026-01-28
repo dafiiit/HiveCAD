@@ -130,12 +130,10 @@ const CADLayout = () => {
 
         {/* Operation Properties (Floating) */}
         <OperationProperties />
+
+        {/* Status bar (Overlay) */}
+        <StatusBar />
       </div>
-
-
-
-      {/* Status bar */}
-      <StatusBar />
     </div>
   );
 };

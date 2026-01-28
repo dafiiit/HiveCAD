@@ -3,6 +3,8 @@ import { useEffect, useRef } from "react";
 import Editor, { OnMount } from "@monaco-editor/react";
 import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
+import { Play } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const CodeEditorPanel = () => {
     const { code, setCode, runCode } = useCADStore();
@@ -35,14 +37,17 @@ const CodeEditorPanel = () => {
 
     return (
         <div className="flex flex-col h-full bg-[#1e1e1e] w-full">
-            <div className="p-2 bg-muted text-muted-foreground text-xs font-mono border-b border-border flex justify-between items-center">
-                <span>script.js</span>
+            <div className="p-2 bg-muted/30 border-b border-border flex justify-end items-center">
                 <button
                     onClick={() => runCode()}
-                    className="hover:text-primary transition-colors"
+                    className={cn(
+                        "flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-semibold transition-all shadow-sm",
+                        "bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95"
+                    )}
                     title="Run Code (Cmd+Enter)"
                 >
-                    Run
+                    <Play className="w-3 h-3 fill-current" />
+                    <span>RUN</span>
                 </button>
             </div>
             <div className="flex-1 overflow-hidden">

@@ -394,7 +394,7 @@ const VersioningPanel = () => {
             </div>
 
             {/* Current Branch Info */}
-            <div className="px-3 py-2 border-t border-border bg-muted/30">
+            <div className="px-3 py-2 bg-transparent opacity-60">
                 <div className="flex items-center gap-2 text-xs">
                     <GitBranch className="w-3 h-3 text-muted-foreground" />
                     <span className="font-medium">{currentBranch}</span>
