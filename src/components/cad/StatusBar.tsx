@@ -33,6 +33,7 @@ import {
   DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
 import { FloatingZoomControls } from "./FloatingZoomControls";
+import { GridToggle } from "./GridToggle";
 
 
 const StatusBar = () => {
@@ -111,7 +112,6 @@ const StatusBar = () => {
           <FloatingZoomControls />
         </div>
 
-
         <div className="w-px h-6 bg-border/30 mx-1" />
 
         {/* Viewing Options */}
@@ -123,11 +123,8 @@ const StatusBar = () => {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="center" className="mb-2 min-w-[200px]">
-            <DropdownMenuItem onClick={() => toggleGrid()}>
-              <Grid3X3 className="w-4 h-4 mr-2" />
-              {gridVisible ? "Disable grid" : "Enable grid"}
-            </DropdownMenuItem>
-
+            <GridToggle />
+            <DropdownMenuSeparator />
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <Palette className="w-4 h-4 mr-2" />

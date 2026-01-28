@@ -708,7 +708,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
   const controlsRef = useRef<ArcballControlsImpl>(null);
   const api = useCADStoreApi();
   const [showExitDialog, setShowExitDialog] = useState(false);
-  const { backgroundMode, projectionMode, sectionViewEnabled } = useCADStore();
+  const { backgroundMode, projectionMode, sectionViewEnabled, gridVisible } = useCADStore();
   const getBackgroundColor = () => {
     switch (backgroundMode) {
       case 'dark': return "hsl(210, 20%, 8%)";
@@ -766,7 +766,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
 
         {/* Z-up content container - rotates Z-up content to display in Y-up Three.js */}
         <group rotation={Z_UP_ROTATION}>
-          <CADGrid isSketchMode={isSketchMode} />
+          {gridVisible && <CADGrid isSketchMode={isSketchMode} />}
           <PlaneSelector />
           <SceneObjects clippingPlanes={clippingPlanes} />
           <OperationPreview />
