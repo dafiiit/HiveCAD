@@ -183,26 +183,11 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
         {/* Left section - App controls - Vertically Centered */}
         <div className="flex items-center gap-1 h-full">
           <button
-            className="p-1 hover:bg-secondary rounded transition-colors flex items-center justify-center"
-            onClick={async () => {
-              // Ensure we save before exit
-              toast.loading("Saving and closing...", { id: 'exit-save' });
-              try {
-                if (user?.pat) {
-                  await save(true); // Sync to cloud
-                } else {
-                  await useCADStoreApi().getState().saveToLocal();
-                }
-                toast.success("Saved", { id: 'exit-save' });
-              } catch (e) {
-                console.warn("Exit save failed", e);
-                toast.error("Save failed, changes may be lost", { id: 'exit-save' });
-              }
-              closeTab(activeTabId);
-            }}
-            title="Exit to Dashboard"
+            className="p-1 rounded transition-colors flex items-center justify-center cursor-default"
+            // Disabled for now - use tab close button (X) instead
+            title="HiveCAD"
           >
-            <img src="/favicon.ico" alt="HiveCAD Logo" className="w-5 h-5 transition-transform hover:scale-110" />
+            <img src="/favicon.ico" alt="HiveCAD Logo" className="w-5 h-5" />
           </button>
 
           <button

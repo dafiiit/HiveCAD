@@ -258,38 +258,77 @@ export const createVersioningSlice: StateCreator<
         // 2. CAPTURE CURRENT PROJECT DATA BEFORE CLEARING STATE
         const currentProjectId = state.projectId;
         const currentFileName = state.fileName;
-        const hasUnsavedChanges = state.pendingSave || !state.isSaved;
+        const currentCode = state.code;
+        const currentObjects = state.objects;
 
-        // 3. FORCE SAVE if there are pending changes OR if not saved
-        if (hasUnsavedChanges && currentProjectId && currentFileName !== 'Untitled') {
+        // 3. ALWAYS save locally before close (fast, non-blocking to UI)
+        if (currentProjectId && currentFileName !== 'Untitled') {
             console.log(`[versioningSlice] Saving project ${currentProjectId} before close`);
 
-            // Save to local IDB first
-            await state.saveToLocal();
+            // Build project data snapshot
+            const projectSnapshot = {
+                id: currentProjectId,
+                name: currentFileName,
+                lastModified: Date.now(),
+                files: { code: currentCode },
+                objects: JSON.parse(JSON.stringify(currentObjects)),
+                version: '1.0.0',
+            };
 
-            // Then push to cloud
+            // 3a. Save to local IDB (fast) - await this one
             try {
-                await state.syncToCloud(true); // Force sync
+                await idbSet(`project:${currentProjectId}`, projectSnapshot);
+                console.log(`[versioningSlice] Saved project ${currentProjectId} to local cache`);
             } catch (e) {
-                console.warn('[versioningSlice] Failed to sync to cloud on close', e);
+                console.error('[versioningSlice] Failed to save to local cache', e);
             }
-        }
 
-        // 4. Save final thumbnail
-        const thumbnail = state.projectThumbnails[currentFileName];
-        if (thumbnail && currentProjectId) {
-            try {
-                const { StorageManager } = await import('@/lib/storage/StorageManager');
-                const adapter = StorageManager.getInstance().currentAdapter;
-                if (adapter.saveThumbnail) {
-                    await adapter.saveThumbnail(currentProjectId, thumbnail);
+            // 3b. Capture and save thumbnail locally
+            let thumbnail = state.projectThumbnails[currentFileName];
+            if (!thumbnail && state.thumbnailCapturer) {
+                thumbnail = state.thumbnailCapturer();
+            }
+            if (thumbnail) {
+                const thumbnails = { ...state.projectThumbnails, [currentFileName]: thumbnail };
+                localStorage.setItem('hivecad_thumbnails', JSON.stringify(thumbnails));
+            }
+
+            // 3c. Fire-and-forget cloud sync (non-blocking - runs after state clear)
+            const syncData = { projectSnapshot, thumbnail, currentProjectId, currentFileName };
+            setTimeout(async () => {
+                try {
+                    const { StorageManager } = await import('@/lib/storage/StorageManager');
+                    const adapter = StorageManager.getInstance().currentAdapter;
+                    if (adapter.isAuthenticated()) {
+                        // Save project data
+                        await adapter.save(syncData.currentProjectId, syncData.projectSnapshot);
+                        console.log(`[versioningSlice] Background: saved project ${syncData.currentProjectId}`);
+
+                        // Update index
+                        if (adapter.updateIndex) {
+                            await adapter.updateIndex(syncData.currentProjectId, {
+                                id: syncData.currentProjectId,
+                                name: syncData.currentFileName,
+                                lastModified: Date.now(),
+                            });
+                            console.log(`[versioningSlice] Background: updated index for ${syncData.currentProjectId}`);
+                        }
+
+                        // Save thumbnail
+                        if (syncData.thumbnail && adapter.saveThumbnail) {
+                            await adapter.saveThumbnail(syncData.currentProjectId, syncData.thumbnail);
+                            console.log(`[versioningSlice] Background: saved thumbnail for ${syncData.currentProjectId}`);
+                        }
+
+                        console.log(`[versioningSlice] Background sync complete for ${syncData.currentProjectId}`);
+                    }
+                } catch (e) {
+                    console.warn('[versioningSlice] Background sync failed (will retry on next open)', e);
                 }
-            } catch (e) {
-                console.warn('[versioningSlice] Failed to save final thumbnail on close', e);
-            }
+            }, 0);
         }
 
-        // 5. NOW clear the state (after all saves are complete)
+        // 4. IMMEDIATELY clear state (don't wait for cloud sync)
         set({
             fileName: 'Untitled',
             projectId: null,
