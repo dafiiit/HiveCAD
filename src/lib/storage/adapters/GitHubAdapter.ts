@@ -292,6 +292,10 @@ export class GitHubAdapter implements StorageAdapter {
     }
 
     async rename(projectId: string, newName: string): Promise<void> {
+        const data = await this.load(projectId);
+        if (!data) throw new Error('Project not found');
+
+        // Update the name and save
         await this.updateMetadata(projectId, { name: newName });
     }
 

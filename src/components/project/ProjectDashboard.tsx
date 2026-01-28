@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCADStore } from '@/hooks/useCADStore';
+import { CleanupUtility } from '@/lib/storage/CleanupUtility';
 import { useGlobalStore } from '@/store/useGlobalStore';
 import { useTabManager } from '@/components/layout/TabContext';
 import { Button } from '../ui/button';
@@ -156,6 +157,21 @@ export function ProjectDashboard() {
         // Prune cache heavily
         CacheManager.pruneCache();
     }, [refreshProjects]);
+
+    useEffect(() => {
+        const migrationDone = localStorage.getItem('hivecad_migration_v1_done');
+
+        if (!migrationDone) {
+            console.log('Running one-time migration...');
+            CleanupUtility.forceCleanup().then(() => {
+                localStorage.setItem('hivecad_migration_v1_done', 'true');
+                console.log('Migration complete');
+            });
+        } else {
+            // Normal background cleanup
+            CleanupUtility.runBackgroundCleanup();
+        }
+    }, []);
 
     const handleCreateProject = () => {
         createProject();
