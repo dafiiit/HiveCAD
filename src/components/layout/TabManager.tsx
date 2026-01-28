@@ -231,7 +231,7 @@ export const TabManager = () => {
                         <AlertDialogHeader>
                             <AlertDialogTitle>Delete empty project?</AlertDialogTitle>
                             <AlertDialogDescription>
-                                This project is empty and hasn't been modified. It will be permanently deleted from your workspace.
+                                This project is empty and doesn't contain any CAD models. It will be permanently deleted from your workspace.
                             </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
