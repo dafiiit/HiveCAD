@@ -68,6 +68,16 @@ export const createVersioningSlice: StateCreator<
                 currentBranch: state.currentBranch,
                 currentVersionId: state.currentVersionId,
             };
+
+            // Capture thumbnail if possible
+            if (state.thumbnailCapturer) {
+                const thumbnail = state.thumbnailCapturer();
+                if (thumbnail) {
+                    // Update local state and storage
+                    state.updateThumbnail(state.fileName, thumbnail);
+                }
+            }
+
             await idbSet(`project:${state.projectId || state.fileName}`, projectData);
             set({
                 isSaved: true, // Saved locally
@@ -106,10 +116,19 @@ export const createVersioningSlice: StateCreator<
 
             await adapter.save(state.projectId || state.fileName, projectData);
 
+            // Capture and save thumbnail
+            let currentThumbnail = state.projectThumbnails[state.fileName];
+            if (state.thumbnailCapturer) {
+                const captured = state.thumbnailCapturer();
+                if (captured) {
+                    currentThumbnail = captured;
+                    state.updateThumbnail(state.fileName, captured);
+                }
+            }
+
             set({ isSaved: true, hasUnpushedChanges: false, isSaving: false, syncStatus: 'idle', lastSaveTime: Date.now() });
 
             // Ensure thumbnail exists
-            const currentThumbnail = state.projectThumbnails[state.fileName];
             if (adapter.saveThumbnail) {
                 if (currentThumbnail) {
                     await adapter.saveThumbnail(state.projectId || state.fileName, currentThumbnail);
@@ -188,7 +207,26 @@ export const createVersioningSlice: StateCreator<
     reset: () => {
         set({ objects: [], code: 'const main = () => { return; };' });
     },
-    setFileName: (name) => set({ fileName: name }),
+    setFileName: (name) => {
+        const state = get();
+        const oldName = state.fileName;
+
+        if (oldName === name) return;
+
+        // Migrate thumbnail
+        const oldThumb = state.projectThumbnails[oldName];
+        if (oldThumb) {
+            const newThumbs = { ...state.projectThumbnails };
+            delete newThumbs[oldName];
+            newThumbs[name] = oldThumb;
+            set({ projectThumbnails: newThumbs });
+            localStorage.setItem('hivecad_thumbnails', JSON.stringify(newThumbs));
+        }
+
+        set({ fileName: name });
+        // Trigger immediate local save to persist the new name key in IDB
+        state.saveToLocal();
+    },
     setProjectId: (id) => set({ projectId: id }),
     closeProject: async () => {
         const state = get();

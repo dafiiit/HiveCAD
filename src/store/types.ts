@@ -189,6 +189,10 @@ export interface ViewSlice {
     fitToScreen: () => void;
     toggleFullscreen: () => void;
     setSketchOption: (key: 'lookAt', value: boolean) => void;
+
+    // Screenshot capability
+    thumbnailCapturer: (() => string | null) | null;
+    setThumbnailCapturer: (capturer: () => string | null) => void;
 }
 
 export interface VersioningSlice {

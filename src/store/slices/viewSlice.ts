@@ -45,4 +45,7 @@ export const createViewSlice: StateCreator<
     setSketchOption: (key, value) => set(state => ({
         sketchOptions: { ...state.sketchOptions, [key]: value }
     })),
+
+    thumbnailCapturer: null,
+    setThumbnailCapturer: (capturer) => set({ thumbnailCapturer: capturer }),
 });

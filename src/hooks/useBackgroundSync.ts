@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useCADStore } from '@/hooks/useCADStore';
 
-const SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const SYNC_INTERVAL = 30 * 1000; // 30 seconds
 
 export function useBackgroundSync() {
     const { hasUnpushedChanges, syncToCloud, isSaving, pendingSave } = useCADStore();

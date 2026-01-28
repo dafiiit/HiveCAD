@@ -72,10 +72,54 @@ export function ProjectDashboard() {
             try {
                 const { StorageManager } = await import('@/lib/storage/StorageManager');
                 const adapter = StorageManager.getInstance().currentAdapter;
+
+                // 1. Fetch Remote Projects
+                let remoteProjects: ProjectData[] = [];
                 if (adapter.listProjects) {
-                    const projects = await adapter.listProjects();
-                    setUserProjects(projects);
+                    try {
+                        remoteProjects = await adapter.listProjects();
+                    } catch (e) {
+                        console.warn('Failed to fetch remote projects', e);
+                    }
                 }
+
+                // 2. Fetch Local Projects (Offline/Unsynced)
+                const { keys, getMany } = await import('idb-keyval');
+                const allKeys = await keys();
+                const projectKeys = allKeys.filter(k => typeof k === 'string' && k.startsWith('project:'));
+                const localProjects = (await getMany(projectKeys)) as ProjectData[];
+
+                // 3. Merge Strategies
+                const projectMap = new Map<string, ProjectData>();
+
+                // Add remote first
+                remoteProjects.forEach(p => projectMap.set(p.id, p));
+
+                // Add local (overwrite if newer or new)
+                localProjects.forEach(p => {
+                    if (!p || typeof p !== 'object' || !p.id || !p.name) return;
+
+                    const existing = projectMap.get(p.id);
+                    if (!existing) {
+                        // It's a local-only project (newly created)
+                        projectMap.set(p.id, p);
+                    } else {
+                        // Conflict: Check timestamps
+                        // Usually local is newer if we are working on it
+                        if ((p.lastModified || 0) > (existing.lastModified || 0)) {
+                            projectMap.set(p.id, p);
+                        }
+                    }
+                });
+
+                // Filter out soft-deleted projects if not in trash view (Dashboard doesn't have trash view filter yet, assumes list returns active)
+                // Actually adapter.listProjects might return all, so we filter here to be safe, 
+                // but usually deleted projects are handled by `files` being null or `deletedAt`.
+                const mergedProjects = Array.from(projectMap.values())
+                    .sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+
+                setUserProjects(mergedProjects);
+
                 if (adapter.listTags) {
                     const fetchedTags = await adapter.listTags();
                     setTags(fetchedTags);
@@ -362,7 +406,7 @@ export function ProjectDashboard() {
         }
     };
 
-    const createProject = () => {
+    const createProject = async () => {
         const existingNames = Object.keys(projectThumbnails);
         let name = 'Unnamed';
         let counter = 1;
@@ -381,6 +425,14 @@ export function ProjectDashboard() {
             ownerId: user?.id || 'anon'
         };
 
+        // SAVE IMMEDIATELY TO LOCAL STORAGE
+        try {
+            await idbSet(`project:${newProjectData.id}`, newProjectData);
+            console.log(`[ProjectDashboard] Created and cached project ${newProjectData.id}`);
+        } catch (e) {
+            console.error("Failed to cache new project", e);
+        }
+
         // Set default thumbnail to prevent broken images before first save
         // This is a simple 1x1 transparent pixel, or could be a branded placeholder
         const DEFAULT_THUMBNAIL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -396,6 +448,9 @@ export function ProjectDashboard() {
 
         openProjectInNewTab(newProjectData);
         toast.success(`Started new project: ${name}`);
+
+        // Refresh to show in list immediately (from local cache)
+        refreshProjects();
     };
 
     const handleResetRepository = async () => {
@@ -415,6 +470,15 @@ export function ProjectDashboard() {
                 localStorage.removeItem('hivecad_thumbnails');
                 localStorage.removeItem('hivecad_example_opens');
                 localStorage.removeItem('hivecad_thumbnails_cache');
+
+                // 3b. Clear IndexedDB (Project Cache)
+                try {
+                    const { clear } = await import('idb-keyval');
+                    await clear();
+                    console.log('[ProjectDashboard] IndexedDB cleared.');
+                } catch (e) {
+                    console.error("Failed to clear IndexedDB:", e);
+                }
 
                 // 4. Reset Component State
                 setStarredProjects([]);
@@ -891,7 +955,7 @@ export function ProjectDashboard() {
                                             .filter(e => !userProjects.some(up => up.id === e.id))
                                             .map(e => ({ ...e, type: 'example' as const }))
                                     ]
-                                        .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                                        .filter(p => (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
                                         .filter(p => {
                                             // Folder Filter
                                             if (selectedFolder) {

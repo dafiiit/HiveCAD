@@ -573,56 +573,27 @@ const OperationPreview = () => {
 
 
 
-const ThumbnailCapturer = forwardRef<any, { onShowExitDialog: () => void }>((props, ref) => {
+const ThumbnailCapturer = () => {
   const { gl } = useThree();
-  const { fileName, updateThumbnail, closeProject, code, objects, triggerSave } = useCADStore();
-  const { user } = useGlobalStore();
-
-  // Define the core exit logic
-  const finalizeExit = useCallback((shouldSave: boolean) => {
-    if (shouldSave) {
-      console.log('[ThumbnailCapturer] Finalizing exit with save');
-      const screenshot = gl.domElement.toDataURL('image/jpeg', 0.5);
-      updateThumbnail(fileName, screenshot);
-      triggerSave();
-    } else {
-      console.log('[ThumbnailCapturer] Finalizing exit with DISCARD');
-    }
-    closeProject();
-  }, [gl, fileName, updateThumbnail, triggerSave, closeProject]);
-
-  useImperativeHandle(ref, () => ({
-    finalizeExit
-  }));
+  const setThumbnailCapturer = useCADStore(state => state.setThumbnailCapturer);
 
   useEffect(() => {
-    const handleExit = () => {
-      if (fileName === 'Untitled') return;
-
-      const isDefaultCode = code.trim() === 'const main = () => { return; };';
-      const isEmpty = objects.length === 0 && isDefaultCode;
-
-      if (isEmpty) {
-        finalizeExit(false);
-        return;
+    // Register the capturer function
+    setThumbnailCapturer(() => {
+      try {
+        return gl.domElement.toDataURL('image/jpeg', 0.5);
+      } catch (e) {
+        console.error("Failed to capture thumbnail", e);
+        return null;
       }
+    });
 
-      // If non-empty but NO PAT (should not happen in mandatory flow), just exit
-      if (!user?.pat) {
-        finalizeExit(false);
-        return;
-      }
-
-      // Standard exit with auto-save
-      finalizeExit(true);
-    };
-
-    window.addEventListener('hivecad-exit-project', handleExit);
-    return () => window.removeEventListener('hivecad-exit-project', handleExit);
-  }, [fileName, code, objects.length, user?.pat, props, finalizeExit]);
+    // Cleanup
+    return () => setThumbnailCapturer(() => null);
+  }, [gl, setThumbnailCapturer]);
 
   return null;
-});
+};
 
 const Viewport = ({ isSketchMode }: ViewportProps) => {
   const controlsRef = useRef<ArcballControlsImpl>(null);
@@ -666,7 +637,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
         style={{ background: "hsl(210, 30%, 16%)" }}
         onPointerMissed={() => useCADStoreApi().getState().clearSelection()}
       >
-        <ThumbnailCapturer ref={capturerRef} onShowExitDialog={() => setShowExitDialog(true)} />
+        <ThumbnailCapturer />
         {/* Camera - stays Y-up for stable ArcballControls */}
         <PerspectiveCamera
           makeDefault
