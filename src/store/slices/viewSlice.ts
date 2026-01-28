@@ -1,15 +1,10 @@
 import { StateCreator } from 'zustand';
 import { CADState, ViewSlice } from '../types';
 
-export const createViewSlice: StateCreator<
-    CADState,
-    [],
-    [],
-    ViewSlice
-> = (set) => ({
+export const createViewSlice: StateCreator<CADState, [], [], ViewSlice> = (set) => ({
     isFullscreen: false,
-    currentView: 'home',
-    cameraRotation: { x: -0.4, y: -0.6, z: 0 },
+    currentView: 'isometric',
+    cameraRotation: null,
     cameraQuaternion: [0, 0, 0, 1],
     zoom: 100,
     gridVisible: true,
@@ -22,38 +17,35 @@ export const createViewSlice: StateCreator<
         XZ: false,
         YZ: false,
     },
-    sketchOptions: {
-        lookAt: true,
-    },
+    sketchOptions: { lookAt: true },
     projectionMode: 'perspective',
     backgroundMode: 'default',
     sectionViewEnabled: false,
     showMeasurements: false,
+    thumbnailCapturer: null,
+    fitToScreenSignal: 0,
 
     setView: (view) => set({ currentView: view }),
     setCameraRotation: (rotation) => set({ cameraRotation: rotation }),
     setCameraQuaternion: (quaternion) => set({ cameraQuaternion: quaternion }),
     setZoom: (zoom) => set({ zoom }),
-    toggleGrid: () => set(state => ({ gridVisible: !state.gridVisible })),
+    toggleGrid: () => set((state) => ({ gridVisible: !state.gridVisible })),
     setOriginVisibility: (visible) => set({ originVisible: visible }),
     setAxesVisibility: (visible) => set({ axesVisible: visible }),
     setSketchesVisibility: (visible) => set({ sketchesVisible: visible }),
     setBodiesVisibility: (visible) => set({ bodiesVisible: visible }),
-    setPlaneVisibility: (plane, visible) => set(state => ({
+    setPlaneVisibility: (plane, visible) => set((state) => ({
         planeVisibility: { ...state.planeVisibility, [plane]: visible }
     })),
+    fitToScreen: () => set((state) => ({ fitToScreenSignal: (state.fitToScreenSignal || 0) + 1 })),
 
-    fitToScreen: () => console.log("fitToScreen"), // This might need implementation or bridge to UI
-    toggleFullscreen: () => set(state => ({ isFullscreen: !state.isFullscreen })),
+    toggleFullscreen: () => set((state) => ({ isFullscreen: !state.isFullscreen })),
     setProjectionMode: (mode) => set({ projectionMode: mode }),
     setBackgroundMode: (mode) => set({ backgroundMode: mode }),
-    toggleSectionView: () => set(state => ({ sectionViewEnabled: !state.sectionViewEnabled })),
-    toggleMeasurements: () => set(state => ({ showMeasurements: !state.showMeasurements })),
-
-    setSketchOption: (key, value) => set(state => ({
+    toggleSectionView: () => set((state) => ({ sectionViewEnabled: !state.sectionViewEnabled })),
+    toggleMeasurements: () => set((state) => ({ showMeasurements: !state.showMeasurements })),
+    setSketchOption: (key, value) => set((state) => ({
         sketchOptions: { ...state.sketchOptions, [key]: value }
     })),
-
-    thumbnailCapturer: null,
     setThumbnailCapturer: (capturer) => set({ thumbnailCapturer: capturer }),
 });

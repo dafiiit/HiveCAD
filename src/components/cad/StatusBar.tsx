@@ -32,6 +32,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
+import { FloatingZoomControls } from "./FloatingZoomControls";
+
 
 const StatusBar = () => {
   const {
@@ -105,22 +107,10 @@ const StatusBar = () => {
         </button>
 
         {/* Zoom */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="p-2 rounded-full hover:bg-secondary text-muted-foreground hover:text-foreground transition-all duration-200" title="Zoom options">
-              <ZoomIn className="w-4 h-4" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="center" className="mb-2 min-w-[120px]">
-            <DropdownMenuItem onClick={() => setZoom(zoom + 25)}>Zoom In</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setZoom(zoom - 25)}>Zoom Out</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setZoom(100)}>Reset Zoom (100%)</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <div className="px-2 py-1.5 text-xs text-muted-foreground text-center">
-              Current: {zoom}%
-            </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="mx-1">
+          <FloatingZoomControls />
+        </div>
+
 
         <div className="w-px h-6 bg-border/30 mx-1" />
 

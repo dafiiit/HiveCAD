@@ -599,12 +599,116 @@ const ThumbnailCapturer = () => {
   return null;
 };
 
+const SceneController = ({ controlsRef }: { controlsRef: React.RefObject<ArcballControlsImpl | null> }) => {
+  const { camera, scene } = useThree();
+  const { zoom, activeTool, currentView, fitToScreenSignal } = useCADStore();
+
+  // Sync camera zoom with store
+  useEffect(() => {
+    const controls = controlsRef.current as any;
+    if (!controls) return;
+
+    // Use the camera from useThree() if controls.object is missing (though it should be the same)
+    const targetCamera = controls.object || camera;
+
+    // Safety check just in case
+    if (!targetCamera) return;
+
+    if (targetCamera instanceof THREE.PerspectiveCamera) {
+      const target = controls.target;
+      if (!target) return;
+      const distance = targetCamera.position.distanceTo(target);
+      const baseDistance = 85;
+      const desiredDistance = baseDistance * (100 / zoom);
+
+      if (Math.abs(distance - desiredDistance) > 1) {
+        const direction = new THREE.Vector3().subVectors(targetCamera.position, target).normalize();
+        const newPos = target.clone().add(direction.multiplyScalar(desiredDistance));
+        targetCamera.position.copy(newPos);
+        controls.update();
+      }
+    } else if (targetCamera instanceof THREE.OrthographicCamera) {
+      if (Math.abs(targetCamera.zoom - (zoom / 5)) > 0.01) {
+        targetCamera.zoom = zoom / 5;
+        targetCamera.updateProjectionMatrix();
+      }
+    }
+  }, [zoom, camera, controlsRef]);
+
+  // Handle View Changes (Home)
+  useEffect(() => {
+    if (currentView === 'home') {
+      const controls = controlsRef.current as any;
+      if (!controls) return;
+
+      const targetCamera = controls.object || camera;
+      if (!targetCamera) return;
+
+      // Reset to default isometric view
+      targetCamera.position.set(50, 50, 50);
+      controls.target.set(0, 0, 0);
+      targetCamera.up.set(0, 1, 0);
+
+      if (targetCamera instanceof THREE.OrthographicCamera) {
+        targetCamera.zoom = 20;
+        targetCamera.updateProjectionMatrix();
+      }
+
+      controls.update();
+    }
+  }, [currentView, camera, controlsRef]);
+
+  // Handle fitToScreen
+  useEffect(() => {
+    if (!fitToScreenSignal) return;
+
+    const controls = controlsRef.current as any;
+    if (!controls) return;
+
+    const targetCamera = controls.object || camera;
+    if (!targetCamera) return;
+
+    // Use the scene from useThree
+    const box = new THREE.Box3().setFromObject(scene);
+    if (box.isEmpty()) return;
+
+    const sphere = new THREE.Sphere();
+    box.getBoundingSphere(sphere);
+
+    const distance = sphere.radius / Math.tan(Math.PI * 45 / 360);
+    targetCamera.position.set(sphere.center.x + distance, sphere.center.y + distance, sphere.center.z + distance);
+    controls.target.copy(sphere.center);
+    controls.update();
+  }, [fitToScreenSignal, camera, scene, controlsRef]);
+
+  // Configure mouse buttons
+  useEffect(() => {
+    const controls = controlsRef.current as any;
+    if (!controls) return;
+
+    if (typeof controls.setMouseAction === 'function') {
+      try {
+        if (activeTool === 'pan') {
+          controls.setMouseAction('PAN', 0); // Left = Pan
+          controls.setMouseAction('ROTATE', 2); // Right = Rotate
+        } else {
+          controls.setMouseAction('ROTATE', 0); // Left = Rotate
+          controls.setMouseAction('PAN', 2); // Right = Pan
+        }
+      } catch (err) {
+        console.warn("Failed to configure ArcballControls:", err);
+      }
+    }
+  }, [activeTool, controlsRef]);
+
+  return null;
+};
+
 const Viewport = ({ isSketchMode }: ViewportProps) => {
   const controlsRef = useRef<ArcballControlsImpl>(null);
   const api = useCADStoreApi();
   const [showExitDialog, setShowExitDialog] = useState(false);
-  const { activeTool, backgroundMode, projectionMode, sectionViewEnabled } = useCADStore();
-
+  const { backgroundMode, projectionMode, sectionViewEnabled } = useCADStore();
   const getBackgroundColor = () => {
     switch (backgroundMode) {
       case 'dark': return "hsl(210, 20%, 8%)";
@@ -626,35 +730,6 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
     // This is hard with SceneObjects being deeply nested.
     // Three.js gl.localClippingEnabled must be true.
   }, [sectionViewEnabled]);
-
-  // Configure mouse buttons based on active tool
-  useEffect(() => {
-    const controls = controlsRef.current;
-    if (!controls) return;
-
-    // We need to cast to any because setMouseAction is marked private in three-stdlib types
-    const c = controls as any;
-
-    // Check if setMouseAction exists
-    if (typeof c.setMouseAction === 'function') {
-      try {
-        if (activeTool === 'pan') {
-          // Pan Tool: Left Click = Pan
-          // Remap: Left(0) -> PAN, Right(2) -> ROTATE
-
-          // Note: unsetMouseAction does not exist in ArcballControls, setMouseAction replaces existing bindings
-          c.setMouseAction('PAN', 0); // Left = Pan
-          c.setMouseAction('ROTATE', 2); // Right = Rotate
-        } else {
-          // Default: Left Click = Rotate
-          c.setMouseAction('ROTATE', 0); // Left = Rotate
-          c.setMouseAction('PAN', 2); // Right = Pan
-        }
-      } catch (err) {
-        console.warn("Failed to configure ArcballControls:", err);
-      }
-    }
-  }, [activeTool]);
 
 
   return (
@@ -706,6 +781,8 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
           minDistance={5}
           maxDistance={500}
         />
+
+        <SceneController controlsRef={controlsRef} />
 
         {/* Camera controller for sketch mode */}
         <CameraController controlsRef={controlsRef} />

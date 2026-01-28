@@ -180,6 +180,7 @@ export interface ViewSlice {
     backgroundMode: 'default' | 'dark' | 'light' | 'blue';
     sectionViewEnabled: boolean;
     showMeasurements: boolean;
+    fitToScreenSignal?: number;
 
     setView: (view: ViewType) => void;
     setCameraRotation: (rotation: { x: number; y: number; z: number }) => void;
