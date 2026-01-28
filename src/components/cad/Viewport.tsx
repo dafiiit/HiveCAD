@@ -26,6 +26,9 @@ const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
       gridRef.current.traverse((obj: any) => {
         if (obj.isMesh && obj.material) {
           obj.material.side = THREE.DoubleSide;
+          obj.material.polygonOffset = true;
+          obj.material.polygonOffsetFactor = 1;
+          obj.material.polygonOffsetUnits = 1;
           obj.material.needsUpdate = true;
         }
       });
@@ -48,7 +51,7 @@ const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
         fadeDistance={400}
         fadeStrength={1}
         infiniteGrid
-        position={[0, 0, 0]}
+        position={[0, 0, -0.01]}
         rotation={[Math.PI / 2, 0, 0]}
       />
     </>
@@ -410,6 +413,10 @@ const PlaneSelector = () => {
             transparent
             opacity={hoveredPlane === 'XY' ? 0.5 : 0.2}
             side={THREE.DoubleSide}
+            polygonOffset
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1}
+            depthWrite={false}
           />
         </mesh>
       )}
@@ -430,6 +437,10 @@ const PlaneSelector = () => {
             transparent
             opacity={hoveredPlane === 'XZ' ? 0.5 : 0.2}
             side={THREE.DoubleSide}
+            polygonOffset
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1}
+            depthWrite={false}
           />
         </mesh>
       )}
@@ -450,6 +461,10 @@ const PlaneSelector = () => {
             transparent
             opacity={hoveredPlane === 'YZ' ? 0.5 : 0.2}
             side={THREE.DoubleSide}
+            polygonOffset
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1}
+            depthWrite={false}
           />
         </mesh>
       )}
@@ -670,7 +685,9 @@ const SceneController = ({ controlsRef }: { controlsRef: React.RefObject<Arcball
       const target = controls.target;
       if (!target) return;
       const distance = targetCamera.position.distanceTo(target);
-      const baseDistance = 85;
+      // baseDistance corresponds to the distance at zoom=100. 
+      // Home position is [100, 100, -100], distance to [0,0,0] is sqrt(30000) ~= 173.2
+      const baseDistance = 173.205;
 
       // FoV adjustment for hybrid mode means we need to compensate zoom
       const fovFactor = projectionMode === 'perspective-with-ortho-faces' ? (targetCamera.fov / 45) : 1;

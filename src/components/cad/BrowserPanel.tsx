@@ -178,7 +178,11 @@ const BrowserPanel = () => {
     }
 
     if (id === 'XY' || id === 'XZ' || id === 'YZ') {
-      setPlaneVisibility(id, !planeVisibility[id]);
+      const isVisible = planeVisibility[id];
+      setPlaneVisibility(id, !isVisible);
+      if (!isVisible && isSketchMode && sketchStep === 'select-plane') {
+        setSketchPlane(id);
+      }
       return;
     }
 

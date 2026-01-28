@@ -212,7 +212,15 @@ export const createVersioningSlice: StateCreator<
     },
 
     reset: () => {
-        set({ objects: [], code: 'const main = () => { return; };' });
+        set({
+            objects: [],
+            code: 'const main = () => { return; };',
+            planeVisibility: {
+                XY: true,
+                XZ: true,
+                YZ: true,
+            }
+        });
     },
 
     setFileName: (name) => {
@@ -342,6 +350,11 @@ export const createVersioningSlice: StateCreator<
             branches: new Map([['main', '']]),
             currentBranch: 'main',
             currentVersionId: null,
+            planeVisibility: {
+                XY: true,
+                XZ: true,
+                YZ: true,
+            },
         });
 
         console.log('[versioningSlice] Project closed successfully');

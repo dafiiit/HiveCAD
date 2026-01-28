@@ -90,6 +90,13 @@ export const TabManager = () => {
                 } else {
                     store.getState().reset();
                     store.getState().setFileName('Untitled');
+                    store.setState({
+                        planeVisibility: {
+                            XY: true,
+                            XZ: true,
+                            YZ: true,
+                        }
+                    });
                 }
 
                 setTabs([{

@@ -13,9 +13,9 @@ export const createViewSlice: StateCreator<CADState, [], [], ViewSlice> = (set) 
     sketchesVisible: true,
     bodiesVisible: true,
     planeVisibility: {
-        XY: false,
-        XZ: false,
-        YZ: false,
+        XY: true,
+        XZ: true,
+        YZ: true,
     },
     sketchOptions: { lookAt: true },
     projectionMode: 'perspective',
