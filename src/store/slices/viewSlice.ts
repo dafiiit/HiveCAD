@@ -19,7 +19,7 @@ export const createViewSlice: StateCreator<CADState, [], [], ViewSlice> = (set) 
     },
     sketchOptions: { lookAt: true },
     projectionMode: 'perspective',
-    backgroundMode: 'default',
+    backgroundMode: 'dark',
     sectionViewEnabled: false,
     showMeasurements: false,
     thumbnailCapturer: null,

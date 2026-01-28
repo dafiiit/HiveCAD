@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import { ArcballControls, Grid, PerspectiveCamera, OrthographicCamera, GizmoHelper, GizmoViewcube } from "@react-three/drei";
+import { ArcballControls, Grid, PerspectiveCamera, OrthographicCamera, GizmoHelper, GizmoViewcube, Environment, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import { useCADStore, useCADStoreApi, CADObject } from "../../hooks/useCADStore";
 import { useGlobalStore } from '@/store/useGlobalStore';
@@ -38,7 +38,6 @@ const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
         rotation={[Math.PI / 2, 0, 0]}
       />
 
-      {/* Sketch mode grid overlay - moved to SketchCanvas for proper rotation */}
     </>
   );
 };
@@ -714,9 +713,27 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
       case 'dark': return "hsl(210, 20%, 8%)";
       case 'light': return "hsl(210, 10%, 90%)";
       case 'blue': return "hsl(220, 40%, 25%)";
-      default: return "hsl(210, 30%, 16%)";
+      case 'studio': return "#f0f0f0";
+      case 'nature': return "#87ceeb";
+      case 'city': return "#a9a9a9";
+      case 'sunset': return "#ff4500";
+      case 'warehouse': return "#333333";
+      default: return "hsl(210, 20%, 8%)";
     }
   };
+
+  const getEnvironmentPreset = () => {
+    switch (backgroundMode) {
+      case 'studio': return 'studio';
+      case 'nature': return 'park';
+      case 'city': return 'city';
+      case 'sunset': return 'sunset';
+      case 'warehouse': return 'warehouse';
+      default: return null;
+    }
+  };
+
+  const envPreset = getEnvironmentPreset();
 
   // Section view clipping planes
   const clippingPlanes = React.useMemo(() => {
@@ -736,33 +753,26 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
     <div className="cad-viewport w-full h-full relative">
       <Canvas
         gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true, localClippingEnabled: true }}
-        style={{ background: getBackgroundColor() }}
         onPointerMissed={() => api.getState().clearSelection()}
       >
         <ThumbnailCapturer />
-        {/* Camera - stays Y-up for stable ArcballControls */}
-        {projectionMode === 'perspective' ? (
-          <PerspectiveCamera
-            makeDefault
-            position={[50, 50, 50]}
-            fov={45}
-            near={0.1}
-            far={2000}
-          />
-        ) : (
-          <OrthographicCamera
-            makeDefault
-            position={[50, 50, 50]}
-            zoom={20}
-            near={0.1}
-            far={2000}
-          />
+
+        {/* Background & Environment */}
+        {envPreset && <Environment preset={envPreset as any} background={true} blur={0.5} />}
+        {!envPreset && (
+          <color attach="background" args={[getBackgroundColor()]} />
         )}
 
-        {/* Lighting - outside rotation group for consistent lighting */}
-        <ambientLight intensity={0.4} />
-        <directionalLight position={[50, 50, 25]} intensity={0.8} />
-        <directionalLight position={[-30, -30, -30]} intensity={0.3} />
+        {/* Ambient lighting is reduced when environment is active to maintain realism */}
+        <ambientLight intensity={envPreset ? 0.2 : 0.4} />
+        {!envPreset && (
+          <>
+            <directionalLight position={[50, 50, 25]} intensity={0.8} />
+            <directionalLight position={[-30, -30, -30]} intensity={0.3} />
+          </>
+        )}
+
+
 
         {/* Z-up content container - rotates Z-up content to display in Y-up Three.js */}
         <group rotation={Z_UP_ROTATION}>

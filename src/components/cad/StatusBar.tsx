@@ -133,9 +133,16 @@ const StatusBar = () => {
               <DropdownMenuPortal>
                 <DropdownMenuSubContent className="ml-2">
                   <DropdownMenuItem onClick={() => setBackgroundMode('default')}>Default</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setBackgroundMode('dark')}>Dark</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setBackgroundMode('light')}>Light</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setBackgroundMode('blue')}>Deep Blue</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setBackgroundMode('studio')}>Studio</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setBackgroundMode('nature')}>Nature</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setBackgroundMode('city')}>City</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setBackgroundMode('sunset')}>Sunset</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setBackgroundMode('warehouse')}>Warehouse</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setBackgroundMode('dark')}>Solid Dark</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setBackgroundMode('light')}>Solid Light</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setBackgroundMode('blue')}>Solid Blue</DropdownMenuItem>
                 </DropdownMenuSubContent>
               </DropdownMenuPortal>
             </DropdownMenuSub>
