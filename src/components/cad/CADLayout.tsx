@@ -81,13 +81,13 @@ const CADLayout = () => {
         <Viewport isSketchMode={isSketchMode} />
 
         {/* Fullscreen Overlays */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 bg-background/80 backdrop-blur-sm border border-border rounded-lg p-1 shadow-sm flex items-center justify-center">
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 bg-background/80 backdrop-blur-md border border-border/50 rounded-full p-1.5 shadow-2xl flex items-center justify-center">
           <button
             onClick={toggleFullscreen}
-            className="p-1 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors"
+            className="p-2 hover:bg-secondary rounded-full text-muted-foreground hover:text-foreground transition-all duration-200"
             title="Exit Fullscreen (Esc)"
           >
-            <Minimize2 className="w-3.5 h-3.5" />
+            <Minimize2 className="w-4 h-4" />
           </button>
         </div>
 

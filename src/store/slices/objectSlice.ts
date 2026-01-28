@@ -31,7 +31,7 @@ const getNextColor = () => {
 };
 
 const getOriginAxes = (): CADObject[] => {
-    const axisLength = 100;
+    const axisLength = 50;
     const axes: CADObject[] = [
         {
             id: 'AXIS_X',
@@ -79,12 +79,21 @@ const getOriginAxes = (): CADObject[] => {
         return geo;
     };
 
-    // Helper for thicker hit target if needed (optional)
+    // Helper for thicker hit target
     const createHitCylinder = (length: number, axis: 'x' | 'y' | 'z') => {
-        const geo = new THREE.CylinderGeometry(2, 2, length * 2);
-        if (axis === 'x') { geo.rotateZ(-Math.PI / 2); }
-        if (axis === 'y') { /* default Y up */ }
-        if (axis === 'z') { geo.rotateX(Math.PI / 2); }
+        const geo = new THREE.CylinderGeometry(2, 2, length);
+        if (axis === 'x') {
+            geo.rotateZ(-Math.PI / 2);
+            geo.translate(length / 2, 0, 0);
+        }
+        if (axis === 'y') {
+            /* default Y up */
+            geo.translate(0, length / 2, 0);
+        }
+        if (axis === 'z') {
+            geo.rotateX(Math.PI / 2);
+            geo.translate(0, 0, length / 2);
+        }
         return geo;
     };
 
@@ -96,15 +105,15 @@ const getOriginAxes = (): CADObject[] => {
 
     // X Axis - Red
     axes[0].geometry = createHitCylinder(axisLength, 'x');
-    axes[0].edgeGeometry = createAxisGeo([-axisLength, 0, 0], [axisLength, 0, 0]);
+    axes[0].edgeGeometry = createAxisGeo([0, 0, 0], [axisLength, 0, 0]);
 
     // Y Axis - Green
     axes[1].geometry = createHitCylinder(axisLength, 'y');
-    axes[1].edgeGeometry = createAxisGeo([0, -axisLength, 0], [0, axisLength, 0]);
+    axes[1].edgeGeometry = createAxisGeo([0, 0, 0], [0, axisLength, 0]);
 
     // Z Axis - Blue
     axes[2].geometry = createHitCylinder(axisLength, 'z');
-    axes[2].edgeGeometry = createAxisGeo([0, 0, -axisLength], [0, 0, axisLength]);
+    axes[2].edgeGeometry = createAxisGeo([0, 0, 0], [0, 0, axisLength]);
 
     return axes;
 };

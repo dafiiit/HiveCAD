@@ -100,7 +100,7 @@ export const createVersioningSlice: StateCreator<
             const { StorageManager } = await import('@/lib/storage/StorageManager');
             const adapter = StorageManager.getInstance().currentAdapter;
 
-            toast.loading(`Syncing to ${adapter.name}...`, { id: 'save-toast' });
+            // toast.loading(`Syncing to ${adapter.name}...`, { id: 'save-toast' });
 
             const projectData = {
                 name: state.fileName,
@@ -156,7 +156,7 @@ export const createVersioningSlice: StateCreator<
                 }
             }
 
-            toast.success(`Synced to ${adapter.name}`, { id: 'save-toast' });
+            // toast.success(`Synced to ${adapter.name}`, { id: 'save-toast' });
 
             if (get().pendingSave) {
                 set({ pendingSave: false });

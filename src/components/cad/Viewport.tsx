@@ -19,11 +19,25 @@ const Z_UP_ROTATION: [number, number, number] = [-Math.PI / 2, 0, 0];
 // Grid helper component
 // Grid is defined in Z-up coordinates (XY is ground), rotation applied by parent ZUpContainer
 const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
+  const gridRef = useRef<any>(null);
+
+  React.useLayoutEffect(() => {
+    if (gridRef.current) {
+      gridRef.current.traverse((obj: any) => {
+        if (obj.isMesh && obj.material) {
+          obj.material.side = THREE.DoubleSide;
+          obj.material.needsUpdate = true;
+        }
+      });
+    }
+  }, []);
+
   if (isSketchMode) return null;
   return (
     <>
       {/* Main grid - on XY plane (ground in Z-up) */}
       <Grid
+        ref={gridRef}
         args={[200, 200]}
         cellSize={5}
         cellThickness={0.5}
@@ -37,7 +51,6 @@ const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
         position={[0, 0, 0]}
         rotation={[Math.PI / 2, 0, 0]}
       />
-
     </>
   );
 };
@@ -294,8 +307,11 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
               transparent={isSketch}
               opacity={isSketch ? 0.8 : 1.0}
               depthTest={true}
-              linewidth={2}
+              linewidth={object.type === 'datumAxis' ? 3 : 2} // Stronger lines for axes
               clippingPlanes={clippingPlanes}
+              polygonOffset={object.type === 'datumAxis'}
+              polygonOffsetFactor={-4}
+              polygonOffsetUnits={-4}
             />
           </lineSegments>
           {selectedEdges.length > 0 && (
@@ -385,6 +401,7 @@ const PlaneSelector = () => {
           onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XY'); }}
           onPointerOut={() => setHoveredPlane(null)}
           onClick={(e) => { e.stopPropagation(); handlePlaneClick('XY'); }}
+          position={[20, 20, 0]}
           visible={shouldShowEverything || (originVisible && planeVisibility['XY'])}
         >
           <planeGeometry args={[40, 40]} />
@@ -401,6 +418,7 @@ const PlaneSelector = () => {
       {(shouldShowEverything || planeVisibility['XZ']) && (
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}
+          position={[20, 0, 20]}
           onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XZ'); }}
           onPointerOut={() => setHoveredPlane(null)}
           onClick={(e) => { e.stopPropagation(); handlePlaneClick('XZ'); }}
@@ -420,6 +438,7 @@ const PlaneSelector = () => {
       {(shouldShowEverything || planeVisibility['YZ']) && (
         <mesh
           rotation={[0, Math.PI / 2, 0]}
+          position={[0, 20, 20]}
           onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('YZ'); }}
           onPointerOut={() => setHoveredPlane(null)}
           onClick={(e) => { e.stopPropagation(); handlePlaneClick('YZ'); }}
@@ -681,7 +700,7 @@ const SceneController = ({ controlsRef }: { controlsRef: React.RefObject<Arcball
       if (!targetCamera) return;
 
       // Reset to default isometric view
-      targetCamera.position.set(50, 50, 50);
+      targetCamera.position.set(100, 100, -100);
       controls.target.set(0, 0, 0);
       targetCamera.up.set(0, 1, 0);
 
@@ -832,7 +851,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
         {/* Standard Perspective Camera */}
         <PerspectiveCamera
           makeDefault={projectionMode === 'perspective' || projectionMode === 'perspective-with-ortho-faces'}
-          position={[50, 50, 50]}
+          position={[100, 100, -100]}
           fov={45}
           near={0.1}
           far={1000}
@@ -841,7 +860,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
         {/* Standard Orthographic Camera */}
         <OrthographicCamera
           makeDefault={projectionMode === 'orthographic'}
-          position={[50, 50, 50]}
+          position={[100, 100, -100]}
           zoom={20}
           near={0.1}
           far={1000}
