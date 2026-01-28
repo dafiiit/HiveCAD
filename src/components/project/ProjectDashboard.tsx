@@ -15,6 +15,7 @@ import { EXAMPLES } from '@/lib/data/examples';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { ProjectData } from '@/lib/storage/types';
+import { deleteProjectPermanently } from '@/lib/storage/projectUtils';
 import { LoadingScreen } from '../ui/LoadingScreen';
 import { ProjectHistoryView } from './ProjectHistoryView';
 import { GitBranch } from 'lucide-react';
@@ -30,7 +31,7 @@ export function ProjectDashboard() {
     const { user, logout, showPATDialog, setShowPATDialog, isStorageConnected } = useGlobalStore();
     const {
         setFileName, setCode, projectThumbnails,
-        reset, closeProject
+        reset, closeProject, removeThumbnail
     } = useCADStore();
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -60,6 +61,8 @@ export function ProjectDashboard() {
     const [contextMenuFolder, setContextMenuFolder] = useState<string | null>(null);
     const [renameFolderDialog, setRenameFolderDialog] = useState<{ name: string, color: string } | null>(null);
     const [renameFolderInput, setRenameFolderInput] = useState("");
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState<ProjectData | null>(null);
+    const [deleteInput, setDeleteInput] = useState("");
 
     const refreshProjects = useCallback(async () => {
         // If we have a PAT, we should wait until the cloud connection is ready
@@ -169,9 +172,10 @@ export function ProjectDashboard() {
             });
         } else {
             // Normal background cleanup
+            // This will now trigger on mount AND when storage connects
             CleanupUtility.runBackgroundCleanup();
         }
-    }, []);
+    }, [isStorageConnected]);
 
     const handleCreateProject = () => {
         createProject();
@@ -302,37 +306,49 @@ export function ProjectDashboard() {
     };
 
     const handleDeleteProject = async (projectId: string) => {
-        try {
-            const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const adapter = StorageManager.getInstance().currentAdapter;
-
-            // If it's an example project, we might need special handling if it's not yet in the user's storage
-            const isExampleId = projectId.startsWith('example-');
-            if (isExampleId) {
-                const existing = userProjects.find(p => p.id === projectId);
-                if (!existing) {
-                    const example = EXAMPLES.find(e => e.id === projectId);
-                    if (example) {
-                        // Save it as a "deleted" project in the user's workspace
-                        await adapter.save(projectId, {
-                            ...example,
-                            deletedAt: Date.now(),
-                            ownerId: 'Example Project'
-                        });
-                        toast.success("Example project moved to Trash.");
-                        await refreshProjects();
-                        return;
-                    }
-                }
-            }
-
-            await adapter.delete(projectId);
-            toast.success("Project moved to Trash. It will be permanently deleted in 1 week.");
-            await refreshProjects();
-        } catch (error) {
-            console.error("Delete failed:", error);
-            toast.error("Failed to delete project");
+        const project = userProjects.find(p => p.id === projectId);
+        if (project) {
+            setShowDeleteConfirm(project);
+            setDeleteInput("");
         }
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!showDeleteConfirm) return;
+
+        const projectId = showDeleteConfirm.id;
+        const projectName = showDeleteConfirm.name;
+
+        // 1. Optimistic UI Update & Persistence
+        const deletedProject = {
+            ...showDeleteConfirm,
+            deletedAt: Date.now(),
+            tags: [...(showDeleteConfirm.tags || []), 'Trash']
+        };
+
+        setUserProjects(prev => prev.map(p => p.id === projectId ? deletedProject : p));
+        setShowDeleteConfirm(null);
+        toast.success(`Moving "${projectName}" to Trash...`);
+
+        // Persist to local storage immediately to prevent flicker during background sync
+        try {
+            const { set: idbSet } = await import('idb-keyval');
+            await idbSet(`project:${projectId}`, deletedProject);
+        } catch (e) {
+            console.warn('[ProjectDashboard] Failed to persist optimistic delete state', e);
+        }
+
+        // 2. Background Deletion
+        (async () => {
+            try {
+                await deleteProjectPermanently(projectId, projectName, removeThumbnail);
+                console.log(`[ProjectDashboard] Background deletion finished for ${projectId}`);
+                await refreshProjects();
+            } catch (error) {
+                console.error("Background delete failed:", error);
+                toast.error(`Failed to permanently delete "${projectName}"`);
+            }
+        })();
     };
 
     const handleRenameProject = async (projectId: string, newName: string) => {
@@ -1372,6 +1388,45 @@ export function ProjectDashboard() {
                                     disabled={!!loadingMessage}
                                 >
                                     {loadingMessage ? 'PURGING...' : 'I UNDERSTAND, RESET ALL'}
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showDeleteConfirm && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+                    <div className="bg-card border-2 border-destructive/30 rounded-2xl p-8 w-full max-w-lg shadow-[0_0_50px_rgba(239,68,68,0.2)] animate-in fade-in zoom-in duration-200">
+                        <div className="flex flex-col items-center text-center space-y-6">
+                            <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center text-destructive">
+                                <Trash2 className="w-8 h-8" />
+                            </div>
+
+                            <div className="space-y-2">
+                                <h4 className="text-2xl font-black text-foreground uppercase tracking-tighter">Proper Delete</h4>
+                                <p className="text-muted-foreground text-sm leading-relaxed">
+                                    You are about to permanently delete <strong>{showDeleteConfirm.name}</strong>.
+                                    This will remove the project from GitHub, Supabase storage, and your local cache.
+                                    <span className="block mt-2 text-destructive/80 font-bold uppercase text-[10px] tracking-widest">This action is irreversible.</span>
+                                </p>
+                            </div>
+
+                            <div className="flex gap-4 w-full pt-4">
+                                <Button
+                                    variant="ghost"
+                                    className="flex-1 h-12 border border-border text-muted-foreground hover:text-foreground hover:bg-zinc-800 rounded-xl"
+                                    onClick={() => {
+                                        setShowDeleteConfirm(null);
+                                    }}
+                                >
+                                    ABORT
+                                </Button>
+                                <Button
+                                    className="flex-1 h-12 bg-red-600 hover:bg-red-700 text-white font-black shadow-lg rounded-xl"
+                                    onClick={handleConfirmDelete}
+                                >
+                                    YES, DELETE PERMANENTLY
                                 </Button>
                             </div>
                         </div>

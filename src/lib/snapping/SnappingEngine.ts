@@ -1,4 +1,5 @@
 import { SketchPrimitive } from '../../hooks/useCADStore';
+import { arcFromThreePoints } from '../sketch-graph/Geometry';
 import { Quadtree } from './Quadtree';
 import {
     SnapPoint,
@@ -67,10 +68,19 @@ export class SnappingEngine {
         if (pts.length === 0) return;
 
         // 1. Endpoints (Lines, Polylines, Arcs, Splines)
-        if (['line', 'vline', 'hline', 'polarline', 'tangentline', 'threePointsArc', 'tangentArc', 'sagittaArc', 'spline', 'smoothSpline', 'bezier', 'quadraticBezier', 'cubicBezier'].includes(prim.type)) {
+        if (['line', 'vline', 'hline', 'polarline', 'tangentline', 'tangentArc', 'sagittaArc', 'spline', 'smoothSpline', 'bezier', 'quadraticBezier', 'cubicBezier'].includes(prim.type)) {
             add(pts[0][0], pts[0][1], 'endpoint');
             if (pts.length > 1) {
                 add(pts[pts.length - 1][0], pts[pts.length - 1][1], 'endpoint');
+            }
+        } else if (prim.type === 'threePointsArc' && pts.length >= 2) {
+            // Special case for 3-point arc: points are [start, end, via]
+            add(pts[0][0], pts[0][1], 'endpoint');
+            add(pts[1][0], pts[1][1], 'endpoint');
+            // If it's a 3-point arc, we might also want to snap to the 'via' point as a generic point? 
+            // For now, let's treat pts[2] as a point too if user wants to snap to it.
+            if (pts.length >= 3) {
+                add(pts[2][0], pts[2][1], 'endpoint'); // Call it endpoint for now so it's high priority
             }
         }
 
@@ -109,6 +119,36 @@ export class SnappingEngine {
 
             // Center
             add((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2, 'center');
+        }
+
+        // 4. Arc Snap Points (Center, Midpoint)
+        if (prim.type === 'threePointsArc' && pts.length === 3) {
+            const p1 = { x: pts[0][0], y: pts[0][1] };
+            const p2 = { x: pts[1][0], y: pts[1][1] }; // End
+            const p3 = { x: pts[2][0], y: pts[2][1] }; // Mid/Via
+
+            const arc = arcFromThreePoints(p1, p2, p3);
+            if (arc) {
+                // Center
+                add(arc.center.x, arc.center.y, 'center');
+
+                // Midpoint of the arc curve
+                // We need to find the angle halfway between start and end in the correct direction
+                let startAngle = arc.startAngle;
+                let endAngle = arc.endAngle;
+
+                if (arc.ccw) {
+                    if (endAngle < startAngle) endAngle += Math.PI * 2;
+                } else {
+                    if (startAngle < endAngle) startAngle += Math.PI * 2;
+                }
+
+                const midAngle = (startAngle + endAngle) / 2;
+                const midX = arc.center.x + Math.cos(midAngle) * arc.radius;
+                const midY = arc.center.y + Math.sin(midAngle) * arc.radius;
+
+                add(midX, midY, 'midpoint');
+            }
         }
     }
 

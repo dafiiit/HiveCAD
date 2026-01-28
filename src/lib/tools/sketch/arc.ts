@@ -2,6 +2,7 @@ import React from 'react';
 import * as THREE from 'three';
 import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchPlane } from '../types';
 import { arcFromThreePoints } from '../../sketch-graph/Geometry';
+import { ArcAnnotation, LineAnnotation, PointMarker, createAnnotationContext } from '../../../components/cad/SketchAnnotations';
 import type { CodeManager } from '../../code-manager';
 import { generateToolId } from '../types';
 
@@ -63,7 +64,7 @@ export const threePointsArcTool: Tool = {
         const points = primitive.points.map(p => to3D(p[0], p[1]));
 
         if (points.length === 2) {
-            // Draw line for preview until third point
+            // Draw line for preview until third point (Chord line)
             return renderLine(primitive.id, points, color);
         }
 
@@ -96,6 +97,19 @@ export const threePointsArcTool: Tool = {
         primitive: SketchPrimitive,
         plane: SketchPlane,
     ) {
+        // Step 2: While drawing the chord (Start -> End)
+        if (primitive.points.length === 2) {
+            const start = { x: primitive.points[0][0], y: primitive.points[0][1] };
+            const end = { x: primitive.points[1][0], y: primitive.points[1][1] };
+            return React.createElement(LineAnnotation, {
+                key: `${primitive.id}-annotation-chord`,
+                start,
+                end,
+                plane,
+                dimMode: 'aligned'
+            });
+        }
+
         if (primitive.points.length < 3) return null;
 
         const p1 = { x: primitive.points[0][0], y: primitive.points[0][1] };
@@ -105,17 +119,27 @@ export const threePointsArcTool: Tool = {
         const arc = arcFromThreePoints(p1, p2, p3);
         if (!arc) return null;
 
-        const { ArcAnnotation } = require('../../../components/cad/SketchAnnotations');
-        return React.createElement(ArcAnnotation, {
-            key: `${primitive.id}-annotation`,
-            center: arc.center,
-            start: p1,
-            end: p2,
-            radius: arc.radius,
-            startAngle: arc.startAngle,
-            endAngle: arc.endAngle,
-            plane
-        });
+        return React.createElement(React.Fragment, null,
+            React.createElement(ArcAnnotation, {
+                key: `${primitive.id}-annotation`,
+                center: arc.center,
+                start: p1,
+                end: p2,
+                radius: arc.radius,
+                startAngle: arc.startAngle,
+                endAngle: arc.endAngle,
+                plane
+            }),
+            // Show marker for the Via point (p3)
+            React.createElement(PointMarker, {
+                key: `${primitive.id}-via-marker`,
+                position: p3,
+                ctx: createAnnotationContext(plane),
+                size: 0.4,
+                color: '#ffff00',
+                shape: 'diamond'
+            })
+        );
     }
 };
 

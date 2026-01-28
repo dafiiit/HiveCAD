@@ -11,12 +11,25 @@ import { TabContext, Tab } from './TabContext';
 import { ProjectData } from '@/lib/storage/types';
 import { cn } from '@/lib/utils';
 import { useGlobalStore } from '@/store/useGlobalStore';
+import { isProjectEmpty, deleteProjectPermanently } from '@/lib/storage/projectUtils';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from 'sonner';
 
 export const TabManager = () => {
     const [tabs, setTabs] = useState<Tab[]>([
         { id: 'dashboard', type: 'dashboard', title: 'Dashboard', store: createCADStore() }
     ]);
     const [activeTabId, setActiveTabId] = useState('dashboard');
+    const [tabToDelete, setTabToDelete] = useState<Tab | null>(null);
     const { user } = useGlobalStore();
 
     // Enable background sync
@@ -78,7 +91,24 @@ export const TabManager = () => {
     };
 
     const closeTab = (tabId: string) => {
-        // If it's the last tab
+        const tabToRemove = tabs.find(t => t.id === tabId);
+
+        // Confirmation for empty projects
+        if (tabToRemove && tabToRemove.type === 'project') {
+            const store: StoreApi<any> = tabToRemove.store;
+            const state = store.getState();
+            if (isProjectEmpty(state.code, state.objects)) {
+                setTabToDelete(tabToRemove);
+                return;
+            }
+        }
+
+        executeCloseTab(tabId);
+    };
+
+    const executeCloseTab = (tabId: string) => {
+        const tabToRemove = tabs.find(t => t.id === tabId);
+        if (!tabToRemove) return;
         if (tabs.length === 1) {
             // If it's a project tab, convert it back to dashboard
             const tab = tabs[0];
@@ -111,7 +141,9 @@ export const TabManager = () => {
             return;
         }
 
-        const tabToRemove = tabs.find(t => t.id === tabId);
+        const tabIndex = tabs.findIndex(t => t.id === tabId);
+        const newTabs = tabs.filter(t => t.id !== tabId);
+
         // Clean up store before removing tab
         if (tabToRemove && tabToRemove.type === 'project') {
             const store: StoreApi<any> = tabToRemove.store;
@@ -120,14 +152,48 @@ export const TabManager = () => {
             }
         }
 
-        const tabIndex = tabs.findIndex(t => t.id === tabId);
-        const newTabs = tabs.filter(t => t.id !== tabId);
         setTabs(newTabs);
 
         if (activeTabId === tabId) {
             // Switch to nearest tab
             const newActiveIndex = Math.max(0, tabIndex - 1);
             setActiveTabId(newTabs[newActiveIndex].id);
+        }
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!tabToDelete) return;
+        const tabId = tabToDelete.id;
+        const projectId = tabToDelete.projectId;
+        const projectName = tabToDelete.title;
+        const store: StoreApi<any> = tabToDelete.store;
+
+        try {
+            // 1. Immediately delete if we have an ID
+            if (projectId) {
+                toast.promise(
+                    deleteProjectPermanently(projectId, projectName, store.getState().removeThumbnail),
+                    {
+                        loading: `Deleting empty project "${projectName}"...`,
+                        success: `Project deleted`,
+                        error: `Failed to delete project`,
+                    }
+                );
+            }
+
+            // 2. Clear state in store to prevent any background saves
+            if (store.getState().reset) {
+                store.getState().reset();
+            }
+
+            // 3. Close the tab
+            executeCloseTab(tabId);
+        } catch (error) {
+            console.error("Deletion failed:", error);
+            // Still close the tab but warn
+            executeCloseTab(tabId);
+        } finally {
+            setTabToDelete(null);
         }
     };
 
@@ -159,6 +225,26 @@ export const TabManager = () => {
                         </div>
                     ))}
                 </div>
+
+                <AlertDialog open={!!tabToDelete} onOpenChange={(open) => !open && setTabToDelete(null)}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Delete empty project?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                This project is empty and hasn't been modified. It will be permanently deleted from your workspace.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Keep Project</AlertDialogCancel>
+                            <AlertDialogAction
+                                onClick={handleConfirmDelete}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                                Delete Project
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
             </div>
         </TabContext.Provider>
     );

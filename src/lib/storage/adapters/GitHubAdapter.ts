@@ -88,8 +88,9 @@ export class GitHubAdapter implements StorageAdapter {
                 if (error.status === 409 || (error.message && error.message.includes('does not match'))) {
                     console.warn(`[GitHubAdapter] Conflict detected (attempt ${i + 1}/${maxRetries}). Retrying...`);
                     await onConflict();
-                    // Add a small jitter/delay to prevent hammering
-                    await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
+                    // Add a jittered delay to prevent hammering
+                    const delay = 500 * Math.pow(2, i) + Math.random() * 500;
+                    await new Promise(resolve => setTimeout(resolve, delay));
                     continue;
                 }
                 throw error;
@@ -245,6 +246,9 @@ export class GitHubAdapter implements StorageAdapter {
                         repo,
                         path: indexPath,
                         ref: this.currentBranchName,
+                        headers: {
+                            'If-None-Match': '' // Force fresh content from GitHub
+                        }
                     });
                     if (!Array.isArray(indexFileData) && 'content' in indexFileData) {
                         const content = atob(indexFileData.content.replace(/\n/g, ''));
@@ -289,6 +293,104 @@ export class GitHubAdapter implements StorageAdapter {
     async delete(projectId: string): Promise<void> {
         // Soft delete: update deletedAt
         await this.updateMetadata(projectId, { deletedAt: Date.now() });
+    }
+
+    async permanentlyDelete(projectId: string): Promise<void> {
+        if (!this.octokit || !this.currentOwner || !this.currentRepo) {
+            throw new Error('Not authenticated with GitHub');
+        }
+
+        const owner = this.currentOwner;
+        const repo = this.currentRepo;
+
+        console.log(`[GitHubAdapter] Permanently deleting project ${projectId}...`);
+
+        const deleteFileWithRetry = async (path: string, typeName: string) => {
+            let currentSha: string | undefined;
+
+            const fetchSha = async () => {
+                try {
+                    const { data: fileData } = await this.octokit!.rest.repos.getContent({
+                        owner,
+                        repo,
+                        path,
+                        ref: this.currentBranchName,
+                        headers: { 'If-None-Match': '' }
+                    });
+                    if (!Array.isArray(fileData)) {
+                        currentSha = fileData.sha;
+                    }
+                } catch (error: any) {
+                    if (error.status === 404) {
+                        currentSha = undefined;
+                    } else {
+                        throw error;
+                    }
+                }
+            };
+
+            await fetchSha();
+            if (!currentSha) return;
+
+            await this.retryOperation(
+                async () => {
+                    await this.octokit!.rest.repos.deleteFile({
+                        owner,
+                        repo,
+                        path,
+                        message: `Delete ${typeName} for ${projectId}`,
+                        sha: currentSha!,
+                        branch: this.currentBranchName,
+                    });
+                },
+                async () => {
+                    await fetchSha();
+                }
+            );
+        };
+
+        // 1. Delete data file (new path)
+        const projectPath = `projects/${projectId}/.hivecad/data.json`;
+        try {
+            await deleteFileWithRetry(projectPath, 'data file');
+        } catch (error: any) {
+            if (error.status !== 404) console.warn(`[GitHubAdapter] Unexpected error deleting data file:`, error);
+        }
+
+        // 2. Delete legacy data file if exists
+        const legacyPath = `hivecad/${projectId}.json`;
+        try {
+            await deleteFileWithRetry(legacyPath, 'legacy file');
+        } catch (error: any) {
+            if (error.status !== 404) console.warn(`[GitHubAdapter] Unexpected error deleting legacy file:`, error);
+        }
+
+        // 3. Delete thumbnail
+        const thumbPath = `hivecad/thumbnails/${projectId}.png`;
+        try {
+            await deleteFileWithRetry(thumbPath, 'thumbnail');
+        } catch (error: any) {
+            if (error.status !== 404) console.warn(`[GitHubAdapter] Unexpected error deleting thumbnail:`, error);
+        }
+
+        // 4. Update index.json (remove project)
+        try {
+            await this.updateIndex(projectId, {}, true);
+        } catch (error) {
+            console.warn(`[GitHubAdapter] Failed to update index:`, error);
+        }
+
+        // 5. Delete from Supabase
+        try {
+            const { error } = await supabase
+                .from('projects')
+                .delete()
+                .eq('id', projectId);
+            if (error) throw error;
+            console.log(`[GitHubAdapter] ${projectId} removed from Supabase`);
+        } catch (error) {
+            console.warn(`[GitHubAdapter] Failed to delete from Supabase:`, error);
+        }
     }
 
     async rename(projectId: string, newName: string): Promise<void> {

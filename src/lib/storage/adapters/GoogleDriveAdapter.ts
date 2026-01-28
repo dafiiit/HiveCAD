@@ -39,7 +39,11 @@ export class GoogleDriveAdapter implements StorageAdapter {
     }
 
     async delete(_projectId: string): Promise<void> {
-        // Implement delete
+        // Implement soft delete
+    }
+
+    async permanentlyDelete(_projectId: string): Promise<void> {
+        // Implement permanent delete
     }
 
     async rename(_projectId: string, _newName: string): Promise<void> {

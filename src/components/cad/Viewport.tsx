@@ -41,14 +41,14 @@ const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
       {/* Main grid - on XY plane (ground in Z-up) */}
       <Grid
         ref={gridRef}
-        args={[200, 200]}
+        args={[1000, 1000]}
         cellSize={5}
         cellThickness={0.5}
         cellColor="#3a4a5a"
         sectionSize={25}
         sectionThickness={1}
         sectionColor="#4a5a6a"
-        fadeDistance={400}
+        fadeDistance={4000}
         fadeStrength={1}
         infiniteGrid
         position={[0, 0, -0.01]}
@@ -389,23 +389,34 @@ const PlaneSelector = () => {
   const [hoveredPlane, setHoveredPlane] = useState<string | null>(null);
 
   // If origin is hidden, we don't show any planes unless we are in select-plane mode
-  const shouldShowEverything = isSketchMode && sketchStep === 'select-plane';
-  if (!shouldShowEverything && !originVisible) return null;
+  const isSelectPlaneStep = isSketchMode && sketchStep === 'select-plane';
+  const isDrawingStep = isSketchMode && sketchStep === 'drawing';
+
+  if (!isSelectPlaneStep && !originVisible) return null;
 
   const handlePlaneClick = (plane: 'XY' | 'XZ' | 'YZ') => {
     setSketchPlane(plane);
   };
 
+  // Visibility logic:
+  // 1. Show all planes if in select-plane step
+  // 2. Hide all planes if in drawing step (user request)
+  // 3. Otherwise show based on originVisible and individual planeVisibility
+  const getPlaneVisibility = (plane: 'XY' | 'XZ' | 'YZ') => {
+    if (isSelectPlaneStep) return true;
+    if (isDrawingStep) return false;
+    return originVisible && planeVisibility[plane];
+  };
+
   return (
     <group>
       {/* XY Plane - ground in Z-up (Blue) */}
-      {(shouldShowEverything || planeVisibility['XY']) && (
+      {getPlaneVisibility('XY') && (
         <mesh
           onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XY'); }}
           onPointerOut={() => setHoveredPlane(null)}
           onClick={(e) => { e.stopPropagation(); handlePlaneClick('XY'); }}
           position={[20, 20, 0]}
-          visible={shouldShowEverything || (originVisible && planeVisibility['XY'])}
         >
           <planeGeometry args={[40, 40]} />
           <meshBasicMaterial
@@ -422,14 +433,13 @@ const PlaneSelector = () => {
       )}
 
       {/* XZ Plane - front in Z-up (Red) */}
-      {(shouldShowEverything || planeVisibility['XZ']) && (
+      {getPlaneVisibility('XZ') && (
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}
           position={[20, 0, 20]}
           onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XZ'); }}
           onPointerOut={() => setHoveredPlane(null)}
           onClick={(e) => { e.stopPropagation(); handlePlaneClick('XZ'); }}
-          visible={shouldShowEverything || (originVisible && planeVisibility['XZ'])}
         >
           <planeGeometry args={[40, 40]} />
           <meshBasicMaterial
@@ -446,14 +456,13 @@ const PlaneSelector = () => {
       )}
 
       {/* YZ Plane - right in Z-up (Green) */}
-      {(shouldShowEverything || planeVisibility['YZ']) && (
+      {getPlaneVisibility('YZ') && (
         <mesh
           rotation={[0, Math.PI / 2, 0]}
           position={[0, 20, 20]}
           onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('YZ'); }}
           onPointerOut={() => setHoveredPlane(null)}
           onClick={(e) => { e.stopPropagation(); handlePlaneClick('YZ'); }}
-          visible={shouldShowEverything || (originVisible && planeVisibility['YZ'])}
         >
           <planeGeometry args={[40, 40]} />
           <meshBasicMaterial
@@ -717,7 +726,7 @@ const SceneController = ({ controlsRef }: { controlsRef: React.RefObject<Arcball
       if (!targetCamera) return;
 
       // Reset to default isometric view
-      targetCamera.position.set(100, 100, -100);
+      targetCamera.position.set(400, 400, -400);
       controls.target.set(0, 0, 0);
       targetCamera.up.set(0, 1, 0);
 
@@ -725,7 +734,7 @@ const SceneController = ({ controlsRef }: { controlsRef: React.RefObject<Arcball
         targetCamera.fov = 45;
         targetCamera.updateProjectionMatrix();
       } else if (targetCamera instanceof THREE.OrthographicCamera) {
-        targetCamera.zoom = 20;
+        targetCamera.zoom = 5;
         targetCamera.updateProjectionMatrix();
       }
 
@@ -868,19 +877,19 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
         {/* Standard Perspective Camera */}
         <PerspectiveCamera
           makeDefault={projectionMode === 'perspective' || projectionMode === 'perspective-with-ortho-faces'}
-          position={[100, 100, -100]}
+          position={[400, 400, -400]}
           fov={45}
           near={0.1}
-          far={1000}
+          far={10000}
         />
 
         {/* Standard Orthographic Camera */}
         <OrthographicCamera
           makeDefault={projectionMode === 'orthographic'}
-          position={[100, 100, -100]}
-          zoom={20}
+          position={[400, 400, -400]}
+          zoom={5}
           near={0.1}
-          far={1000}
+          far={10000}
         />
 
         {/* Controls - Y-up compatible */}
@@ -889,7 +898,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
           makeDefault
           cursorZoom={true}
           minDistance={5}
-          maxDistance={500}
+          maxDistance={5000}
         />
 
         <SceneController controlsRef={controlsRef} />

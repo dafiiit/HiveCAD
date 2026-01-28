@@ -2,6 +2,7 @@ import { StateCreator } from 'zustand';
 import { toast } from 'sonner';
 import { get as idbGet, set as idbSet } from 'idb-keyval';
 import { CADState, VersioningSlice, VersionCommit, Comment } from '../types';
+import { isProjectEmpty } from '@/lib/storage/projectUtils';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -107,13 +108,9 @@ export const createVersioningSlice: StateCreator<
                 }
             }
 
-            const DEFAULT_EMPTY_CODE = `const main = () => {\n  return;\n};`;
-            const isEmptyProject = (
-                state.code.trim() === DEFAULT_EMPTY_CODE.trim() &&
-                state.objects.length <= 3
-            );
+            const isEmpty = isProjectEmpty(state.code, state.objects);
 
-            if (isEmptyProject && (state.fileName === 'Untitled' || !state.fileName)) {
+            if (isEmpty && (state.fileName === 'Untitled' || !state.fileName)) {
                 console.log('[versioningSlice] Skipping local save of empty untitled project');
                 set({ syncStatus: 'idle' });
                 return;
@@ -145,13 +142,9 @@ export const createVersioningSlice: StateCreator<
 
             // toast.loading(`Syncing to ${adapter.name}...`, { id: 'save-toast' });
 
-            const DEFAULT_EMPTY_CODE = `const main = () => {\n  return;\n};`;
-            const isEmptyProject = (
-                state.code.trim() === DEFAULT_EMPTY_CODE.trim() &&
-                state.objects.length <= 3 // Only axis objects
-            );
+            const isEmpty = isProjectEmpty(state.code, state.objects);
 
-            if (isEmptyProject && (state.fileName === 'Untitled' || !state.fileName)) {
+            if (isEmpty && (state.fileName === 'Untitled' || !state.fileName)) {
                 console.log('[versioningSlice] Skipping save of empty untitled project');
                 set({ isSaving: false, pendingSave: false, syncStatus: 'idle' });
                 return;
@@ -454,6 +447,13 @@ export const createVersioningSlice: StateCreator<
         } catch (e) {
             console.warn('[versioningSlice] Failed to save thumbnail to adapter', e);
         }
+    },
+
+    removeThumbnail: (name) => {
+        const thumbnails = { ...get().projectThumbnails };
+        delete thumbnails[name];
+        localStorage.setItem('hivecad_thumbnails', JSON.stringify(thumbnails));
+        set({ projectThumbnails: thumbnails });
     },
 
     addComment: (text, position) => {

@@ -41,7 +41,16 @@ export class PublicAdapter implements StorageAdapter {
     }
 
     async delete(projectId: string): Promise<void> {
+        // Soft delete simulation
+        const data = await this.load(projectId);
+        if (data) {
+            await this.updateMetadata(projectId, { deletedAt: Date.now() });
+        }
+    }
+
+    async permanentlyDelete(projectId: string): Promise<void> {
         localStorage.removeItem(`hivecad_public_${projectId}`);
+        localStorage.removeItem(`hivecad_public_thumb_${projectId}`);
     }
 
     async rename(projectId: string, newName: string): Promise<void> {

@@ -64,6 +64,7 @@ export interface StorageAdapter {
     listVersions?(projectId: string): Promise<any[]>;
 
     // Maintenance
+    permanentlyDelete?(projectId: string): Promise<void>;
     resetRepository?(): Promise<void>;
 }
 

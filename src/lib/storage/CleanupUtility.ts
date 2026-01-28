@@ -1,34 +1,10 @@
 import { StorageManager } from './StorageManager';
-
-const DEFAULT_EMPTY_CODE_VARIANTS = [
-    'const main = () => {\n  return;\n};',
-    'const main = () => { return; };',
-    'const main = () => {\n  return [];\n};',
-    'const main = () => { return []; };',
-];
+import { isProjectEmpty } from './projectUtils';
 
 export class CleanupUtility {
     private static isRunning = false;
     private static lastRun = 0;
     private static CLEANUP_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
-
-    /**
-     * Check if project is empty (no meaningful code or geometry)
-     */
-    private static isEmptyProject(data: any): boolean {
-        if (!data) return true;
-
-        const code = data.files?.code || data.code || '';
-        const codeEmpty = DEFAULT_EMPTY_CODE_VARIANTS.some(
-            variant => code.trim() === variant.trim()
-        );
-
-        // Check if objects exist and are more than just axes
-        const objects = data.objects || [];
-        const hasGeometry = objects.length > 3; // More than just X, Y, Z axes
-
-        return codeEmpty && !hasGeometry;
-    }
 
     /**
      * Check if project name is just an ID
@@ -64,6 +40,12 @@ export class CleanupUtility {
         try {
             const adapter = StorageManager.getInstance().currentAdapter;
 
+            // Critical check: Skip if adapter is not authenticated
+            if (adapter.isAuthenticated && !adapter.isAuthenticated()) {
+                console.log('[CleanupUtility] Skipping cleanup: not authenticated');
+                return;
+            }
+
             if (!adapter.listProjects) {
                 console.warn('[CleanupUtility] Adapter does not support listing projects');
                 return;
@@ -80,7 +62,9 @@ export class CleanupUtility {
                     const data = await adapter.load(project.id);
 
                     // Check if empty
-                    if (this.isEmptyProject(data)) {
+                    const code = data.files?.code || data.code || '';
+                    const objects = data.objects || [];
+                    if (isProjectEmpty(code, objects)) {
                         console.log(`[CleanupUtility] Deleting empty project: ${project.id} (${project.name})`);
                         await adapter.delete(project.id);
                         deletedCount++;

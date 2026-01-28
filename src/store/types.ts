@@ -252,6 +252,7 @@ export interface VersioningSlice {
     setProjectId: (id: string | null) => void;
     closeProject: () => void;
     updateThumbnail: (name: string, thumbnail: string) => void;
+    removeThumbnail: (name: string) => void;
     addComment: (text: string, position?: [number, number, number]) => void;
     deleteComment: (id: string) => void;
     toggleComments: () => void;
