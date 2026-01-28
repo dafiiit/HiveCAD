@@ -47,8 +47,11 @@ export const TabManager = () => {
             if (tab.id === activeTabId && tab.type === 'dashboard') {
                 const store: StoreApi<any> = tab.store;
                 // Initialize store with project data
+                if (project.id) {
+                    store.getState().setProjectId(project.id);
+                    console.log(`[TabManager] Set projectId: ${project.id}`);
+                }
                 store.getState().setFileName(project.name);
-                store.getState().setProjectId(project.id);
                 if (project.files?.code) store.getState().setCode(project.files.code);
 
                 // If we loaded from local cache (which we assume if it has data but maybe not synced), 

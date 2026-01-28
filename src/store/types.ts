@@ -229,7 +229,8 @@ export interface VersioningSlice {
     skipToEnd: () => void;
     stepBack: () => void;
     stepForward: () => void;
-    syncToCloud: () => Promise<void>;
+    syncToCloud: (force?: boolean) => Promise<void>;
+    save: (force?: boolean) => Promise<void>;
     hasUnpushedChanges: boolean;
     syncStatus: 'idle' | 'saving_local' | 'pushing_cloud' | 'error';
     saveToLocal: () => Promise<void>;
@@ -238,6 +239,7 @@ export interface VersioningSlice {
     open: () => void;
     reset: () => void;
     setFileName: (name: string) => void;
+    setProjectId: (id: string | null) => void;
     closeProject: () => void;
     updateThumbnail: (name: string, thumbnail: string) => void;
     addComment: (text: string, position?: [number, number, number]) => void;

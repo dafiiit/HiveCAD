@@ -12,6 +12,9 @@ export class GitHubAdapter implements StorageAdapter {
     private currentOwner: string | null = null;
     private currentRepo: string | null = null;
     private currentBranchName: string = 'main';
+    private thumbnailSavePromises: Map<string, Promise<void>> = new Map();
+    private thumbnailDebounceTimers: Map<string, any> = new Map();
+    private lastThumbnailHashes: Map<string, string> = new Map();
 
     async connect(token?: string): Promise<boolean> {
         console.log('[GitHubAdapter] connect() called', token ? '(with token)' : '(without token)');
@@ -111,17 +114,15 @@ export class GitHubAdapter implements StorageAdapter {
             throw new Error('Can only save to repositories owned by the authenticated user');
         }
 
-        // Repo setup is now handled in connect/initializeRepository
-        // We assume it exists and is configured correctly.
-
-        // New Path Structure: projects/<id>/.hivecad/data.json
-        // We will move away from hivecad/<id>.json to support "Directory per Project"
+        // ✓ CRITICAL: Always use projectId for path, never fileName
         const path = `projects/${projectId}/.hivecad/data.json`;
+
+        console.log(`[GitHubAdapter] Saving project ${projectId} to ${owner}/${repo}...`);
 
         // Prepare data with metadata if not present
         const projectData: ProjectData = {
-            id: projectId,
-            name: data.name || projectId,
+            id: projectId,                              // ✓ Stable ID for path
+            name: data.name || data.fileName || projectId,  // ✓ User-visible name
             ownerId: this.authenticatedUser,
             files: data.files || data,
             version: data.version || '1.0.0',
@@ -199,7 +200,7 @@ export class GitHubAdapter implements StorageAdapter {
             console.log(`[GitHubAdapter] Metadata unchanged for ${projectId}, skipping index update.`);
         }
 
-        console.log(`[GitHubAdapter] Saved ${projectId} to ${owner}/${repo}`);
+        console.log(`[GitHubAdapter] Saved ${projectId} (name: "${projectData.name}") to ${owner}/${repo}`);
 
         // Centralized Project Index (Supabase)
         try {
@@ -302,6 +303,54 @@ export class GitHubAdapter implements StorageAdapter {
     }
 
     async saveThumbnail(projectId: string, thumbnail: string): Promise<void> {
+        if (!this.octokit || !this.authenticatedUser) return;
+
+        // 1. Check if thumbnail has changed
+        const hash = this.hashString(thumbnail);
+        const lastHash = this.lastThumbnailHashes.get(projectId);
+
+        if (lastHash === hash) {
+            console.log(`[GitHubAdapter] Thumbnail unchanged for ${projectId}, skipping save`);
+            return;
+        }
+
+        // 2. Clear any existing debounce timer for this project
+        const existingTimer = this.thumbnailDebounceTimers.get(projectId);
+        if (existingTimer) {
+            clearTimeout(existingTimer);
+        }
+
+        // 3. Return existing promise if save is already in progress
+        const existingPromise = this.thumbnailSavePromises.get(projectId);
+        if (existingPromise) {
+            console.log(`[GitHubAdapter] Thumbnail save already in progress for ${projectId}, reusing promise`);
+            return existingPromise;
+        }
+
+        // 4. Debounce: Wait 500ms before actually saving
+        const savePromise = new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(async () => {
+                this.thumbnailDebounceTimers.delete(projectId);
+
+                try {
+                    this.lastThumbnailHashes.set(projectId, hash);
+                    await this.performThumbnailSave(projectId, thumbnail);
+                    this.thumbnailSavePromises.delete(projectId);
+                    resolve();
+                } catch (error) {
+                    this.thumbnailSavePromises.delete(projectId);
+                    reject(error);
+                }
+            }, 500);
+
+            this.thumbnailDebounceTimers.set(projectId, timer);
+        });
+
+        this.thumbnailSavePromises.set(projectId, savePromise);
+        return savePromise;
+    }
+
+    private async performThumbnailSave(projectId: string, thumbnail: string): Promise<void> {
         if (!this.isAuthenticated() || !this.octokit || !this.authenticatedUser) {
             throw new Error('Not authenticated with GitHub');
         }
@@ -352,6 +401,16 @@ export class GitHubAdapter implements StorageAdapter {
         );
 
         console.log(`[GitHubAdapter] Thumbnail saved for ${projectId}`);
+    }
+
+    private hashString(str: string): string {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
+        }
+        return hash.toString(36);
     }
 
     async load(projectId: string, owner?: string, repo?: string, ref?: string): Promise<ProjectData | null> {
@@ -429,6 +488,10 @@ export class GitHubAdapter implements StorageAdapter {
             }
         } catch (error: any) {
             console.warn('[GitHubAdapter] Failed to read index.json, falling back to directory scan:', error.status);
+            if (error.status === 404) {
+                console.log('[GitHubAdapter] No index.json found - repository appears empty');
+                return [];
+            }
         }
 
         const projects: ProjectData[] = [];
@@ -453,7 +516,9 @@ export class GitHubAdapter implements StorageAdapter {
                 projects.push(...legacyProjects);
             }
         } catch (error: any) {
-            // Ignore 404
+            if (error.status !== 404) {
+                console.warn('[GitHubAdapter] Failed to scan legacy hivecad directory:', error);
+            }
         }
 
         // 3. Scan 'projects/' folder
@@ -469,27 +534,21 @@ export class GitHubAdapter implements StorageAdapter {
             if (Array.isArray(contents)) {
 
                 const newProjects = contents
-                    .filter(item => item.type === 'dir')
+                    .filter(item => item.type === 'dir' && !item.name.startsWith('.'))
                     .map(item => ({
                         id: item.name,
-                        name: item.name, // Will be updated when loaded or if we fetch metadata
+                        name: item.name, // Will be corrected if index is present or when project is loaded
                         ownerId: owner,
                         lastModified: Date.now(),
-                        // Marking as 'Partial' load might be good, but ProjectData doesn't support it yet.
-                        // The dashboard will load the full project when opened?
-                        // Actually, dashboard expects full data (tags, thumbnails).
-                        // If we don't have it, we might display placeholders.
-                        // Or we can fetch 'projects/<id>/.hivecad/data.json' in parallel (limited batch).
-                        // Let's rely on the dashboard to handle this or improve this later.
-                        // Actually, 'listProjects' contract usually returns full metadata.
-                        // Let's start with basic info derived from folder name.
                     })) as ProjectData[];
 
-                // Deduplicate (prefer new structure if ID conflicts - unlikely with UUIDs but possible if migrated manually)
+                // Deduplicate (prefer new structure if ID conflicts)
                 projects.push(...newProjects);
             }
-        } catch (error) {
-            // Ignore 404
+        } catch (error: any) {
+            if (error.status !== 404) {
+                console.warn('[GitHubAdapter] Failed to scan projects directory:', error);
+            }
         }
 
         return projects;
@@ -723,48 +782,48 @@ export class GitHubAdapter implements StorageAdapter {
     }
 
     private async initializeRepository(): Promise<void> {
-        if (!this.octokit || !this.currentOwner || !this.currentRepo) return;
+        if (!this.octokit || !this.authenticatedUser || !this.currentOwner || !this.currentRepo) return;
 
         const owner = this.currentOwner;
         const repo = this.currentRepo;
 
         console.log('[GitHubAdapter] Initializing repository...');
 
-        try {
-            await this.ensureRepoExists(owner, repo);
+        // ✓ List of required files for a fully initialized repo
+        const requiredFiles = [
+            'hivecad/index.json',
+            'hivecad/tags.json',
+            '.hivecad/folders.json',
+        ];
 
-            // Ensure repository is public and has the correct topic
-            // We run this once at connection time.
-            await this.octokit.rest.repos.update({
-                owner,
-                repo,
-                private: false,
-                description: 'HiveCAD Projects (Decentralized Storage)',
-            });
+        const missingFiles: string[] = [];
 
-            await this.octokit.rest.repos.replaceAllTopics({
-                owner,
-                repo,
-                names: ['hivecad-project'],
-            });
-
-            // Check if repo is empty (specifically looking for hivecad structure)
+        // ✓ Check each required file
+        for (const filePath of requiredFiles) {
             try {
                 await this.octokit.rest.repos.getContent({
                     owner,
                     repo,
-                    path: 'hivecad',
+                    path: filePath,
+                    ref: this.currentBranchName,
                 });
             } catch (error: any) {
                 if (error.status === 404) {
-                    console.log('[GitHubAdapter] Empty repository detected, initializing defaults...');
-                    await this.populateDefaultContent();
+                    missingFiles.push(filePath);
+                } else {
+                    // Network error or other issue - don't treat as missing
+                    console.warn(`[GitHubAdapter] Error checking ${filePath}:`, error.status);
                 }
             }
+        }
 
-        } catch (error) {
-            console.warn('[GitHubAdapter] Repository initialization warning:', error);
-            // We don't throw here to allow app to function even if repo settings update fails
+        // ✓ If any files are missing, reinitialize
+        if (missingFiles.length > 0) {
+            console.log(`[GitHubAdapter] Missing files detected: ${missingFiles.join(', ')}`);
+            console.log('[GitHubAdapter] Reinitializing repository...');
+            await this.populateDefaultContent();
+        } else {
+            console.log('[GitHubAdapter] Repository fully initialized');
         }
     }
 
@@ -773,18 +832,71 @@ export class GitHubAdapter implements StorageAdapter {
 
         console.log('[GitHubAdapter] Populating default content...');
 
-        // 1. Create folders.json (empty)
-        await this.saveFolders([]);
+        const filesToCreate = [
+            {
+                path: 'hivecad/index.json',
+                content: '[]',
+                message: 'Initialize project index',
+            },
+            {
+                path: 'hivecad/tags.json',
+                content: '[]',
+                message: 'Initialize tags',
+            },
+            {
+                path: '.hivecad/folders.json',
+                content: '[]',
+                message: 'Initialize folders',
+            },
+            {
+                path: 'hivecad/thumbnails/.gitkeep',
+                content: '',
+                message: 'Initialize thumbnails directory',
+            },
+        ];
 
-        // 2. Create tags.json (empty, as requested)
-        await this.saveTags([]);
+        for (const file of filesToCreate) {
+            try {
+                console.log(`[GitHubAdapter] Creating ${file.path}...`);
 
-        // 3. Save Example Projects
-        // Note: We no longer auto-populate examples into the user's repo during initialization.
-        // This keeps the examples identified as "Example Project" with local previews.
-        // Users can still fork/save them manually if they wish.
+                // ✓ Check if file already exists
+                let sha: string | undefined;
+                try {
+                    const { data: existing } = await this.octokit.rest.repos.getContent({
+                        owner: this.currentOwner!,
+                        repo: this.currentRepo!,
+                        path: file.path,
+                        ref: this.currentBranchName,
+                    });
+                    if (!Array.isArray(existing) && 'sha' in existing) {
+                        sha = existing.sha;
+                        console.log(`[GitHubAdapter] ${file.path} already exists, skipping`);
+                        continue; // Skip if already exists
+                    }
+                } catch (error: any) {
+                    // 404 is expected for new files
+                    if (error.status !== 404) throw error;
+                }
 
-        console.log('[GitHubAdapter] Default content populated (folders/tags/index).');
+                // ✓ Create the file
+                await this.octokit.rest.repos.createOrUpdateFileContents({
+                    owner: this.currentOwner!,
+                    repo: this.currentRepo!,
+                    path: file.path,
+                    message: file.message,
+                    content: btoa(file.content),
+                    sha, // Will be undefined for new files
+                    branch: this.currentBranchName,
+                });
+
+                console.log(`[GitHubAdapter] ✓ ${file.path} created`);
+            } catch (error: any) {
+                console.error(`[GitHubAdapter] Failed to create ${file.path}:`, error);
+                // ✓ Don't throw - continue with other files
+            }
+        }
+
+        console.log('[GitHubAdapter] Default content population complete');
     }
     async getHistory(projectId: string): Promise<CommitInfo[]> {
         if (!this.octokit || !this.currentOwner || !this.currentRepo) return [];

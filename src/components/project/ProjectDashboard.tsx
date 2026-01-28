@@ -431,19 +431,23 @@ export function ProjectDashboard() {
             name = `Unnamed ${counter}`;
         }
 
+        // ✓ Generate stable projectId FIRST
+        const projectId = Math.random().toString(36).substr(2, 9);
+        console.log(`[ProjectDashboard] Creating project with ID: ${projectId}`);
+
         const newProjectData: ProjectData = {
-            id: Math.random().toString(36).substr(2, 9),
-            name: name,
+            id: projectId,              // ✓ Use this ID consistently
+            name: name,                 // ✓ User-visible name
             lastModified: Date.now(),
             files: { code: 'const main = () => { return; };' },
             version: '1.0.0',
             ownerId: user?.id || 'anon'
         };
 
-        // SAVE IMMEDIATELY TO LOCAL STORAGE
+        // ✓ Cache with projectId
         try {
-            await idbSet(`project:${newProjectData.id}`, newProjectData);
-            console.log(`[ProjectDashboard] Created and cached project ${newProjectData.id}`);
+            await idbSet(`project:${projectId}`, newProjectData);
+            console.log(`[ProjectDashboard] Cached project ${projectId}`);
         } catch (e) {
             console.error("Failed to cache new project", e);
         }

@@ -78,7 +78,8 @@ export const createVersioningSlice: StateCreator<
                 }
             }
 
-            await idbSet(`project:${state.projectId || state.fileName}`, projectData);
+            const projectIdentifier = state.projectId || state.fileName || 'unnamed';
+            await idbSet(`project:${projectIdentifier}`, projectData);
             set({
                 isSaved: true, // Saved locally
                 hasUnpushedChanges: true,
@@ -92,7 +93,7 @@ export const createVersioningSlice: StateCreator<
         }
     },
 
-    syncToCloud: async () => {
+    syncToCloud: async (_force?: boolean) => {
         const state = get();
         if (state.isSaving) return;
         set({ isSaving: true, syncStatus: 'pushing_cloud' });
@@ -104,7 +105,8 @@ export const createVersioningSlice: StateCreator<
             toast.loading(`Syncing to ${adapter.name}...`, { id: 'save-toast' });
 
             const projectData = {
-                fileName: state.fileName,
+                name: state.fileName,         // ✓ User-visible name
+                fileName: state.fileName,     // ✓ Keep for compatibility
                 objects: state.objects,
                 code: state.code,
                 versions: state.versions,
@@ -114,7 +116,11 @@ export const createVersioningSlice: StateCreator<
                 // thumbnail is removed from here to reduce payload size
             };
 
-            await adapter.save(state.projectId || state.fileName, projectData);
+            // ✓ CRITICAL: Pass projectId (stable), not fileName (mutable)
+            const saveIdentifier = state.projectId || state.fileName || 'unnamed';
+            await adapter.save(saveIdentifier, projectData);
+
+            console.log(`[versioningSlice] Synced project ${saveIdentifier}`);
 
             // Capture and save thumbnail
             let currentThumbnail = state.projectThumbnails[state.fileName];
@@ -131,11 +137,11 @@ export const createVersioningSlice: StateCreator<
             // Ensure thumbnail exists
             if (adapter.saveThumbnail) {
                 if (currentThumbnail) {
-                    await adapter.saveThumbnail(state.projectId || state.fileName, currentThumbnail);
+                    await adapter.saveThumbnail(saveIdentifier, currentThumbnail);
                 } else {
                     // Upload default if none exists
                     const DEFAULT_THUMBNAIL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='; // Red pixel as placeholder
-                    await adapter.saveThumbnail(state.projectId || state.fileName, DEFAULT_THUMBNAIL);
+                    await adapter.saveThumbnail(saveIdentifier, DEFAULT_THUMBNAIL);
 
                     // Update local state too
                     const newThumbnails = { ...state.projectThumbnails, [state.fileName]: DEFAULT_THUMBNAIL };
@@ -149,7 +155,7 @@ export const createVersioningSlice: StateCreator<
             // Check if a save was requested while we were saving
             if (get().pendingSave) {
                 set({ pendingSave: false });
-                get().syncToCloud();
+                get().syncToCloud(_force);
             }
         } catch (error: any) {
             console.error("Save failed:", error);
@@ -158,13 +164,16 @@ export const createVersioningSlice: StateCreator<
 
             if (message.includes('Not authenticated')) {
                 toast.error("GitHub account not linked. Please link your account to save.", { id: 'save-toast' });
-                // Import dynamically to avoid circular dependency if needed, or just use useGlobalStore directly if safe
-                const { useGlobalStore } = require('../useGlobalStore');
+                const { useGlobalStore } = await import('../useGlobalStore');
                 useGlobalStore.getState().setShowPATDialog(true);
             } else {
                 toast.error(`Sync failed: ${message}`, { id: 'save-toast' });
             }
         }
+    },
+
+    save: async (force?: boolean) => {
+        return get().syncToCloud(force);
     },
 
     // Updated triggerSave to use local save only
@@ -224,10 +233,23 @@ export const createVersioningSlice: StateCreator<
         }
 
         set({ fileName: name });
-        // Trigger immediate local save to persist the new name key in IDB
-        state.saveToLocal();
+
+        // ✓ ONLY generate projectId if this is truly a NEW project
+        // Don't auto-generate when just changing the name of an existing project
+        // ✓ ALWAYS ensure we have a projectId when a project is named
+        if (!state.projectId) {
+            const newProjectId = generateId();
+            set({ projectId: newProjectId });
+            console.log(`[versioningSlice] Generated missing projectId: ${newProjectId}`);
+        }
+
+        // Trigger save to update GitHub index with new name
+        get().triggerSave();
     },
-    setProjectId: (id) => set({ projectId: id }),
+    setProjectId: (id) => {
+        set({ projectId: id });
+        console.log(`[versioningSlice] Set projectId: ${id}`);
+    },
     closeProject: async () => {
         const state = get();
 
@@ -249,7 +271,8 @@ export const createVersioningSlice: StateCreator<
                 const { StorageManager } = await import('@/lib/storage/StorageManager');
                 const adapter = StorageManager.getInstance().currentAdapter;
                 if (adapter.saveThumbnail) {
-                    await adapter.saveThumbnail(state.fileName, thumbnail);
+                    const identifier = state.projectId || state.fileName || 'unnamed';
+                    await adapter.saveThumbnail(identifier, thumbnail);
                 }
             } catch (e) {
                 console.warn('[versioningSlice] Failed to save final thumbnail on close', e);
@@ -281,7 +304,9 @@ export const createVersioningSlice: StateCreator<
             const { StorageManager } = await import('@/lib/storage/StorageManager');
             const adapter = StorageManager.getInstance().currentAdapter;
             if (adapter.isAuthenticated() && adapter.saveThumbnail) {
-                await adapter.saveThumbnail(name, thumbnail);
+                const state = get();
+                const identifier = (state.fileName === name ? state.projectId : null) || name || 'unnamed';
+                await adapter.saveThumbnail(identifier, thumbnail);
             }
         } catch (e) {
             console.warn('[versioningSlice] Failed to save thumbnail to adapter', e);

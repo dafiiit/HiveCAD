@@ -41,7 +41,7 @@ interface MenuBarProps {
 
 const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
   const {
-    save,
+    syncToCloud,
     open,
     undo,
     redo,
@@ -64,6 +64,9 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
     setFileName,
     runCode
   } = useCADStore();
+
+  // Alias for backward compatibility if needed, though we should use syncToCloud
+  const save = syncToCloud;
 
   const { activeTabId, closeTab, tabs, switchToTab, createNewTab } = useTabManager();
   const { user } = useGlobalStore();
