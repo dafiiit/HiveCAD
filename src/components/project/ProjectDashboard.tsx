@@ -325,12 +325,27 @@ export function ProjectDashboard() {
         try {
             const { StorageManager } = await import('@/lib/storage/StorageManager');
             const adapter = StorageManager.getInstance().currentAdapter;
-            await adapter.rename(projectId, newName.trim());
+
+            try {
+                await adapter.rename(projectId, newName.trim());
+            } catch (cloudError) {
+                console.warn("[ProjectDashboard] Cloud rename failed, trying local update", cloudError);
+                // Fallback: update local IndexedDB meta if it exists
+                const localData: any = await idbGet(`project:${projectId}`);
+                if (localData) {
+                    const updated = { ...localData, name: newName.trim(), lastModified: Date.now() };
+                    await idbSet(`project:${projectId}`, updated);
+                } else {
+                    throw cloudError; // Re-throw if no local either
+                }
+            }
+
             toast.success("Project renamed successfully");
             setShowRenameDialog(null);
             setRenameInput("");
             await refreshProjects();
         } catch (error) {
+            console.error("Rename failed:", error);
             toast.error("Failed to rename project");
         } finally {
             setLoadingMessage(null);

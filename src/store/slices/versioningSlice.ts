@@ -61,7 +61,7 @@ export const createVersioningSlice: StateCreator<
         try {
             const projectData = {
                 fileName: state.fileName,
-                objects: state.objects,
+                objects: JSON.parse(JSON.stringify(state.objects)),
                 code: state.code,
                 versions: state.versions,
                 branches: state.branches,
@@ -230,6 +230,18 @@ export const createVersioningSlice: StateCreator<
     setProjectId: (id) => set({ projectId: id }),
     closeProject: async () => {
         const state = get();
+
+        // 1. CLEAR TIMER to prevent the empty-state overwrite
+        if (saveTimeout) {
+            clearTimeout(saveTimeout);
+            saveTimeout = null;
+        }
+
+        // 2. FORCE SAVE if there are pending changes
+        if (state.pendingSave) {
+            await state.saveToLocal();
+        }
+
         // Take a final thumbnail before closing if possible
         const thumbnail = state.projectThumbnails[state.fileName];
         if (thumbnail) {
@@ -246,11 +258,13 @@ export const createVersioningSlice: StateCreator<
 
         set({
             fileName: 'Untitled',
+            projectId: null, // Ensure this is null so we don't overwrite the old ID
             objects: [],
             code: 'const main = () => { return; };',
             history: [],
             historyIndex: -1,
             isSaved: true,
+            pendingSave: false,
             versions: [],
             branches: new Map([['main', '']]),
             currentBranch: 'main',

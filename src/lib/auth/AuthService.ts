@@ -13,7 +13,10 @@ export class AuthService {
 
         if (error) throw error;
 
-        const userData = { email: data.user?.email };
+        const userData = {
+            id: data.user?.id,
+            email: data.user?.email
+        };
         return userData;
     }
 
@@ -26,6 +29,7 @@ export class AuthService {
         if (error) throw error;
 
         const userData = {
+            id: data.user?.id,
             email: data.user?.email,
             // In a real app, you might store the PAT in a user profile table in Supabase
             // For now, we'll keep the PAT logic if it exists in the user metadata or similar
@@ -61,6 +65,7 @@ export class AuthService {
         if (!session) return null;
 
         return {
+            id: session.user.id,
             email: session.user.email,
             pat: session.user.user_metadata?.pat || null
         };

@@ -597,7 +597,7 @@ const ThumbnailCapturer = () => {
 
 const Viewport = ({ isSketchMode }: ViewportProps) => {
   const controlsRef = useRef<ArcballControlsImpl>(null);
-  const capturerRef = useRef<any>(null);
+  const api = useCADStoreApi();
   const [showExitDialog, setShowExitDialog] = useState(false);
   const activeTool = useCADStore(state => state.activeTool);
 
@@ -630,12 +630,13 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
     }
   }, [activeTool]);
 
+
   return (
     <div className="cad-viewport w-full h-full relative">
       <Canvas
         gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
         style={{ background: "hsl(210, 30%, 16%)" }}
-        onPointerMissed={() => useCADStoreApi().getState().clearSelection()}
+        onPointerMissed={() => api.getState().clearSelection()}
       >
         <ThumbnailCapturer />
         {/* Camera - stays Y-up for stable ArcballControls */}
