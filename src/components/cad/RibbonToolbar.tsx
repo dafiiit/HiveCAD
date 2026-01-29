@@ -38,10 +38,18 @@ import {
   AlignVerticalSpaceAround,
   Equal,
   GitCommit,
-  ArrowUpLeft
+  ArrowUpLeft,
+  PackagePlus
 } from "lucide-react";
 import { useCADStore, useCADStoreApi, ToolType } from "@/hooks/useCADStore";
 import { toast } from "sonner";
+import { ExtensionStoreDialog } from "../extensions/ExtensionStoreDialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -115,6 +123,8 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
     objects,
     applyConstraintToSelection
   } = useCADStore();
+
+  const [isExtensionStoreOpen, setIsExtensionStoreOpen] = React.useState(false);
 
   const tabs: ToolTab[] = ["SOLID", "SURFACE", "MESH", "SHEET", "PLASTIC", "MANAGE", "UTILITIES"];
 
@@ -407,6 +417,22 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
           </ToolGroup>
 
           <div className="ml-auto flex items-center gap-2 pr-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setIsExtensionStoreOpen(true)}
+                    className="flex items-center justify-center p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-primary"
+                  >
+                    <PackagePlus className="w-5 h-5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Extension Store</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
             <button
               onClick={onFinishSketch}
               className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded text-xs font-medium transition-colors"
@@ -416,6 +442,10 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
             </button>
           </div>
         </div>
+        <ExtensionStoreDialog
+          open={isExtensionStoreOpen}
+          onOpenChange={setIsExtensionStoreOpen}
+        />
       </div>
     );
   }
@@ -627,7 +657,31 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
             onClick={() => handleToolSelect('select')}
           />
         </ToolGroup>
+
+        <div className="ml-auto flex items-center pr-4">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setIsExtensionStoreOpen(true)}
+                  className="flex flex-col items-center justify-center min-w-[64px] h-[64px] rounded-md hover:bg-muted/50 transition-all text-muted-foreground hover:text-primary border border-transparent hover:border-border/50 group"
+                >
+                  <PackagePlus className="w-6 h-6 mb-1 group-hover:scale-110 transition-transform" />
+                  <span className="text-[10px] font-medium uppercase tracking-tight">Extensions</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Browse Extension Library</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
       </div>
+
+      <ExtensionStoreDialog
+        open={isExtensionStoreOpen}
+        onOpenChange={setIsExtensionStoreOpen}
+      />
     </div>
   );
 };
