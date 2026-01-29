@@ -268,8 +268,8 @@ export const createVersioningSlice: StateCreator<
     },
 
     reset: () => {
+        get().clearAllObjects();
         set({
-            objects: [],
             code: 'const main = () => { return; };',
             planeVisibility: {
                 XY: true,
@@ -408,10 +408,10 @@ export const createVersioningSlice: StateCreator<
         }
 
         // 4. IMMEDIATELY clear state (don't wait for cloud sync)
+        get().clearAllObjects();
         set({
             fileName: 'Untitled',
             projectId: null,
-            objects: [],
             code: 'const main = () => { return; };',
             history: [],
             historyIndex: -1,

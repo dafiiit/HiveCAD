@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { ImportWarningModal } from "./ImportWarningModal";
 import { MeshingProgress } from "./MeshingProgress";
+import { ErrorBoundary } from "../ErrorBoundary";
 
 
 const CADLayout = () => {
@@ -80,7 +81,9 @@ const CADLayout = () => {
   if (isFullscreen) {
     return (
       <div className="w-screen h-screen bg-background relative overflow-hidden">
-        <Viewport isSketchMode={isSketchMode} />
+        <ErrorBoundary name="Fullscreen Viewport">
+          <Viewport isSketchMode={isSketchMode} />
+        </ErrorBoundary>
 
         {/* Fullscreen Overlays */}
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 bg-background/80 backdrop-blur-md border border-border/50 rounded-full p-1.5 shadow-2xl flex items-center justify-center">
@@ -123,7 +126,9 @@ const CADLayout = () => {
         {/* Center viewport */}
         <div className="flex-1 flex flex-col relative min-w-0">
           <div className="flex-1 relative min-w-0">
-            <Viewport isSketchMode={isSketchMode} />
+            <ErrorBoundary name="Viewport">
+              <Viewport isSketchMode={isSketchMode} />
+            </ErrorBoundary>
 
             {/* Right sketch palette (overlay in sketch mode) */}
             <SketchPalette isVisible={isSketchMode} />

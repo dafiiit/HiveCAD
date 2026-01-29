@@ -24,6 +24,7 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from 'sonner';
+import { ErrorBoundary } from '../ErrorBoundary';
 
 export const TabManager = () => {
     const [tabs, setTabs] = useState<Tab[]>([
@@ -219,14 +220,16 @@ export const TabManager = () => {
                             }}
                         >
                             <CADStoreProvider store={tab.store}>
-                                <BackgroundSyncHandler />
-                                <UnsavedChangesListener />
-                                {tab.type === 'dashboard' ? <ProjectDashboard /> : (
-                                    <>
-                                        <CADLayout />
-                                        <CommandPalette />
-                                    </>
-                                )}
+                                <ErrorBoundary name={tab.type === 'dashboard' ? "Dashboard" : "Project"}>
+                                    <BackgroundSyncHandler />
+                                    <UnsavedChangesListener />
+                                    {tab.type === 'dashboard' ? <ProjectDashboard /> : (
+                                        <>
+                                            <CADLayout />
+                                            <CommandPalette />
+                                        </>
+                                    )}
+                                </ErrorBoundary>
                             </CADStoreProvider>
                         </div>
                     ))}

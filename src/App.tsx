@@ -7,6 +7,7 @@ import { TabManager } from "@/components/layout/TabManager";
 import NotFound from "./pages/NotFound";
 
 import { AuthGateway } from "./components/auth/AuthGateway";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
@@ -16,11 +17,13 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<AuthGateway><TabManager /></AuthGateway>} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <ErrorBoundary name="App Root">
+          <Routes>
+            <Route path="/" element={<AuthGateway><TabManager /></AuthGateway>} />
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </ErrorBoundary>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

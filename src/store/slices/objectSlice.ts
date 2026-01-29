@@ -24,7 +24,28 @@ const getNextColor = () => {
     return color;
 };
 
+// Track geometries for cleanup
+const geometryRegistry = new WeakMap<CADObject, THREE.BufferGeometry[]>();
+
+const registerGeometries = (obj: CADObject) => {
+    const geometries = [obj.geometry, obj.edgeGeometry].filter((g): g is THREE.BufferGeometry => !!g);
+    if (geometries.length > 0) {
+        geometryRegistry.set(obj, geometries);
+    }
+};
+
+const disposeGeometries = (obj: CADObject) => {
+    if (geometryRegistry.has(obj)) {
+        const geometries = geometryRegistry.get(obj)!;
+        geometries.forEach(geo => geo.dispose());
+        geometryRegistry.delete(obj);
+    }
+};
+
+let cachedAxes: CADObject[] | null = null;
 const getOriginAxes = (): CADObject[] => {
+    if (cachedAxes) return cachedAxes;
+
     const axisLength = 50;
     const axes: CADObject[] = [
         {
@@ -109,6 +130,7 @@ const getOriginAxes = (): CADObject[] => {
     axes[2].geometry = createHitCylinder(axisLength, 'z');
     axes[2].edgeGeometry = createAxisGeo([0, 0, 0], [0, 0, axisLength]);
 
+    cachedAxes = axes;
     return axes;
 };
 
@@ -233,14 +255,44 @@ export const createObjectSlice: StateCreator<
         }
         const objectIndex = state.objects.findIndex(o => o.id === id);
         if (objectIndex === -1) return;
+
+        const oldObject = state.objects[objectIndex];
+
+        // If geometries are changing, dispose old ones
+        if (updates.geometry || updates.edgeGeometry) {
+            disposeGeometries(oldObject);
+        }
+
         const updatedObjects = [...state.objects];
-        updatedObjects[objectIndex] = { ...updatedObjects[objectIndex], ...updates };
+        updatedObjects[objectIndex] = { ...oldObject, ...updates };
+
+        // Update registry with the new object reference
+        // (WeakMap needs the exact object reference being stored in state)
+        if (updates.geometry || updates.edgeGeometry) {
+            registerGeometries(updatedObjects[objectIndex]);
+        } else if (geometryRegistry.has(oldObject)) {
+            // Keep existing geometries for the new object reference
+            const geometries = geometryRegistry.get(oldObject)!;
+            geometryRegistry.set(updatedObjects[objectIndex], geometries);
+            geometryRegistry.delete(oldObject);
+        }
+
         set({ objects: updatedObjects, isSaved: false });
         get().triggerSave();
     },
 
     deleteObject: (id) => {
         const state = get();
+
+        // Dispose geometries if the object exists
+        const objectToDelete = state.objects.find(o => o.id === id);
+        if (objectToDelete) {
+            // Don't dispose system axes
+            if (!objectToDelete.id.startsWith('AXIS_')) {
+                disposeGeometries(objectToDelete);
+            }
+        }
+
         const cm = new CodeManager(state.code);
         cm.removeFeature(id);
         const newCode = cm.getCode();
@@ -257,6 +309,16 @@ export const createObjectSlice: StateCreator<
             });
             get().triggerSave();
         }
+    },
+
+    clearAllObjects: () => {
+        const state = get();
+        state.objects.forEach(obj => {
+            if (!obj.id.startsWith('AXIS_')) {
+                disposeGeometries(obj);
+            }
+        });
+        set({ objects: [], selectedIds: new Set() });
     },
 
     selectObject: (id, multiSelect = false) => {
@@ -368,6 +430,17 @@ export const createObjectSlice: StateCreator<
                     edgeMapping: item.edgeMapping
                 };
             }).filter((obj: CADObject) => (obj.geometry !== undefined || obj.edgeGeometry !== undefined));
+
+            // Register new geometries
+            newObjects.forEach(registerGeometries);
+
+            // Dispose old non-system geometries
+            state.objects.forEach(obj => {
+                if (!obj.id.startsWith('AXIS_')) {
+                    disposeGeometries(obj);
+                }
+            });
+
             newObjects.push(...getOriginAxes());
             set({ objects: newObjects });
         } catch (e: unknown) {

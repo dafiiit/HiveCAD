@@ -146,6 +146,7 @@ export interface ObjectSlice {
     addObject: (type: CADObject['type'] | string, options?: Partial<CADObject>) => void;
     updateObject: (id: string, updates: Partial<CADObject>) => void;
     deleteObject: (id: string) => void;
+    clearAllObjects: () => void;
     selectObject: (id: string, multiSelect?: boolean) => void;
     clearSelection: () => void;
     duplicateSelected: () => void;
