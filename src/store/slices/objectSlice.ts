@@ -510,4 +510,177 @@ export const createObjectSlice: StateCreator<
         state.addObject(type, { dimensions: params });
         set({ activeOperation: null });
     },
+
+    exportSTL: async () => {
+        const state = get();
+        const worker = getWorker();
+
+        toast.loading("Exporting STL...", { id: 'export' });
+
+        return new Promise<void>((resolve, reject) => {
+            const handler = (e: MessageEvent) => {
+                if (e.data.type === 'EXPORT_SUCCESS') {
+                    worker.removeEventListener('message', handler);
+                    const blob = e.data.blob;
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${state.fileName || 'model'}.stl`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    toast.success("STL Exported", { id: 'export' });
+                    resolve();
+                } else if (e.data.type === 'ERROR') {
+                    worker.removeEventListener('message', handler);
+                    toast.error(`Export failed: ${e.data.error}`, { id: 'export' });
+                    reject(new Error(e.data.error));
+                }
+            };
+            worker.addEventListener('message', handler);
+            worker.postMessage({ type: 'EXPORT_STL', code: state.code });
+        });
+    },
+
+    exportSTEP: async () => {
+        const state = get();
+        const worker = getWorker();
+
+        toast.loading("Exporting STEP...", { id: 'export' });
+
+        return new Promise<void>((resolve, reject) => {
+            const handler = (e: MessageEvent) => {
+                if (e.data.type === 'EXPORT_SUCCESS') {
+                    worker.removeEventListener('message', handler);
+                    const blob = e.data.blob;
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${state.fileName || 'model'}.step`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    toast.success("STEP Exported", { id: 'export' });
+                    resolve();
+                } else if (e.data.type === 'ERROR') {
+                    worker.removeEventListener('message', handler);
+                    toast.error(`Export failed: ${e.data.error}`, { id: 'export' });
+                    reject(new Error(e.data.error));
+                }
+            };
+            worker.addEventListener('message', handler);
+            worker.postMessage({ type: 'EXPORT_STEP', code: state.code });
+        });
+    },
+
+    exportJSON: () => {
+        const state = get();
+        const data = {
+            name: state.fileName,
+            code: state.code,
+            version: '1.0'
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${state.fileName || 'project'}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast.success("Project Exported (JSON)");
+    },
+
+    importFile: () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json,.stl,.step,.stp';
+        input.onchange = async (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            const extension = file.name.split('.').pop()?.toLowerCase();
+
+            if (extension === 'json') {
+                reader.onload = (event) => {
+                    try {
+                        const data = JSON.parse(event.target?.result as string);
+                        if (data.code) {
+                            get().setCode(data.code);
+                            get().runCode();
+                            toast.success("Project imported from JSON");
+                        }
+                    } catch (err) {
+                        toast.error("Failed to parse JSON file");
+                    }
+                };
+                reader.readAsText(file);
+            } else if (extension === 'stl' || extension === 'step' || extension === 'stp') {
+                const type = (extension === 'stl') ? 'STL' : 'STEP';
+                reader.onload = async (event) => {
+                    const base64 = (event.target?.result as string).split(',')[1];
+                    const varName = `imported${type}${Math.floor(Math.random() * 1000)}`;
+
+                    const importCode = `
+  // Imported ${type} file: ${file.name}
+  const ${varName}Raw = "${base64}";
+  
+  // Robust base64 decoding using atob
+  const ${varName}String = atob(${varName}Raw);
+  const ${varName}Bytes = new Uint8Array(${varName}String.length);
+  for (let i = 0; i < ${varName}String.length; i++) {
+    ${varName}Bytes[i] = ${varName}String.charCodeAt(i);
+  }
+  const ${varName}Blob = new Blob([${varName}Bytes], { type: 'application/octet-stream' });
+  
+  const ${varName} = await replicad.import${type}(${varName}Blob);
+`;
+                    const currentCode = get().code;
+                    let newCode = currentCode;
+
+                    // Robust injection into main
+                    const mainFunctionPatterns = [
+                        'async function main() {',
+                        'function main() {',
+                        'const main = () => {',
+                        'const main = async () => {'
+                    ];
+
+                    let injected = false;
+                    for (const pattern of mainFunctionPatterns) {
+                        if (currentCode.includes(pattern)) {
+                            // Inject at the beginning of main
+                            let replacement = pattern;
+                            if (!pattern.includes('async')) {
+                                if (pattern.includes('function')) {
+                                    replacement = pattern.replace('function', 'async function');
+                                } else if (pattern.includes('=>')) {
+                                    replacement = pattern.replace('() =>', 'async () =>');
+                                }
+                            }
+                            newCode = currentCode.replace(pattern, `${replacement}${importCode}`);
+                            injected = true;
+                            break;
+                        }
+                    }
+
+                    if (!injected) {
+                        // Create main if it doesn't exist
+                        newCode = `async function main() {${importCode}\n  return ${varName};\n}`;
+                    } else {
+                        // If it returns an empty array or just return;, replace with the new variable
+                        if (newCode.includes('return [];')) {
+                            newCode = newCode.replace('return [];', `return ${varName};`);
+                        } else if (newCode.includes('return;')) {
+                            newCode = newCode.replace('return;', `return ${varName};`);
+                        }
+                    }
+
+                    get().setCode(newCode);
+                    get().runCode();
+                    toast.success(`${type} file imported and injected into editor`);
+                };
+                reader.readAsDataURL(file);
+            }
+        };
+        input.click();
+    },
 });

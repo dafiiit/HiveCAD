@@ -121,7 +121,11 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
     selectedIds,
     startOperation,
     objects,
-    applyConstraintToSelection
+    applyConstraintToSelection,
+    exportSTL,
+    exportSTEP,
+    exportJSON,
+    importFile
   } = useCADStore();
 
   const [isExtensionStoreOpen, setIsExtensionStoreOpen] = React.useState(false);
@@ -185,28 +189,11 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
   };
 
   const handleExport = () => {
-    const data = JSON.stringify(objects, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'cad-export.json';
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("Project exported");
+    exportJSON();
   };
 
   const handleImport = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
-        toast.success(`Importing ${file.name}...`);
-      }
-    };
-    input.click();
+    importFile();
   };
 
   if (isSketchMode) {
@@ -638,14 +625,22 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
           <ToolButton
             icon={<Download className="w-5 h-5" />}
             label="Insert"
-            hasDropdown
             onClick={handleImport}
           />
-          <ToolButton
-            icon={<Upload className="w-5 h-5" />}
-            label="Export"
-            onClick={handleExport}
-          />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <ToolButton
+                icon={<Upload className="w-5 h-5" />}
+                label="Export"
+                hasDropdown
+              />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={exportSTL}>STL (3D Mesh)</DropdownMenuItem>
+              <DropdownMenuItem onClick={exportSTEP}>STEP (CAD Data)</DropdownMenuItem>
+              <DropdownMenuItem onClick={exportJSON}>JSON (Project)</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </ToolGroup>
 
         <ToolGroup label="SELECT">

@@ -156,6 +156,10 @@ export interface ObjectSlice {
     updateOperationParams: (params: any) => void;
     cancelOperation: () => void;
     applyOperation: () => void;
+    exportSTL: () => Promise<void>;
+    exportSTEP: () => Promise<void>;
+    exportJSON: () => void;
+    importFile: () => void;
 }
 
 export interface ViewSlice {

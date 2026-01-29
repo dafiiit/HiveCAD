@@ -2,6 +2,7 @@
 import opencascade from 'replicad-opencascadejs/src/replicad_single.js';
 import * as replicad from 'replicad';
 
+declare const __record: any;
 let initialized = false;
 
 // Initialize OC calling
@@ -44,7 +45,12 @@ self.onmessage = async (e) => {
                 : "\nreturn main();";
 
             const evaluator = new Function('replicad', '__record', code + mainCall);
-            const result = evaluator(replicad, __record);
+            let result = evaluator(replicad, __record);
+
+            // Support async main
+            if (result instanceof Promise) {
+                result = await result;
+            }
 
             let shapesArray: any[] = [];
             if (Array.isArray(result)) {
@@ -190,6 +196,56 @@ self.onmessage = async (e) => {
 
         } catch (error: any) {
             console.error("Worker: Execution Error", error);
+            self.postMessage({ type: 'ERROR', error: error.message });
+        }
+    } else if (type === 'EXPORT_STL' || type === 'EXPORT_STEP') {
+        try {
+            const __record = (uuid: string, shape: any) => {
+                if (shape && typeof shape === 'object') {
+                    try {
+                        (shape as any)._astId = uuid;
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+                return shape;
+            };
+
+            const hasDefaultParams = /const\s+defaultParams\s*=/.test(code);
+            const mainCall = hasDefaultParams ? "\nreturn main(replicad, defaultParams);" : "\nreturn main();";
+            const evaluator = new Function('replicad', '__record', code + mainCall);
+            let result = evaluator(replicad, __record);
+            if (result instanceof Promise) result = await result;
+
+            let shapesArray: any[] = [];
+            if (Array.isArray(result)) {
+                shapesArray = result.flat(Infinity).map(item => item.shape || item);
+            } else if (result) {
+                shapesArray = [result.shape || result];
+            }
+
+            if (shapesArray.length === 0) {
+                throw new Error("No shapes to export");
+            }
+
+            let exportShape = shapesArray[0];
+            if (shapesArray.length > 1) {
+                // Fuse multiple shapes for export
+                for (let i = 1; i < shapesArray.length; i++) {
+                    exportShape = exportShape.fuse(shapesArray[i]);
+                }
+            }
+
+            let blob;
+            if (type === 'EXPORT_STL') {
+                blob = exportShape.blobSTL({ tolerance: 0.1, angularTolerance: 30.0 });
+            } else {
+                blob = exportShape.blobSTEP();
+            }
+
+            self.postMessage({ type: 'EXPORT_SUCCESS', blob });
+        } catch (error: any) {
+            console.error(`Worker: Export Error (${type})`, error);
             self.postMessage({ type: 'ERROR', error: error.message });
         }
     }
