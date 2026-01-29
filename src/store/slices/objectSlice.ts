@@ -22,7 +22,10 @@ const getWorker = () => {
     return replicadWorker;
 };
 
-const DEFAULT_COLORS = ['#6090c0', '#c06060', '#60c060', '#c0c060', '#c0c060', '#60c0c0'];
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+const WARN_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
+const DEFAULT_COLORS = ['#6090c0', '#c06060', '#60c060', '#c06060', '#c0c060', '#60c0c0'];
 let colorIndex = 0;
 const getNextColor = () => {
     const color = DEFAULT_COLORS[colorIndex % DEFAULT_COLORS.length];
@@ -130,10 +133,9 @@ export const createObjectSlice: StateCreator<
     activeTab: 'SOLID',
     code: DEFAULT_CODE,
     activeOperation: null,
+    pendingImport: null,
 
-    addObject: async (type, options = {}) => {
-        // initCAD is still useful for initial setup check or helper functions on main thread if any
-        // but for worker execution it's handled inside the worker.
+    addObject: async (type: CADObject['type'] | string, options: Partial<CADObject> = {}) => {
         try {
             await initCAD();
         } catch (e) {
@@ -143,26 +145,17 @@ export const createObjectSlice: StateCreator<
 
         const currentState = get();
         const cm = new CodeManager(currentState.code);
-
-        // Get tool from registry
         const tool = toolRegistry.get(type);
 
         if (tool) {
-            // Get params with defaults from registry merged with provided options
             const params = { ...toolRegistry.getDefaultParams(type), ...options.dimensions };
-
             if (tool.create) {
-                // Primitive tools that create new geometry
                 tool.create(cm, params);
             } else if (tool.execute) {
-                // Operation tools that modify selected objects
                 const selectedIds = [...currentState.selectedIds];
-
-                // Validate selection requirements
                 if (tool.selectionRequirements) {
                     const reqs = tool.selectionRequirements;
                     const count = selectedIds.length;
-
                     if (reqs.min !== undefined && count < reqs.min) {
                         toast.error(`${tool.metadata.label} requires at least ${reqs.min} selection${reqs.min > 1 ? 's' : ''}`);
                         return;
@@ -171,43 +164,31 @@ export const createObjectSlice: StateCreator<
                         toast.error(`${tool.metadata.label} supports at most ${reqs.max} selection${reqs.max > 1 ? 's' : ''}`);
                         return;
                     }
-
                     if (reqs.allowedTypes) {
                         const invalidSelection = selectedIds.some(id => {
                             const obj = currentState.objects.find(o => o.id === id);
-                            if (!obj) return true; // Should not happen
-
-                            // Check strictly if the type is allowed
+                            if (!obj) return true;
                             if (reqs.allowedTypes?.includes(obj.type as any)) return false;
-
                             const isSolid = ['box', 'cylinder', 'sphere', 'torus', 'coil', 'extrusion', 'revolve'].includes(obj.type);
                             const isSketch = obj.type === 'sketch' || toolRegistry.get(obj.type)?.metadata.category === 'sketch';
-
                             if (reqs.allowedTypes?.includes('solid') && isSolid) return false;
                             if (reqs.allowedTypes?.includes('sketch') && isSketch) return false;
-
-                            return true; // Invalid
+                            return true;
                         });
-
                         if (invalidSelection) {
                             toast.error(`${tool.metadata.label} requires specific selection types: ${reqs.allowedTypes.join(', ')}`);
                             return;
                         }
                     }
                 }
-
-                // Fallback check if no requirements defined but tool is "operation"
                 if (!tool.selectionRequirements && selectedIds.length === 0 && ['extrusion', 'revolve', 'pivot', 'translatePlane'].includes(type)) {
                     toast.error(`No object selected for ${type}`);
                     return;
                 }
-
                 tool.execute(cm, selectedIds, params);
             }
         } else {
-            // Legacy fallback for types not yet in registry
             console.warn(`Tool "${type}" not found in registry, using legacy implementation`);
-
             if (type === 'extrusion') {
                 const selectedId = [...currentState.selectedIds][0];
                 if (selectedId) {
@@ -235,14 +216,11 @@ export const createObjectSlice: StateCreator<
 
     updateObject: (id, updates) => {
         const state = get();
-        // Code First Update
         if (updates.dimensions) {
             const cm = new CodeManager(state.code);
             const obj = state.objects.find(o => o.id === id);
             if (!obj) return;
-
             const opIndex = 0;
-
             if (obj.type === 'box') {
                 const d = obj.dimensions;
                 const newDims = { ...d, ...updates.dimensions };
@@ -256,17 +234,13 @@ export const createObjectSlice: StateCreator<
                 const newDims = { ...d, ...updates.dimensions };
                 cm.updateOperation(id, opIndex, [newDims.radius]);
             }
-
             set({ code: cm.getCode() });
             get().runCode();
             get().triggerSave();
             return;
         }
-
-        // Fallback for non-code updates (e.g. name, color)
         const objectIndex = state.objects.findIndex(o => o.id === id);
         if (objectIndex === -1) return;
-
         const updatedObjects = [...state.objects];
         updatedObjects[objectIndex] = { ...updatedObjects[objectIndex], ...updates };
         set({ objects: updatedObjects, isSaved: false });
@@ -275,11 +249,9 @@ export const createObjectSlice: StateCreator<
 
     deleteObject: (id) => {
         const state = get();
-        // Code First Deletion
         const cm = new CodeManager(state.code);
         cm.removeFeature(id);
         const newCode = cm.getCode();
-
         if (newCode !== state.code) {
             set({ code: newCode });
             get().runCode();
@@ -298,18 +270,15 @@ export const createObjectSlice: StateCreator<
     selectObject: (id, multiSelect = false) => {
         const state = get();
         const newSelected = new Set(multiSelect ? state.selectedIds : []);
-
         if (newSelected.has(id)) {
             newSelected.delete(id);
         } else {
             newSelected.add(id);
         }
-
         const updatedObjects = state.objects.map(obj => ({
             ...obj,
             selected: newSelected.has(obj.id),
         }));
-
         set({ objects: updatedObjects, selectedIds: newSelected });
     },
 
@@ -335,12 +304,9 @@ export const createObjectSlice: StateCreator<
         try {
             const cm = new CodeManager(state.code);
             const executableCode = cm.transformForExecution();
-
             const worker = getWorker();
-
-            // Promise wrapper for worker message
             const executeInWorker = () => {
-                return new Promise<any>((resolve, reject) => {
+                return new Promise<any[]>((resolve, reject) => {
                     const handler = (e: MessageEvent) => {
                         if (e.data.type === 'SUCCESS') {
                             worker.removeEventListener('message', handler);
@@ -354,18 +320,12 @@ export const createObjectSlice: StateCreator<
                     worker.postMessage({ type: 'EXECUTE', code: executableCode });
                 });
             };
-
             const shapesArray = await executeInWorker();
-
-            // 4. Map to CADObjects
-            const newObjects: CADObject[] = shapesArray.map((item: any, index: number) => {
+            const newObjects: CADObject[] = shapesArray.map((item: { id: string; meshData?: any; edgeData?: any; faceMapping?: any; edgeMapping?: any }, index: number) => {
                 const astId = item.id;
                 const existing = state.objects.find(o => o.id === astId);
-
                 let geometry = undefined;
                 let edgeGeometry = undefined;
-
-                // Reconstruct Geometry from Worker Data
                 if (item.meshData) {
                     const { vertices, indices, normals } = item.meshData;
                     geometry = new THREE.BufferGeometry();
@@ -377,19 +337,15 @@ export const createObjectSlice: StateCreator<
                         geometry.computeVertexNormals();
                     }
                 }
-
                 if (item.edgeData && item.edgeData.length > 0) {
                     edgeGeometry = new THREE.BufferGeometry();
                     edgeGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(item.edgeData), 3));
                 }
-
                 let type: CADObject['type'] = existing?.type || 'box';
                 const feature = cm.getFeatures().find(f => f.id === astId);
-
                 if (feature && feature.operations.length > 0) {
                     const lastOp = feature.operations[feature.operations.length - 1];
                     const lastOpName = lastOp.name.toLowerCase();
-
                     if (lastOpName.includes('box')) type = 'box';
                     else if (lastOpName.includes('cylinder')) type = 'cylinder';
                     else if (lastOpName.includes('sphere')) type = 'sphere';
@@ -398,15 +354,12 @@ export const createObjectSlice: StateCreator<
                     else if (lastOpName.includes('revolve')) type = 'revolve';
                     else if (lastOpName.includes('draw') || lastOpName.includes('sketch')) type = 'sketch';
                     else if (lastOpName.includes('plane')) type = 'plane';
-
                 }
-
                 const dimensions = { ...(existing?.dimensions || {}) };
                 const featurePlaneOp = feature?.operations.find(op => op.name === 'sketchOnPlane');
                 if (featurePlaneOp && featurePlaneOp.args.length > 0 && featurePlaneOp.args[0].type === 'StringLiteral') {
                     dimensions.sketchPlane = featurePlaneOp.args[0].value;
                 }
-
                 return {
                     id: astId,
                     name: existing?.name || (type === 'extrusion' ? 'Extrusion' : type.charAt(0).toUpperCase() + type.slice(1)) + ' ' + (index + 1),
@@ -423,48 +376,34 @@ export const createObjectSlice: StateCreator<
                     faceMapping: item.faceMapping,
                     edgeMapping: item.edgeMapping
                 };
-            }).filter((obj: any) => (obj.geometry !== undefined || obj.edgeGeometry !== undefined));
-
-            // Add origin axes
+            }).filter((obj: CADObject) => (obj.geometry !== undefined || obj.edgeGeometry !== undefined));
             newObjects.push(...getOriginAxes());
-
             set({ objects: newObjects });
-
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error("Error executing code:", e);
-            toast.error(`Error: ${e.message}`);
+            const errorMessage = e instanceof Error ? e.message : String(e);
+            toast.error(`Error: ${errorMessage}`);
         }
     },
 
     executeOperation: (type) => {
         const state = get();
         const selectedIds = [...state.selectedIds];
-
         if (selectedIds.length < 2) {
             toast.error("Select at least 2 objects for this operation");
             return;
         }
-
         const cm = new CodeManager(state.code);
         const primaryId = selectedIds[0];
         const secondaryIds = selectedIds.slice(1);
-
-        const methodMap = {
-            join: 'fuse',
-            cut: 'cut',
-            intersect: 'intersect'
-        };
-
+        const methodMap = { join: 'fuse', cut: 'cut', intersect: 'intersect' };
         const methodName = methodMap[type];
-
         secondaryIds.forEach(id => {
             cm.addOperation(primaryId, methodName, [{ type: 'raw', content: id }]);
         });
-
         secondaryIds.forEach(id => {
             cm.removeFeature(id);
         });
-
         set({ code: cm.getCode() });
         get().runCode();
         get().triggerSave();
@@ -501,12 +440,10 @@ export const createObjectSlice: StateCreator<
         const state = get();
         if (!state.activeOperation) return;
         const { type, params } = state.activeOperation;
-
         if ((type === 'extrusion' || type === 'extrude' || type === 'revolve') && params?.selectedShape) {
             const newSelectedIds = new Set([params.selectedShape]);
             set({ selectedIds: newSelectedIds });
         }
-
         state.addObject(type, { dimensions: params });
         set({ activeOperation: null });
     },
@@ -514,9 +451,7 @@ export const createObjectSlice: StateCreator<
     exportSTL: async () => {
         const state = get();
         const worker = getWorker();
-
         toast.loading("Exporting STL...", { id: 'export' });
-
         return new Promise<void>((resolve, reject) => {
             const handler = (e: MessageEvent) => {
                 if (e.data.type === 'EXPORT_SUCCESS') {
@@ -544,9 +479,7 @@ export const createObjectSlice: StateCreator<
     exportSTEP: async () => {
         const state = get();
         const worker = getWorker();
-
         toast.loading("Exporting STEP...", { id: 'export' });
-
         return new Promise<void>((resolve, reject) => {
             const handler = (e: MessageEvent) => {
                 if (e.data.type === 'EXPORT_SUCCESS') {
@@ -573,11 +506,7 @@ export const createObjectSlice: StateCreator<
 
     exportJSON: () => {
         const state = get();
-        const data = {
-            name: state.fileName,
-            code: state.code,
-            version: '1.0'
-        };
+        const data = { name: state.fileName, code: state.code, version: '1.0' };
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -588,38 +517,44 @@ export const createObjectSlice: StateCreator<
         toast.success("Project Exported (JSON)");
     },
 
-    importFile: () => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json,.stl,.step,.stp';
-        input.onchange = async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (!file) return;
+    confirmImport: async () => {
+        const state = get();
+        if (!state.pendingImport) return;
+        const { file, type, extension } = state.pendingImport;
+        set({ pendingImport: null });
+        await state.processImport(file, type, extension);
+    },
 
-            const reader = new FileReader();
-            const extension = file.name.split('.').pop()?.toLowerCase();
+    cancelImport: () => {
+        set({ pendingImport: null });
+    },
 
+    processImport: async (file: File, type: string, extension: string) => {
+        toast.loading(`Importing ${file.name}...`, { id: 'import' });
+
+        try {
             if (extension === 'json') {
-                reader.onload = (event) => {
-                    try {
-                        const data = JSON.parse(event.target?.result as string);
-                        if (data.code) {
-                            get().setCode(data.code);
-                            get().runCode();
-                            toast.success("Project imported from JSON");
-                        }
-                    } catch (err) {
-                        toast.error("Failed to parse JSON file");
-                    }
-                };
-                reader.readAsText(file);
+                const text = await file.text();
+                const data = JSON.parse(text);
+                if (data.code) {
+                    get().setCode(data.code);
+                    await get().runCode();
+                    toast.success("Project imported from JSON", { id: 'import' });
+                } else {
+                    throw new Error("Invalid JSON project file");
+                }
             } else if (extension === 'stl' || extension === 'step' || extension === 'stp') {
-                const type = (extension === 'stl') ? 'STL' : 'STEP';
-                reader.onload = async (event) => {
-                    const base64 = (event.target?.result as string).split(',')[1];
-                    const varName = `imported${type}${Math.floor(Math.random() * 1000)}`;
+                const dataUrl = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
 
-                    const importCode = `
+                const base64 = dataUrl.split(',')[1];
+                const varName = `imported${type}${Math.floor(Math.random() * 1000)}`;
+
+                const importCode = `
   // Imported ${type} file: ${file.name}
   const ${varName}Raw = "${base64}";
   
@@ -633,53 +568,79 @@ export const createObjectSlice: StateCreator<
   
   const ${varName} = await replicad.import${type}(${varName}Blob);
 `;
-                    const currentCode = get().code;
-                    let newCode = currentCode;
+                const currentCode = get().code;
+                let newCode = currentCode;
 
-                    // Robust injection into main
-                    const mainFunctionPatterns = [
-                        'async function main() {',
-                        'function main() {',
-                        'const main = () => {',
-                        'const main = async () => {'
-                    ];
+                const mainFunctionPatterns = [
+                    'async function main() {',
+                    'function main() {',
+                    'const main = () => {',
+                    'const main = async () => {'
+                ];
 
-                    let injected = false;
-                    for (const pattern of mainFunctionPatterns) {
-                        if (currentCode.includes(pattern)) {
-                            // Inject at the beginning of main
-                            let replacement = pattern;
-                            if (!pattern.includes('async')) {
-                                if (pattern.includes('function')) {
-                                    replacement = pattern.replace('function', 'async function');
-                                } else if (pattern.includes('=>')) {
-                                    replacement = pattern.replace('() =>', 'async () =>');
-                                }
+                let injected = false;
+                for (const pattern of mainFunctionPatterns) {
+                    if (currentCode.includes(pattern)) {
+                        let replacement = pattern;
+                        if (!pattern.includes('async')) {
+                            if (pattern.includes('function')) {
+                                replacement = pattern.replace('function', 'async function');
+                            } else if (pattern.includes('=>')) {
+                                replacement = pattern.replace('() =>', 'async () =>');
                             }
-                            newCode = currentCode.replace(pattern, `${replacement}${importCode}`);
-                            injected = true;
-                            break;
                         }
+                        newCode = currentCode.replace(pattern, `${replacement}${importCode}`);
+                        injected = true;
+                        break;
                     }
+                }
 
-                    if (!injected) {
-                        // Create main if it doesn't exist
-                        newCode = `async function main() {${importCode}\n  return ${varName};\n}`;
-                    } else {
-                        // If it returns an empty array or just return;, replace with the new variable
-                        if (newCode.includes('return [];')) {
-                            newCode = newCode.replace('return [];', `return ${varName};`);
-                        } else if (newCode.includes('return;')) {
-                            newCode = newCode.replace('return;', `return ${varName};`);
-                        }
+                if (!injected) {
+                    newCode = `async function main() {${importCode}\n  return ${varName};\n}`;
+                } else {
+                    if (newCode.includes('return [];')) {
+                        newCode = newCode.replace('return [];', `return ${varName};`);
+                    } else if (newCode.includes('return;')) {
+                        newCode = newCode.replace('return;', `return ${varName};`);
                     }
+                }
 
-                    get().setCode(newCode);
-                    get().runCode();
-                    toast.success(`${type} file imported and injected into editor`);
-                };
-                reader.readAsDataURL(file);
+                get().setCode(newCode);
+                await get().runCode();
+                toast.success(`${type} file imported successfully`, { id: 'import' });
             }
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            toast.error(`Import failed: ${errorMessage}`, { id: 'import' });
+        }
+    },
+
+    importFile: () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json,.stl,.step,.stp';
+        input.onchange = async (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (!file) return;
+
+            // Validate file size
+            if (file.size > MAX_FILE_SIZE) {
+                toast.error(
+                    `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). ` +
+                    `Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB.`
+                );
+                return;
+            }
+
+            const extension = file.name.split('.').pop()?.toLowerCase() || '';
+            const type = (extension === 'stl') ? 'STL' : 'STEP';
+
+            if (file.size > WARN_FILE_SIZE) {
+                set({ pendingImport: { file, type, extension } });
+                return;
+            }
+
+            await get().processImport(file, type, extension);
         };
         input.click();
     },

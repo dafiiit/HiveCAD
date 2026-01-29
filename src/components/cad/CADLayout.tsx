@@ -11,6 +11,7 @@ import UnifiedSidebar from "./UnifiedSidebar";
 import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
 import { Maximize2, Minimize2 } from "lucide-react";
+import { ImportWarningModal } from "./ImportWarningModal";
 
 
 const CADLayout = () => {
@@ -133,6 +134,9 @@ const CADLayout = () => {
 
         {/* Status bar (Overlay) */}
         <StatusBar />
+
+        {/* Modals */}
+        <ImportWarningModal />
       </div>
     </div>
   );

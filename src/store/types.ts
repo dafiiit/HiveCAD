@@ -140,6 +140,7 @@ export interface ObjectSlice {
     activeTab: 'SOLID' | 'SURFACE' | 'MESH' | 'SHEET' | 'PLASTIC' | 'MANAGE' | 'UTILITIES' | 'SKETCH';
     code: string;
     activeOperation: { type: string; params: any } | null;
+    pendingImport: { file: File; type: string; extension: string } | null;
 
     addObject: (type: CADObject['type'] | string, options?: Partial<CADObject>) => void;
     updateObject: (id: string, updates: Partial<CADObject>) => void;
@@ -160,6 +161,9 @@ export interface ObjectSlice {
     exportSTEP: () => Promise<void>;
     exportJSON: () => void;
     importFile: () => void;
+    processImport: (file: File, type: string, extension: string) => Promise<void>;
+    confirmImport: () => Promise<void>;
+    cancelImport: () => void;
 }
 
 export interface ViewSlice {
