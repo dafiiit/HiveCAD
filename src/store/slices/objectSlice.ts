@@ -11,16 +11,7 @@ const DEFAULT_CODE = `const main = () => {
   return;
 };`;
 
-// Worker Initialization
-let replicadWorker: Worker | null = null;
-const getWorker = () => {
-    if (!replicadWorker) {
-        replicadWorker = new Worker(new URL('../../workers/replicad-worker.ts', import.meta.url), {
-            type: 'module'
-        });
-    }
-    return replicadWorker;
-};
+import { replicadWorkerPool } from '../../lib/workers/WorkerPool';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 const WARN_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -134,6 +125,7 @@ export const createObjectSlice: StateCreator<
     code: DEFAULT_CODE,
     activeOperation: null,
     pendingImport: null,
+    meshingProgress: null,
 
     addObject: async (type: CADObject['type'] | string, options: Partial<CADObject> = {}) => {
         try {
@@ -304,23 +296,22 @@ export const createObjectSlice: StateCreator<
         try {
             const cm = new CodeManager(state.code);
             const executableCode = cm.transformForExecution();
-            const worker = getWorker();
-            const executeInWorker = () => {
-                return new Promise<any[]>((resolve, reject) => {
-                    const handler = (e: MessageEvent) => {
-                        if (e.data.type === 'SUCCESS') {
-                            worker.removeEventListener('message', handler);
-                            resolve(e.data.meshes);
-                        } else if (e.data.type === 'ERROR') {
-                            worker.removeEventListener('message', handler);
-                            reject(new Error(e.data.error));
-                        }
-                    };
-                    worker.addEventListener('message', handler);
-                    worker.postMessage({ type: 'EXECUTE', code: executableCode });
-                });
-            };
-            const shapesArray = await executeInWorker();
+            const result = await replicadWorkerPool.execute(
+                { type: 'EXECUTE', code: executableCode },
+                (progressData) => {
+                    if (progressData.type === 'MESH_PROGRESS') {
+                        set({
+                            meshingProgress: {
+                                id: progressData.id,
+                                stage: progressData.stage,
+                                progress: progressData.progress
+                            }
+                        });
+                    }
+                }
+            );
+            set({ meshingProgress: null });
+            const shapesArray = result.meshes;
             const newObjects: CADObject[] = shapesArray.map((item: { id: string; meshData?: any; edgeData?: any; faceMapping?: any; edgeMapping?: any }, index: number) => {
                 const astId = item.id;
                 const existing = state.objects.find(o => o.id === astId);
@@ -450,58 +441,28 @@ export const createObjectSlice: StateCreator<
 
     exportSTL: async () => {
         const state = get();
-        const worker = getWorker();
-        toast.loading("Exporting STL...", { id: 'export' });
-        return new Promise<void>((resolve, reject) => {
-            const handler = (e: MessageEvent) => {
-                if (e.data.type === 'EXPORT_SUCCESS') {
-                    worker.removeEventListener('message', handler);
-                    const blob = e.data.blob;
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `${state.fileName || 'model'}.stl`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    toast.success("STL Exported", { id: 'export' });
-                    resolve();
-                } else if (e.data.type === 'ERROR') {
-                    worker.removeEventListener('message', handler);
-                    toast.error(`Export failed: ${e.data.error}`, { id: 'export' });
-                    reject(new Error(e.data.error));
-                }
-            };
-            worker.addEventListener('message', handler);
-            worker.postMessage({ type: 'EXPORT_STL', code: state.code });
-        });
+        const result = await replicadWorkerPool.execute({ type: 'EXPORT_STL', code: state.code });
+        const blob = result.blob;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${state.fileName || 'model'}.stl`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast.success("STL Exported", { id: 'export' });
     },
 
     exportSTEP: async () => {
         const state = get();
-        const worker = getWorker();
-        toast.loading("Exporting STEP...", { id: 'export' });
-        return new Promise<void>((resolve, reject) => {
-            const handler = (e: MessageEvent) => {
-                if (e.data.type === 'EXPORT_SUCCESS') {
-                    worker.removeEventListener('message', handler);
-                    const blob = e.data.blob;
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `${state.fileName || 'model'}.step`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    toast.success("STEP Exported", { id: 'export' });
-                    resolve();
-                } else if (e.data.type === 'ERROR') {
-                    worker.removeEventListener('message', handler);
-                    toast.error(`Export failed: ${e.data.error}`, { id: 'export' });
-                    reject(new Error(e.data.error));
-                }
-            };
-            worker.addEventListener('message', handler);
-            worker.postMessage({ type: 'EXPORT_STEP', code: state.code });
-        });
+        const result = await replicadWorkerPool.execute({ type: 'EXPORT_STEP', code: state.code });
+        const blob = result.blob;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${state.fileName || 'model'}.step`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast.success("STEP Exported", { id: 'export' });
     },
 
     exportJSON: () => {

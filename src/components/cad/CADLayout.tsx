@@ -12,6 +12,7 @@ import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { ImportWarningModal } from "./ImportWarningModal";
+import { MeshingProgress } from "./MeshingProgress";
 
 
 const CADLayout = () => {
@@ -126,6 +127,9 @@ const CADLayout = () => {
 
             {/* Right sketch palette (overlay in sketch mode) */}
             <SketchPalette isVisible={isSketchMode} />
+
+            {/* Meshing Progress Overlay */}
+            <MeshingProgress />
           </div>
         </div>
 

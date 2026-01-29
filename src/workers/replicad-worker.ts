@@ -28,10 +28,16 @@ interface ImportProgress {
 
 const CHUNK_SIZE = 1024 * 1024; // 1MB chunks
 
-function generateMesh(shapesArray: any[]) {
-    return shapesArray.map((item, index) => {
+const yieldControl = () => new Promise(resolve => setTimeout(resolve, 0));
+
+async function generateMesh(shapesArray: any[]) {
+    const meshes = [];
+    const totalShapes = shapesArray.length;
+
+    for (let shapeIndex = 0; shapeIndex < totalShapes; shapeIndex++) {
+        const item = shapesArray[shapeIndex];
         const shape = item.shape || item;
-        const astId = (shape as any)._astId || `gen-${index}`;
+        const astId = (shape as any)._astId || `gen-${shapeIndex}`;
 
         let meshData = null;
         let edgeData = null;
@@ -53,7 +59,9 @@ function generateMesh(shapesArray: any[]) {
 
                 // iterate faces
                 const faces = Array.from(shape.faces);
-                for (let i = 0; i < faces.length; i++) {
+                const totalFaces = faces.length;
+
+                for (let i = 0; i < totalFaces; i++) {
                     const face: any = faces[i];
                     const faceMesh = face.mesh({ tolerance: 0.1, angularTolerance: 30.0 });
 
@@ -74,6 +82,17 @@ function generateMesh(shapesArray: any[]) {
 
                         vertexOffset += faceMesh.vertices.length / 3;
                         indexOffset += faceIndices.length;
+                    }
+
+                    // Yield and report progress for complex shapes
+                    if (totalFaces > 50 && i % Math.max(1, Math.floor(totalFaces / 10)) === 0) {
+                        self.postMessage({
+                            type: 'MESH_PROGRESS',
+                            id: astId,
+                            stage: 'faces',
+                            progress: Math.floor((i / totalFaces) * 100)
+                        });
+                        await yieldControl();
                     }
                 }
 
@@ -103,7 +122,7 @@ function generateMesh(shapesArray: any[]) {
             }
 
         } catch (err) {
-            console.error(`Worker: Failed to mesh shape ${index}`, err);
+            console.error(`Worker: Failed to mesh shape ${shapeIndex}`, err);
         }
 
         // Extract edges with mapping
@@ -113,8 +132,9 @@ function generateMesh(shapesArray: any[]) {
                 const allLines: number[] = [];
                 let lineOffset = 0;
                 const edges = Array.from(shape.edges);
+                const totalEdges = edges.length;
 
-                for (let i = 0; i < edges.length; i++) {
+                for (let i = 0; i < totalEdges; i++) {
                     const edge: any = edges[i];
                     const { lines } = edge.mesh({ tolerance: 0.1, angularTolerance: 30.0 });
                     if (lines && lines.length > 0) {
@@ -125,6 +145,17 @@ function generateMesh(shapesArray: any[]) {
                             edgeId: i
                         });
                         lineOffset += lines.length;
+                    }
+
+                    // Yield and report progress for complex shapes
+                    if (totalEdges > 100 && i % Math.max(1, Math.floor(totalEdges / 10)) === 0) {
+                        self.postMessage({
+                            type: 'MESH_PROGRESS',
+                            id: astId,
+                            stage: 'edges',
+                            progress: Math.floor((i / totalEdges) * 100)
+                        });
+                        await yieldControl();
                     }
                 }
 
@@ -145,17 +176,21 @@ function generateMesh(shapesArray: any[]) {
             }
 
         } catch (err) {
-            console.error(`Worker: Failed to extract edges ${index}`, err);
+            console.error(`Worker: Failed to extract edges ${shapeIndex}`, err);
         }
 
-        return {
+        meshes.push({
             id: astId,
             meshData,
             edgeData,
             faceMapping,
             edgeMapping
-        };
-    });
+        });
+
+        // Small yield between shapes
+        if (totalShapes > 1) await yieldControl();
+    }
+    return meshes;
 }
 
 async function importLargeSTL(file: Blob): Promise<void> {
@@ -239,7 +274,7 @@ async function processSTL(combined: Uint8Array, total: number) {
     });
 
     const shapesArray = Array.isArray(shape) ? shape : [shape];
-    const meshes = generateMesh(shapesArray);
+    const meshes = await generateMesh(shapesArray);
 
     self.postMessage({
         type: 'IMPORT_PROGRESS',
@@ -264,7 +299,7 @@ async function processSTEP(combined: Uint8Array, total: number) {
     });
 
     const shapesArray = Array.isArray(shape) ? shape : [shape];
-    const meshes = generateMesh(shapesArray);
+    const meshes = await generateMesh(shapesArray);
 
     self.postMessage({
         type: 'IMPORT_PROGRESS',
@@ -313,7 +348,7 @@ self.onmessage = async (e) => {
                 shapesArray = [result];
             }
 
-            const meshes = generateMesh(shapesArray);
+            const meshes = await generateMesh(shapesArray);
 
             self.postMessage({ type: 'SUCCESS', meshes });
 

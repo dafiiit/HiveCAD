@@ -141,6 +141,7 @@ export interface ObjectSlice {
     code: string;
     activeOperation: { type: string; params: any } | null;
     pendingImport: { file: File; type: string; extension: string } | null;
+    meshingProgress: { id: string; stage: string; progress: number } | null;
 
     addObject: (type: CADObject['type'] | string, options?: Partial<CADObject>) => void;
     updateObject: (id: string, updates: Partial<CADObject>) => void;
