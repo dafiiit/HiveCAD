@@ -8,6 +8,7 @@ import { createCADStore } from '@/store/createCADStore';
 import { ProjectDashboard } from '@/components/project/ProjectDashboard';
 import CADLayout from '@/components/cad/CADLayout';
 import { TabContext, Tab } from './TabContext';
+import { CommandPalette } from '@/components/ui/CommandPalette';
 import { ProjectData } from '@/lib/storage/types';
 import { cn } from '@/lib/utils';
 import { useGlobalStore } from '@/store/useGlobalStore';
@@ -220,7 +221,12 @@ export const TabManager = () => {
                             <CADStoreProvider store={tab.store}>
                                 <BackgroundSyncHandler />
                                 <UnsavedChangesListener />
-                                {tab.type === 'dashboard' ? <ProjectDashboard /> : <CADLayout />}
+                                {tab.type === 'dashboard' ? <ProjectDashboard /> : (
+                                    <>
+                                        <CADLayout />
+                                        <CommandPalette />
+                                    </>
+                                )}
                             </CADStoreProvider>
                         </div>
                     ))}

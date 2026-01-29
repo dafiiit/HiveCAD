@@ -464,6 +464,7 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-4 text-sm">
+            <div className="flex justify-between font-medium text-primary mb-2"><span>Command Search</span><kbd className="px-2 py-1 bg-primary/20 text-primary rounded">Cmd+K</kbd></div>
             <div className="flex justify-between"><span>Save</span><kbd className="px-2 py-1 bg-secondary rounded">Ctrl+S</kbd></div>
             <div className="flex justify-between"><span>Undo</span><kbd className="px-2 py-1 bg-secondary rounded">Ctrl+Z</kbd></div>
             <div className="flex justify-between"><span>Redo</span><kbd className="px-2 py-1 bg-secondary rounded">Ctrl+Y</kbd></div>
