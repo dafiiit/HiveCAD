@@ -148,6 +148,35 @@ const EdgeHighlighter = ({ object, edgeIds, clippingPlanes = [] }: { object: CAD
   );
 };
 
+const VertexHighlighter = ({ object, vertexIds }: { object: CADObject, vertexIds: number[] }) => {
+  const geometry = React.useMemo(() => {
+    if (!object.vertexGeometry) return null;
+    const posAttr = object.vertexGeometry.getAttribute('position');
+    const positions: number[] = [];
+
+    vertexIds.forEach(vid => {
+      // Simple mapping: index in vertexGeometry corresponds to vertex ID
+      if (vid < posAttr.count) {
+        positions.push(posAttr.getX(vid), posAttr.getY(vid), posAttr.getZ(vid));
+      }
+    });
+
+    if (positions.length === 0) return null;
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    return geo;
+  }, [object.vertexGeometry, vertexIds]);
+
+  if (!geometry) return null;
+
+  return (
+    <points geometry={geometry}>
+      <pointsMaterial color="#ff0000" size={10} sizeAttenuation={false} depthTest={false} transparent opacity={0.8} />
+    </points>
+  );
+};
+
 const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject, clippingPlanes?: THREE.Plane[] }) => {
   const { selectObject, selectedIds, isSketchMode, sketchPlane, sketchesVisible, bodiesVisible, originVisible } = useCADStore();
   const isSketch = object.type === 'sketch';
@@ -175,6 +204,17 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
       }
     });
     return edges;
+  }, [selectedIds, object.id]);
+
+  const selectedVertices = React.useMemo(() => {
+    const verts: number[] = [];
+    selectedIds.forEach(id => {
+      if (id.startsWith(object.id + ':vertex-')) {
+        const vid = parseInt(id.split(':vertex-')[1]);
+        if (!isNaN(vid)) verts.push(vid);
+      }
+    });
+    return verts;
   }, [selectedIds, object.id]);
 
   // Check if this axis is normal to the current sketch plane (to hide it for better visibility)
@@ -230,20 +270,31 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
     // Determine Selection ID
     let selectionId = object.id;
 
-    // Check Sub-Selection
-    if (e.object.type === 'Mesh' && object.faceMapping && e.faceIndex !== undefined) {
+    // We use a small hack to determine what was hit:
+    // R3F events 'e' have an 'intersections' array.
+    // We can look for the first Point or LineSegment intersection to prioritize sub-elements.
+    const prioritizedIntersection = e.intersections.find((hit: any) => hit.object.type === 'Points' || hit.object.type === 'LineSegments');
+
+    if (prioritizedIntersection) {
+      const hitObj = prioritizedIntersection.object;
+      const hitIndex = prioritizedIntersection.index;
+
+      if (hitObj.type === 'Points' && hitIndex !== undefined) {
+        selectionId = `${object.id}:vertex-${hitIndex}`;
+      } else if (hitObj.type === 'LineSegments' && object.edgeMapping && hitIndex !== undefined) {
+        const floatOffset = hitIndex * 6;
+        const edge = object.edgeMapping.find(m => floatOffset >= m.start && floatOffset < m.start + m.count);
+        if (edge) {
+          selectionId = `${object.id}:edge-${edge.edgeId}`;
+        }
+      }
+    }
+    // Fallback to the primary intersection (which might be the Mesh face)
+    else if (e.object.type === 'Mesh' && object.faceMapping && e.faceIndex !== undefined) {
       const triangleStartIndex = e.faceIndex * 3;
       const face = object.faceMapping.find(m => triangleStartIndex >= m.start && triangleStartIndex < m.start + m.count);
       if (face) {
         selectionId = `${object.id}:face-${face.faceId}`;
-      }
-    } else if (e.object.type === 'LineSegments' && object.edgeMapping && e.index !== undefined) {
-      // Determine edge index (segment index to float offset)
-      // e.index is segment index
-      const floatOffset = e.index * 6;
-      const edge = object.edgeMapping.find(m => floatOffset >= m.start && floatOffset < m.start + m.count);
-      if (edge) {
-        selectionId = `${object.id}:edge-${edge.edgeId}`;
       }
     }
 
@@ -319,6 +370,29 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
           </lineSegments>
           {selectedEdges.length > 0 && (
             <EdgeHighlighter object={object} edgeIds={selectedEdges} clippingPlanes={clippingPlanes} />
+          )}
+        </>
+      )}
+      {object.vertexGeometry && (
+        <>
+          <points
+            geometry={object.vertexGeometry}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerOver={handlePointerOver}
+            onPointerOut={handlePointerOut}
+          >
+            <pointsMaterial
+              color="#ffaa00"
+              size={12} // Visual size for hover/hit detection
+              sizeAttenuation={false}
+              transparent
+              opacity={0} // Invisible hit target by default
+              depthTest={false}
+            />
+          </points>
+          {selectedVertices.length > 0 && (
+            <VertexHighlighter object={object} vertexIds={selectedVertices} />
           )}
         </>
       )}
@@ -845,6 +919,15 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
       <Canvas
         gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true, localClippingEnabled: true }}
         onPointerMissed={() => api.getState().clearSelection()}
+        raycaster={{
+          params: {
+            Line: { threshold: 3 },
+            Points: { threshold: 3 },
+            Mesh: {},
+            LOD: {},
+            Sprite: {}
+          }
+        }}
       >
         <ThumbnailCapturer />
 

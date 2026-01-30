@@ -219,24 +219,26 @@ const SketchCanvas = () => {
         }
     };
 
-    // Hit Test Helper
     const hitTest = (p: [number, number]) => {
-        const hitThreshold = 0.5;
+        // Higher threshold for easier clicking
+        const hitThreshold = 3.5;
         let closestEntityId: string | null = null;
         let minDistance = hitThreshold;
 
         sketchEntities.forEach((entity) => {
             let distance = Infinity;
+            let weight = 1.0;
 
             if (entity.type === 'point') {
                 const dx = entity.x - p[0];
                 const dy = entity.y - p[1];
                 distance = Math.sqrt(dx * dx + dy * dy);
+                // Give points a selection priority over lines if they are both close
+                weight = 0.8;
             } else if (entity.type === 'line') {
                 const p1 = sketchEntities.get(entity.p1Id);
                 const p2 = sketchEntities.get(entity.p2Id);
                 if (p1 && p2 && p1.type === 'point' && p2.type === 'point') {
-                    // Distance from point to line segment
                     const A = p[0] - p1.x;
                     const B = p[1] - p1.y;
                     const C = p2.x - p1.x;
@@ -245,23 +247,12 @@ const SketchCanvas = () => {
                     const dot = A * C + B * D;
                     const lenSq = C * C + D * D;
                     let param = -1;
-                    if (lenSq !== 0) // in case of 0 length line
-                        param = dot / lenSq;
+                    if (lenSq !== 0) param = dot / lenSq;
 
                     let xx, yy;
-
-                    if (param < 0) {
-                        xx = p1.x;
-                        yy = p1.y;
-                    }
-                    else if (param > 1) {
-                        xx = p2.x;
-                        yy = p2.y;
-                    }
-                    else {
-                        xx = p1.x + param * C;
-                        yy = p1.y + param * D;
-                    }
+                    if (param < 0) { xx = p1.x; yy = p1.y; }
+                    else if (param > 1) { xx = p2.x; yy = p2.y; }
+                    else { xx = p1.x + param * C; yy = p1.y + param * D; }
 
                     const dx = p[0] - xx;
                     const dy = p[1] - yy;
@@ -277,8 +268,9 @@ const SketchCanvas = () => {
                 }
             }
 
-            if (distance < minDistance) {
-                minDistance = distance;
+            const weightedDistance = distance * weight;
+            if (weightedDistance < minDistance) {
+                minDistance = weightedDistance;
                 closestEntityId = entity.id;
             }
         });
@@ -324,51 +316,46 @@ const SketchCanvas = () => {
         }
 
         // Handle Selection and Dimension Tools
-        if (activeTool === 'select' || activeTool === 'dimension') {
-            const hitId = hitTest(p2d);
+        const hitId = hitTest(p2d);
+        // We always allow toggling selection if the tool is 'select' or 'dimension',
+        // OR if we click an object that is already selected (to allow deselecting it in any tool)
+        if (hitId && (activeTool === 'select' || activeTool === 'dimension' || selectedIds.has(hitId))) {
+            // For dimension tool, we want to accumulate selection (multi-select behavior mostly)
+            // but if we click the same thing, maybe toggle?
+            const multiSelect = e.ctrlKey || e.metaKey || e.shiftKey || activeTool === 'dimension';
+            selectObject(hitId, multiSelect);
 
-            if (hitId) {
-                // For dimension tool, we want to accumulate selection (multi-select behavior mostly)
-                // but if we click the same thing, maybe toggle?
-                const multiSelect = e.ctrlKey || e.metaKey || e.shiftKey || activeTool === 'dimension';
-                selectObject(hitId, multiSelect);
+            if (activeTool === 'dimension') {
+                // Check if we can apply a dimension with current selection
+                const state = useCADStoreApi().getState();
+                const currentSelected = new Set(state.selectedIds);
+                // Filter for sketch entities
+                const sEntities = Array.from(currentSelected)
+                    .filter(id => sketchEntities.has(id))
+                    .map(id => sketchEntities.get(id)!);
 
-                if (activeTool === 'dimension') {
-                    // Check if we can apply a dimension with current selection
-                    const state = useCADStoreApi().getState();
-                    // We need to fetch FRESH selectedIds from state because selectObject updates store asynchronously? 
-                    // No, Zustand updates are synchronous usually.
-                    // But we should use the updated selection.
-                    // We can check 'selectedIds' from hook + hitId? 
-                    // Or just re-read state.
-                    const currentSelected = new Set(state.selectedIds);
-                    // Filter for sketch entities
-                    const sEntities = Array.from(currentSelected)
-                        .filter(id => sketchEntities.has(id))
-                        .map(id => sketchEntities.get(id)!);
+                let applied = false;
+                const { applyConstraintToSelection, clearSelection: clear } = state;
 
-                    let applied = false;
-                    const { applyConstraintToSelection, clearSelection: clear } = state;
-
-                    // Case: 1 Circle -> Radius
-                    if (sEntities.length === 1 && sEntities[0].type === 'circle') {
-                        applyConstraintToSelection('radius');
-                        applied = true;
-                    }
-                    // Case: 2 Points -> Distance
-                    else if (sEntities.length === 2 && sEntities.every(e => e.type === 'point')) {
-                        applyConstraintToSelection('distance');
-                        applied = true;
-                    }
-
-                    if (applied) {
-                        clear();
-                    }
+                // Case: 1 Circle -> Radius
+                if (sEntities.length === 1 && sEntities[0].type === 'circle') {
+                    applyConstraintToSelection('radius');
+                    applied = true;
                 }
-            } else {
-                if (activeTool === 'select' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-                    clearSelection();
+                // Case: 2 Points -> Distance
+                else if (sEntities.length === 2 && sEntities.every(e => e.type === 'point')) {
+                    applyConstraintToSelection('distance');
+                    applied = true;
                 }
+
+                if (applied) {
+                    clear();
+                }
+            }
+            return;
+        } else if (!hitId && (activeTool === 'select' || activeTool === 'dimension')) {
+            if (activeTool === 'select' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                clearSelection();
             }
             return;
         }
@@ -605,27 +592,25 @@ const SketchCanvas = () => {
         }
         // Points rendering
         if (entity.type === 'point') {
-            // We generally only render points if they are significant (corners, etc.) or selected/dragged
-            // For now, let's render points if they are selected or if they are terminals of lines/arcs?
-            // Actually, usually CAD tools show points as small dots.
-            // Let's show points if selected or if they are "driving points" (dragging)
-            // The original code only showed points if draggingEntityId === entity.id
-
-            if (isSelected || draggingEntityId === entity.id) {
-                return (
-                    <mesh key={entity.id} position={to3D(entity.x, entity.y)}>
-                        <sphereGeometry args={[isSelected ? 0.3 : 0.2, 8, 8]} />
-                        <meshBasicMaterial color={isSelected ? "#ff9900" : "#00ffff"} depthTest={false} />
-                    </mesh>
-                );
-            }
-            // Also render points slightly to give a target for clicking?
+            // ALWAYS render a hit target, even if not selected
             return (
-                <mesh key={entity.id} position={to3D(entity.x, entity.y)} visible={false}>
-                    <sphereGeometry args={[0.3, 8, 8]} />
-                    <meshBasicMaterial color="red" />
-                </mesh>
-            )
+                <group key={entity.id} position={to3D(entity.x, entity.y)}>
+                    {/* Visual Dot (Small) */}
+                    <mesh visible={true}>
+                        <sphereGeometry args={[0.2, 8, 8]} /> {/* Small visible radius */}
+                        <meshBasicMaterial
+                            color={isSelected ? "#ff9900" : "#aaddff"}
+                            depthTest={false}
+                        />
+                    </mesh>
+
+                    {/* Invisible Hit Target (Larger) - This ensures easier clicking */}
+                    <mesh visible={false}>
+                        <sphereGeometry args={[0.6, 8, 8]} /> {/* Larger click radius */}
+                        <meshBasicMaterial color="red" />
+                    </mesh>
+                </group>
+            );
         }
         return null;
     };

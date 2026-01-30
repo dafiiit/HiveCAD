@@ -179,10 +179,33 @@ async function generateMesh(shapesArray: any[]) {
             console.error(`Worker: Failed to extract edges ${shapeIndex}`, err);
         }
 
+        // Extract vertices (corners) with simple mapping
+        let vertexData = null;
+        try {
+            if (shape && shape.vertices && shape.vertices.length > 0) {
+                const verts = Array.from(shape.vertices);
+                const positions = new Float32Array(verts.length * 3);
+                for (let i = 0; i < verts.length; i++) {
+                    const vertex: any = verts[i];
+                    // Vertex in Replicad/OC has a point or center property
+                    const p = vertex.point || vertex.center;
+                    if (p) {
+                        positions[i * 3] = p.x;
+                        positions[i * 3 + 1] = p.y;
+                        positions[i * 3 + 2] = p.z;
+                    }
+                }
+                vertexData = positions;
+            }
+        } catch (err) {
+            console.error(`Worker: Failed to extract vertices ${shapeIndex}`, err);
+        }
+
         meshes.push({
             id: astId,
             meshData,
             edgeData,
+            vertexData,
             faceMapping,
             edgeMapping
         });

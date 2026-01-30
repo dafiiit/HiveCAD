@@ -358,3 +358,33 @@ export const replicadToThreeEdges = (shape: any): THREE.BufferGeometry | null =>
     }
 }
 
+/**
+ * Extracts unique vertices from a replicad shape/sketch and converts them to Three.js geometry.
+ */
+export const replicadToThreeVertices = (shape: any): THREE.BufferGeometry | null => {
+    if (!shape) return null;
+    try {
+        const vertices: number[] = [];
+
+        // Replicad (OpenCascade) shapes allow iterating vertices
+        if (shape.vertices) {
+            for (const v of shape.vertices) {
+                // v.point gives {x,y,z}
+                const p = v.point || v.center;
+                if (p) {
+                    vertices.push(p.x, p.y, p.z);
+                }
+            }
+        }
+
+        if (vertices.length === 0) return null;
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+        return geometry;
+    } catch (e) {
+        console.error("Error extracting vertices:", e);
+        return null;
+    }
+}
+

@@ -28,7 +28,7 @@ const getNextColor = () => {
 const geometryRegistry = new WeakMap<CADObject, THREE.BufferGeometry[]>();
 
 const registerGeometries = (obj: CADObject) => {
-    const geometries = [obj.geometry, obj.edgeGeometry].filter((g): g is THREE.BufferGeometry => !!g);
+    const geometries = [obj.geometry, obj.edgeGeometry, obj.vertexGeometry].filter((g): g is THREE.BufferGeometry => !!g);
     if (geometries.length > 0) {
         geometryRegistry.set(obj, geometries);
     }
@@ -267,7 +267,7 @@ export const createObjectSlice: StateCreator<
         const oldObject = state.objects[objectIndex];
 
         // If geometries are changing, dispose old ones
-        if (updates.geometry || updates.edgeGeometry) {
+        if (updates.geometry || updates.edgeGeometry || updates.vertexGeometry) {
             disposeGeometries(oldObject);
         }
 
@@ -276,7 +276,7 @@ export const createObjectSlice: StateCreator<
 
         // Update registry with the new object reference
         // (WeakMap needs the exact object reference being stored in state)
-        if (updates.geometry || updates.edgeGeometry) {
+        if (updates.geometry || updates.edgeGeometry || updates.vertexGeometry) {
             registerGeometries(updatedObjects[objectIndex]);
         } else if (geometryRegistry.has(oldObject)) {
             // Keep existing geometries for the new object reference
@@ -333,12 +333,24 @@ export const createObjectSlice: StateCreator<
 
     selectObject: (id, multiSelect = false) => {
         const state = get();
-        const newSelected = new Set(multiSelect ? state.selectedIds : []);
-        if (newSelected.has(id)) {
-            newSelected.delete(id);
+        let newSelected: Set<string>;
+
+        if (multiSelect) {
+            newSelected = new Set(state.selectedIds);
+            if (newSelected.has(id)) {
+                newSelected.delete(id);
+            } else {
+                newSelected.add(id);
+            }
         } else {
-            newSelected.add(id);
+            // Single select mode: toggle if already selected alone, or select this one only
+            if (state.selectedIds.has(id) && state.selectedIds.size === 1) {
+                newSelected = new Set();
+            } else {
+                newSelected = new Set([id]);
+            }
         }
+
         const updatedObjects = state.objects.map(obj => ({
             ...obj,
             selected: newSelected.has(obj.id),
@@ -356,7 +368,9 @@ export const createObjectSlice: StateCreator<
         console.log("Duplicate not implemented in Code First yet");
     },
 
-    setActiveTool: (tool) => set({ activeTool: tool }),
+    setActiveTool: (tool) => set((state) => ({
+        activeTool: state.activeTool === tool ? 'select' : tool
+    })),
     setActiveTab: (tab) => set({ activeTab: tab }),
     setCode: (code) => {
         set({ code, isSaved: false });
@@ -387,7 +401,7 @@ export const createObjectSlice: StateCreator<
             set({ meshingProgress: null });
             const shapesArray = result.meshes;
             // Record if this was a significant change (already handled by pushToHistory)
-            const newObjects: CADObject[] = shapesArray.map((item: { id: string; meshData?: any; edgeData?: any; faceMapping?: any; edgeMapping?: any }, index: number) => {
+            const newObjects: CADObject[] = shapesArray.map((item: { id: string; meshData?: any; edgeData?: any; vertexData?: any; faceMapping?: any; edgeMapping?: any }, index: number) => {
                 const astId = item.id;
                 const existing = state.objects.find(o => o.id === astId);
                 let geometry = undefined;
@@ -409,6 +423,14 @@ export const createObjectSlice: StateCreator<
                     edgeGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(item.edgeData), 3));
                     edgeGeometry.computeBoundingSphere();
                 }
+
+                let vertexGeometry = undefined;
+                if (item.vertexData && item.vertexData.length > 0) {
+                    vertexGeometry = new THREE.BufferGeometry();
+                    vertexGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(item.vertexData), 3));
+                    vertexGeometry.computeBoundingSphere();
+                }
+
                 let type: CADObject['type'] = existing?.type || 'box';
                 const feature = cm.getFeatures().find(f => f.id === astId);
                 if (feature && feature.operations.length > 0) {
@@ -441,10 +463,11 @@ export const createObjectSlice: StateCreator<
                     selected: existing?.selected || false,
                     geometry: geometry,
                     edgeGeometry: edgeGeometry,
+                    vertexGeometry: vertexGeometry,
                     faceMapping: item.faceMapping,
                     edgeMapping: item.edgeMapping
                 };
-            }).filter((obj: CADObject) => (obj.geometry !== undefined || obj.edgeGeometry !== undefined));
+            }).filter((obj: CADObject) => (obj.geometry !== undefined || obj.edgeGeometry !== undefined || obj.vertexGeometry !== undefined));
 
             // Register new geometries
             newObjects.forEach(registerGeometries);
@@ -491,6 +514,12 @@ export const createObjectSlice: StateCreator<
     },
 
     startOperation: (type) => {
+        const state = get();
+        if (state.activeOperation?.type === type) {
+            set({ activeOperation: null });
+            return;
+        }
+
         const getDefaultDimensions = (t: string) => {
             const registryDefaults = toolRegistry.getDefaultParams(t);
             if (Object.keys(registryDefaults).length > 0) return registryDefaults;
