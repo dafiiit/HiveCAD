@@ -10,13 +10,11 @@ import {
   Search,
   RefreshCw,
   AlertCircle,
-  GitBranch,
   Home,
   Box,
   Plus,
   X
 } from "lucide-react";
-import { ProjectHistoryView } from "../project/ProjectHistoryView";
 import { useCADStore, useCADStoreApi } from "@/hooks/useCADStore";
 import { useGlobalStore } from "@/store/useGlobalStore";
 import { useTabManager } from "@/components/layout/TabContext";
@@ -72,7 +70,6 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
   const { user } = useGlobalStore();
 
   const [cloudConnectionsOpen, setCloudConnectionsOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState("");
 
@@ -127,30 +124,6 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
   };
 
 
-  const handleViewVersion = async (sha: string) => {
-    try {
-      const { StorageManager } = await import('@/lib/storage/StorageManager');
-      const adapter = StorageManager.getInstance().currentAdapter;
-
-      toast.loading(`Loading version...`, { id: 'load-version' });
-      const data = await adapter.load(fileName, undefined, undefined, sha);
-
-      if (data) {
-        setFileName(data.name || fileName);
-        const codeToSet = data.files?.code ?? (data as any).code;
-        if (codeToSet !== undefined) {
-          setCode(codeToSet);
-          // Trigger run to update view
-          setTimeout(() => runCode(), 100);
-        }
-        toast.success(`Loaded version (Read Only)`, { id: 'load-version' });
-        setHistoryOpen(false);
-      }
-    } catch (error) {
-      console.error("Failed to load version:", error);
-      toast.error("Failed to load version", { id: 'load-version' });
-    }
-  };
 
   // Shortcut handler for Ctrl+S
   useEffect(() => {
@@ -162,7 +135,7 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [save, user?.pat]);
+  }, [save, user?.pat, handleManualSave]);
 
 
   return (
@@ -216,17 +189,6 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           >
             <FolderOpen className="w-4 h-4" />
           </button>
-
-          {user?.pat && (
-            <button
-              className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
-              onClick={() => setHistoryOpen(true)}
-              title="History & Branches"
-              disabled={fileName === 'Untitled'}
-            >
-              <GitBranch className="w-4 h-4" />
-            </button>
-          )}
 
           <div className="w-px h-4 bg-border mx-1" />
 
@@ -453,13 +415,6 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           </div>
         </DialogContent>
       </Dialog>
-
-      <ProjectHistoryView
-        isOpen={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        projectId={fileName}
-        onViewVersion={handleViewVersion}
-      />
     </>
   );
 };
