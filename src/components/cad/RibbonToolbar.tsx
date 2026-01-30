@@ -39,11 +39,13 @@ import {
   Equal,
   GitCommit,
   ArrowUpLeft,
-  PackagePlus
+  PackagePlus,
+  MessageSquareWarning
 } from "lucide-react";
 import { useCADStore, useCADStoreApi, ToolType } from "@/hooks/useCADStore";
 import { toast } from "sonner";
 import { ExtensionStoreDialog } from "../extensions/ExtensionStoreDialog";
+import { DeveloperFeedbackDialog } from "../ui/DeveloperFeedbackDialog";
 import {
   Tooltip,
   TooltipContent,
@@ -129,6 +131,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
   } = useCADStore();
 
   const [isExtensionStoreOpen, setIsExtensionStoreOpen] = React.useState(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = React.useState(false);
 
   const tabs: ToolTab[] = ["SOLID", "SURFACE", "MESH", "SHEET", "PLASTIC", "MANAGE", "UTILITIES"];
 
@@ -420,6 +423,22 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
               </Tooltip>
             </TooltipProvider>
 
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setIsFeedbackOpen(true)}
+                    className="flex items-center justify-center p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-primary"
+                  >
+                    <MessageSquareWarning className="w-5 h-5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Give Feedback</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
             <button
               onClick={onFinishSketch}
               className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded text-xs font-medium transition-colors"
@@ -432,6 +451,10 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
         <ExtensionStoreDialog
           open={isExtensionStoreOpen}
           onOpenChange={setIsExtensionStoreOpen}
+        />
+        <DeveloperFeedbackDialog
+          open={isFeedbackOpen}
+          onOpenChange={setIsFeedbackOpen}
         />
       </div>
     );
@@ -658,6 +681,23 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
+                  onClick={() => setIsFeedbackOpen(true)}
+                  className="flex flex-col items-center justify-center min-w-[64px] h-[64px] rounded-md hover:bg-muted/50 transition-all text-muted-foreground hover:text-primary border border-transparent hover:border-border/50 group"
+                >
+                  <MessageSquareWarning className="w-6 h-6 mb-1 group-hover:scale-110 transition-transform" />
+                  <span className="text-[10px] font-medium uppercase tracking-tight">Feedback</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Report bug or suggest feature</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
                   onClick={() => setIsExtensionStoreOpen(true)}
                   className="flex flex-col items-center justify-center min-w-[64px] h-[64px] rounded-md hover:bg-muted/50 transition-all text-muted-foreground hover:text-primary border border-transparent hover:border-border/50 group"
                 >
@@ -676,6 +716,10 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
       <ExtensionStoreDialog
         open={isExtensionStoreOpen}
         onOpenChange={setIsExtensionStoreOpen}
+      />
+      <DeveloperFeedbackDialog
+        open={isFeedbackOpen}
+        onOpenChange={setIsFeedbackOpen}
       />
     </div>
   );

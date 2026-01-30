@@ -1141,4 +1141,29 @@ export class GitHubAdapter implements StorageAdapter {
             throw new Error(`Repository ${owner}/${repo} does not exist or is not accessible.`);
         }
     }
+
+    async createIssue(title: string, body: string): Promise<void> {
+        if (!this.octokit) {
+            throw new Error('Not authenticated with GitHub');
+        }
+
+        // Feedback goes to the main HiveCAD repository
+        const feedbackOwner = 'dafiiit';
+        const feedbackRepo = 'HiveCAD';
+
+        try {
+            console.log(`[GitHubAdapter] Creating issue on ${feedbackOwner}/${feedbackRepo}...`);
+            await this.octokit.rest.issues.create({
+                owner: feedbackOwner,
+                repo: feedbackRepo,
+                title,
+                body,
+                labels: ['feedback']
+            });
+            console.log(`[GitHubAdapter] Issue created successfully.`);
+        } catch (error: any) {
+            console.error('[GitHubAdapter] Failed to create issue:', error);
+            throw new Error(`Failed to submit feedback: ${error.message || String(error)}`);
+        }
+    }
 }

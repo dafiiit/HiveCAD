@@ -66,6 +66,9 @@ export interface StorageAdapter {
     // Maintenance
     permanentlyDelete?(projectId: string): Promise<void>;
     resetRepository?(): Promise<void>;
+
+    // Feedback
+    createIssue?(title: string, body: string): Promise<void>;
 }
 
 export interface CommitInfo {
