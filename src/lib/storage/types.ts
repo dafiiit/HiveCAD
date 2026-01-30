@@ -8,11 +8,20 @@ export interface StorageConfig {
     token?: string; // For demo purposes, we'll store mock tokens here
 }
 
+export interface ProjectNamespaceData {
+    [key: string]: any;
+}
+
 export interface ProjectData {
     id: string;
     name: string; // The "display name"
     ownerId: string;
-    files: any;   // Using any for now to match current structure
+    files?: any;   // Optional in new structure, legacy fallback
+    cad?: {
+        code: string;
+        objects: any[];
+    };
+    namespaces?: Record<string, ProjectNamespaceData>;
     version: string;
     lastModified: number;
     tags?: string[];

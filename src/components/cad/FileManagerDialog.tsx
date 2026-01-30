@@ -128,7 +128,7 @@ export const FileManagerDialog = ({ open, onOpenChange }: FileManagerDialogProps
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[700px] h-[80vh] flex flex-col p-0 overflow-hidden border-border/40 bg-background/95 backdrop-blur-md rounded-[2rem] shadow-2xl">
+            <DialogContent aria-describedby={undefined} className="sm:max-w-[700px] h-[80vh] flex flex-col p-0 overflow-hidden border-border/40 bg-background/95 backdrop-blur-md rounded-[2rem] shadow-2xl">
                 <DialogHeader className="p-8 pb-4 border-b border-border/10">
                     <div className="flex items-center justify-between mb-2">
                         <DialogTitle className="text-2xl font-bold bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-transparent">

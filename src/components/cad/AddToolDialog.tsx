@@ -52,7 +52,7 @@ export const AddToolDialog = ({ open, onOpenChange, onSelectTool }: AddToolDialo
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[500px] h-[600px] flex flex-col p-0 overflow-hidden border-border/40 bg-background/95 backdrop-blur-md rounded-[2rem]">
+            <DialogContent aria-describedby={undefined} className="sm:max-w-[500px] h-[600px] flex flex-col p-0 overflow-hidden border-border/40 bg-background/95 backdrop-blur-md rounded-[2rem]">
                 <DialogHeader className="p-6 pb-4 border-b border-border/20 bg-transparent">
                     <DialogTitle className="text-xl font-bold">Add Tool</DialogTitle>
                     <div className="relative mt-4">

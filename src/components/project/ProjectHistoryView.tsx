@@ -120,7 +120,7 @@ export function ProjectHistoryView({ isOpen, onClose, projectId, onViewVersion }
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="max-w-4xl h-[80vh] bg-[#1a1a1a] border-zinc-800 text-zinc-300 flex flex-col p-0 overflow-hidden">
+            <DialogContent aria-describedby={undefined} className="max-w-4xl h-[80vh] bg-[#1a1a1a] border-zinc-800 text-zinc-300 flex flex-col p-0 overflow-hidden">
                 <DialogHeader className="p-6 border-b border-zinc-800 shrink-0">
                     <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
                         <GitBranch className="w-5 h-5 text-primary" />

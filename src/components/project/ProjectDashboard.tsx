@@ -468,12 +468,16 @@ export function ProjectDashboard() {
         console.log(`[ProjectDashboard] Creating project with ID: ${projectId}`);
 
         const newProjectData: ProjectData = {
-            id: projectId,              // ✓ Use this ID consistently
-            name: name,                 // ✓ User-visible name
+            id: projectId,
+            name: name,
             lastModified: Date.now(),
-            files: { code: 'const main = () => { return; };' },
+            cad: {
+                code: 'const main = () => { return; };',
+                objects: []
+            },
             version: '1.0.0',
-            ownerId: user?.id || 'anon'
+            ownerId: user?.id || 'anon',
+            namespaces: {}
         };
 
         // ✓ Cache with projectId
@@ -1064,6 +1068,7 @@ export function ProjectDashboard() {
                                                     setShowTagDialog(project);
                                                     setTagNameInput(""); // Reset creation input in dialog
                                                 }}
+                                                onViewHistory={() => setShowHistoryDialog(project.id)}
                                                 tags={tags}
                                                 projectThumbnails={projectThumbnails}
                                                 hasPAT={!!user?.pat}

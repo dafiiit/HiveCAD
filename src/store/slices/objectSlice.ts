@@ -120,15 +120,21 @@ const getOriginAxes = (): CADObject[] => {
 
     // X Axis - Red
     axes[0].geometry = createHitCylinder(axisLength, 'x');
+    axes[0].geometry.computeBoundingSphere();
     axes[0].edgeGeometry = createAxisGeo([0, 0, 0], [axisLength, 0, 0]);
+    axes[0].edgeGeometry.computeBoundingSphere();
 
     // Y Axis - Green
     axes[1].geometry = createHitCylinder(axisLength, 'y');
+    axes[1].geometry.computeBoundingSphere();
     axes[1].edgeGeometry = createAxisGeo([0, 0, 0], [0, axisLength, 0]);
+    axes[1].edgeGeometry.computeBoundingSphere();
 
     // Z Axis - Blue
     axes[2].geometry = createHitCylinder(axisLength, 'z');
+    axes[2].geometry.computeBoundingSphere();
     axes[2].edgeGeometry = createAxisGeo([0, 0, 0], [0, 0, axisLength]);
+    axes[2].edgeGeometry.computeBoundingSphere();
 
     cachedAxes = axes;
     return axes;
@@ -396,10 +402,12 @@ export const createObjectSlice: StateCreator<
                     } else {
                         geometry.computeVertexNormals();
                     }
+                    geometry.computeBoundingSphere();
                 }
                 if (item.edgeData && item.edgeData.length > 0) {
                     edgeGeometry = new THREE.BufferGeometry();
                     edgeGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(item.edgeData), 3));
+                    edgeGeometry.computeBoundingSphere();
                 }
                 let type: CADObject['type'] = existing?.type || 'box';
                 const feature = cm.getFeatures().find(f => f.id === astId);

@@ -99,6 +99,72 @@ export class GitHubAdapter implements StorageAdapter {
         throw lastError;
     }
 
+    private async commitTree(
+        owner: string,
+        repo: string,
+        branch: string,
+        message: string,
+        files: Array<{ path: string; content: string }>
+    ): Promise<void> {
+        if (!this.octokit) throw new Error('Not authenticated');
+
+        await this.retryOperation(
+            async () => {
+                // 1. Get the latest commit SHA for the branch
+                const { data: refData } = await this.octokit!.rest.git.getRef({
+                    owner,
+                    repo,
+                    ref: `heads/${branch}`,
+                });
+                const latestCommitSha = refData.object.sha;
+
+                // 2. Get the tree SHA for the latest commit
+                const { data: commitData } = await this.octokit!.rest.git.getCommit({
+                    owner,
+                    repo,
+                    commit_sha: latestCommitSha,
+                });
+                const baseTreeSha = commitData.tree.sha;
+
+                // 3. Create a new tree with the updated files
+                const tree = files.map(file => ({
+                    path: file.path,
+                    mode: '100644' as const,
+                    type: 'blob' as const,
+                    content: file.content,
+                }));
+
+                const { data: newTreeData } = await this.octokit!.rest.git.createTree({
+                    owner,
+                    repo,
+                    base_tree: baseTreeSha,
+                    tree,
+                });
+
+                // 4. Create a new commit
+                const { data: newCommitData } = await this.octokit!.rest.git.createCommit({
+                    owner,
+                    repo,
+                    message,
+                    tree: newTreeData.sha,
+                    parents: [latestCommitSha],
+                });
+
+                // 5. Update the branch reference
+                await this.octokit!.rest.git.updateRef({
+                    owner,
+                    repo,
+                    ref: `heads/${branch}`,
+                    sha: newCommitData.sha,
+                    force: false,
+                });
+            },
+            async () => {
+                // No specific state to reset for git operations as we re-fetch everything from HEAD
+            }
+        );
+    }
+
     async save(projectId: string, data: any): Promise<void> {
         if (!this.isAuthenticated() || !this.octokit || !this.authenticatedUser) {
             throw new Error('Not authenticated with GitHub');
@@ -115,17 +181,13 @@ export class GitHubAdapter implements StorageAdapter {
             throw new Error('Can only save to repositories owned by the authenticated user');
         }
 
-        // ✓ CRITICAL: Always use projectId for path, never fileName
-        const path = `projects/${projectId}/.hivecad/data.json`;
+        console.log(`[GitHubAdapter] Saving project ${projectId} to ${owner}/${repo} (Modular Storage)...`);
 
-        console.log(`[GitHubAdapter] Saving project ${projectId} to ${owner}/${repo}...`);
-
-        // Prepare data with metadata if not present
-        const projectData: ProjectData = {
-            id: projectId,                              // ✓ Stable ID for path
-            name: data.name || data.fileName || projectId,  // ✓ User-visible name
+        // 1. Prepare Metadata
+        const projectMetadata: Partial<ProjectData> = {
+            id: projectId,
+            name: data.name || data.fileName || projectId,
             ownerId: this.authenticatedUser,
-            files: data.files || data,
             version: data.version || '1.0.0',
             lastModified: Date.now(),
             tags: data.tags || [],
@@ -133,75 +195,57 @@ export class GitHubAdapter implements StorageAdapter {
             folder: data.folder,
         };
 
-        const content = btoa(JSON.stringify(projectData, null, 2));
-
-        // State to hold the current SHA
-        let sha: string | undefined;
-        let existingMetadata: any = null;
-
-        // Helper to fetch current SHA
-        const fetchCurrentSha = async () => {
-            try {
-                const { data: fileData } = await this.octokit!.rest.repos.getContent({
-                    owner,
-                    repo,
-                    path,
-                    ref: this.currentBranchName,
-                });
-                if (!Array.isArray(fileData)) {
-                    sha = fileData.sha;
-                    if ('content' in fileData) {
-                        try {
-                            const existingContent = atob(fileData.content.replace(/\n/g, ''));
-                            existingMetadata = JSON.parse(existingContent);
-                        } catch (e) {
-                            console.warn('[GitHubAdapter] Failed to parse existing project data', e);
-                        }
-                    }
-                }
-            } catch (error: any) {
-                if (error.status !== 404) throw error;
-                sha = undefined; // File doesn't exist yet
-            }
+        // 2. Prepare CAD Data
+        const cadData = {
+            code: data.cad?.code || data.code || (data.files && data.files.code) || '',
+            objects: data.cad?.objects || data.objects || (data.files && data.files.objects) || [],
         };
 
-        // Initial fetch
-        await fetchCurrentSha();
+        // 3. Prepare Namespace/Extension Data
+        const namespaces = data.namespaces || {};
 
-        // Perform save with retry
-        await this.retryOperation(
-            async () => {
-                await this.octokit!.rest.repos.createOrUpdateFileContents({
-                    owner,
-                    repo,
-                    path,
-                    message: `Update project ${projectId}`,
-                    content,
-                    sha,
-                    branch: this.currentBranchName,
-                });
+        // 4. Construct File list for Git Tree
+        const filesToCommit: Array<{ path: string; content: string }> = [
+            {
+                path: `projects/${projectId}/.hivecad/project.json`,
+                content: JSON.stringify(projectMetadata, null, 2),
             },
-            async () => {
-                // On conflict, re-fetch SHA
-                await fetchCurrentSha();
+            {
+                path: `projects/${projectId}/.hivecad/cad/main.json`,
+                content: JSON.stringify(cadData, null, 2),
             }
+        ];
+
+        // Add each namespace as a separate file
+        Object.entries(namespaces).forEach(([namespace, namespaceData]) => {
+            filesToCommit.push({
+                path: `projects/${projectId}/.hivecad/extensions/${namespace}.json`,
+                content: JSON.stringify(namespaceData, null, 2),
+            });
+        });
+
+        // 5. Atomic Commit
+        await this.commitTree(
+            owner,
+            repo,
+            this.currentBranchName,
+            `Update modular project ${projectId}`,
+            filesToCommit
         );
 
-        // Check if metadata actually changed before updating index
-        const metadataChanged = !existingMetadata ||
-            existingMetadata.name !== projectData.name ||
-            JSON.stringify(existingMetadata.tags) !== JSON.stringify(projectData.tags) ||
-            existingMetadata.deletedAt !== projectData.deletedAt ||
-            existingMetadata.folder !== projectData.folder;
+        // 6. Update Index (Lite ProjectData for listing)
+        const projectListData: ProjectData = {
+            ...projectMetadata,
+            id: projectId,
+            name: projectMetadata.name!,
+            ownerId: projectMetadata.ownerId!,
+            version: projectMetadata.version!,
+            lastModified: projectMetadata.lastModified!,
+        };
 
-        if (metadataChanged) {
-            console.log(`[GitHubAdapter] Metadata changed for ${projectId}, updating index...`);
-            await this.updateIndex(projectId, projectData);
-        } else {
-            console.log(`[GitHubAdapter] Metadata unchanged for ${projectId}, skipping index update.`);
-        }
+        await this.updateIndex(projectId, projectListData);
 
-        console.log(`[GitHubAdapter] Saved ${projectId} (name: "${projectData.name}") to ${owner}/${repo}`);
+        console.log(`[GitHubAdapter] Saved ${projectId} modularly to ${owner}/${repo}`);
 
         // Centralized Project Index (Supabase)
         try {
@@ -209,13 +253,13 @@ export class GitHubAdapter implements StorageAdapter {
                 .from('projects')
                 .upsert({
                     id: projectId,
-                    name: projectData.name,
+                    name: projectListData.name,
                     description: (data as any).description || 'A HiveCAD Project',
                     thumbnail_url: `${import.meta.env.VITE_GITHUB_PAGES_URL || `https://raw.githubusercontent.com/${owner}/${repo}/main/`}hivecad/thumbnails/${projectId}.png`,
                     github_owner: owner,
                     github_repo: repo,
-                    file_path: path,
-                    is_public: true, // For now we assume all projects in this repo are public
+                    file_path: `projects/${projectId}/.hivecad/project.json`,
+                    is_public: true,
                     updated_at: new Date().toISOString(),
                 });
 
@@ -527,48 +571,100 @@ export class GitHubAdapter implements StorageAdapter {
 
         const targetOwner = owner || this.currentOwner;
         const targetRepo = repo || this.currentRepo;
+        const targetRef = ref || this.currentBranchName;
 
         if (!targetOwner || !targetRepo) {
             throw new Error('Owner and repository must be specified or connected');
         }
 
-        // Attempt 1: New Structure (projects/<id>/.hivecad/data.json)
-        const newPath = `projects/${projectId}/.hivecad/data.json`;
+        console.log(`[GitHubAdapter] Loading project ${projectId} from ${targetOwner}/${targetRepo}...`);
+
+        // 1. Attempt Modular Load (projects/${id}/.hivecad/*)
         try {
-            const { data: fileData } = await this.octokit.rest.repos.getContent({
+            // First, get the tree to see what we have
+            const { data: treeData } = await this.octokit.rest.git.getTree({
                 owner: targetOwner,
                 repo: targetRepo,
-                path: newPath,
-                ref: ref || this.currentBranchName,
+                tree_sha: targetRef,
+                recursive: 'true',
             });
-            if ('content' in fileData) {
-                const content = atob(fileData.content.replace(/\n/g, ''));
-                return JSON.parse(content);
+
+            const projectPrefix = `projects/${projectId}/.hivecad/`;
+            const projectFiles = treeData.tree.filter(item => item.path?.startsWith(projectPrefix));
+
+            if (projectFiles.length > 0) {
+                console.log(`[GitHubAdapter] Found modular project structure for ${projectId}`);
+
+                const project: Partial<ProjectData> = { id: projectId };
+                const namespaces: Record<string, any> = {};
+
+                for (const file of projectFiles) {
+                    const relativePath = file.path!.replace(projectPrefix, '');
+
+                    // Fetch content
+                    const { data: fileContent } = await this.octokit.rest.repos.getContent({
+                        owner: targetOwner,
+                        repo: targetRepo,
+                        path: file.path!,
+                        ref: targetRef,
+                    });
+
+                    if ('content' in fileContent) {
+                        const content = JSON.parse(atob(fileContent.content.replace(/\n/g, '')));
+
+                        if (relativePath === 'project.json') {
+                            Object.assign(project, content);
+                        } else if (relativePath === 'cad/main.json') {
+                            project.cad = content;
+                        } else if (relativePath.startsWith('extensions/')) {
+                            const namespace = relativePath.replace('extensions/', '').replace('.json', '');
+                            namespaces[namespace] = content;
+                        }
+                    }
+                }
+
+                project.namespaces = namespaces;
+                return project as ProjectData;
             }
         } catch (e) {
-            // Fallback
+            console.warn('[GitHubAdapter] Modular load failed or not found, trying legacy...', e);
         }
 
-        // Attempt 2: Legacy Structure (hivecad/<id>.json)
-        const legacyPath = `hivecad/${projectId}.json`;
-
+        // 2. Attempt 1st Legacy Structure (projects/<id>/.hivecad/data.json)
+        const legacyPath1 = `projects/${projectId}/.hivecad/data.json`;
         try {
             const { data: fileData } = await this.octokit.rest.repos.getContent({
                 owner: targetOwner,
                 repo: targetRepo,
-                path: legacyPath,
-                ref: ref || this.currentBranchName,
+                path: legacyPath1,
+                ref: targetRef,
+            });
+            if ('content' in fileData) {
+                const content = atob(fileData.content.replace(/\n/g, ''));
+                return JSON.parse(content);
+            }
+        } catch (e) { }
+
+        // 3. Attempt 2nd Legacy Structure (hivecad/<id>.json)
+        const legacyPath2 = `hivecad/${projectId}.json`;
+        try {
+            const { data: fileData } = await this.octokit.rest.repos.getContent({
+                owner: targetOwner,
+                repo: targetRepo,
+                path: legacyPath2,
+                ref: targetRef,
             });
 
             if ('content' in fileData) {
                 const content = atob(fileData.content.replace(/\n/g, ''));
                 return JSON.parse(content);
             }
-            return null;
         } catch (error: any) {
             if (error.status === 404) return null;
             throw error;
         }
+
+        return null;
     }
 
     async listProjects(): Promise<ProjectData[]> {

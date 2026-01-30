@@ -66,8 +66,32 @@ export const TabManager = () => {
                     store.getState().setProjectId(project.id);
                     console.log(`[TabManager] Set projectId: ${project.id}`);
                 }
-                store.getState().setFileName(project.name);
-                if (project.files?.code) store.getState().setCode(project.files.code);
+                if (project.name) store.getState().setFileName(project.name);
+                if (project.cad) {
+                    if (project.cad.code) store.getState().setCode(project.cad.code);
+                    // If we have serialized objects, we could load them here, 
+                    // but we usually rely on runCode() to reconstruct them from code.
+                    // However, for consistency we can set them.
+                    if (project.cad.objects) {
+                        // Filter out objects with invalid geometry (from JSON)
+                        const cleanObjects = (project.cad.objects as any[]).map(obj => ({
+                            ...obj,
+                            geometry: undefined,
+                            edgeGeometry: undefined
+                        }));
+                        store.setState({ objects: cleanObjects });
+                    }
+                } else if (project.files?.code) {
+                    store.getState().setCode(project.files.code);
+                } else if ((project as any).code) {
+                    // Very old legacy flat structure
+                    store.getState().setCode((project as any).code);
+                }
+
+                // Always trigger runCode after loading if we have code
+                if (store.getState().code) {
+                    store.getState().runCode();
+                }
 
                 // If we loaded from local cache (which we assume if it has data but maybe not synced), 
                 // we should check if we need to sync. 

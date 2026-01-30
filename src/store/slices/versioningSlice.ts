@@ -177,13 +177,19 @@ export const createVersioningSlice: StateCreator<
         set({ syncStatus: 'saving_local' });
         try {
             const projectData = {
-                fileName: state.fileName,
-                objects: JSON.parse(JSON.stringify(state.objects)),
-                code: state.code,
+                id: state.projectId,
+                name: state.fileName,
+                fileName: state.fileName, // Keeping for legacy
+                cad: {
+                    code: state.code,
+                    objects: JSON.parse(JSON.stringify(state.objects)),
+                },
+                namespaces: (state as any).namespaces || {},
                 versions: state.versions,
                 branches: state.branches,
                 currentBranch: state.currentBranch,
                 currentVersionId: state.currentVersionId,
+                lastModified: Date.now(),
             };
 
             if (state.thumbnailCapturer) {
@@ -245,14 +251,18 @@ export const createVersioningSlice: StateCreator<
             const saveIdentifier = state.projectId || state.fileName || 'unnamed';
 
             const projectData = {
+                id: state.projectId,
                 name: actualFileName,
-                fileName: actualFileName,
-                objects: state.objects,
-                code: state.code,
+                cad: {
+                    code: state.code,
+                    objects: JSON.parse(JSON.stringify(state.objects)),
+                },
+                namespaces: (state as any).namespaces || {},
                 versions: state.versions,
                 branches: state.branches,
                 currentBranch: state.currentBranch,
                 currentVersionId: state.currentVersionId,
+                lastModified: Date.now(),
             };
 
             await adapter.save(saveIdentifier, projectData);
@@ -434,8 +444,11 @@ export const createVersioningSlice: StateCreator<
                     id: currentProjectId,
                     name: currentFileName,
                     lastModified: Date.now(),
-                    files: { code: currentCode },
-                    objects: JSON.parse(JSON.stringify(currentObjects)),
+                    cad: {
+                        code: currentCode,
+                        objects: JSON.parse(JSON.stringify(currentObjects))
+                    },
+                    namespaces: (state as any).namespaces || {},
                     version: '1.0.0',
                 };
 

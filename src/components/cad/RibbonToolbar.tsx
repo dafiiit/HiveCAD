@@ -323,7 +323,7 @@ const FolderEditDialog = ({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[450px] rounded-[2rem] bg-background/95 backdrop-blur-md border-border/40 p-6">
+        <DialogContent aria-describedby={undefined} className="sm:max-w-[450px] rounded-[2rem] bg-background/95 backdrop-blur-md border-border/40 p-6">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-transparent">Edit Folder</DialogTitle>
           </DialogHeader>
