@@ -43,3 +43,13 @@ export const measureTool: Tool = {
     },
     uiProperties: []
 };
+export const sketchTool: Tool = {
+    metadata: {
+        id: 'sketch',
+        label: 'Sketch',
+        icon: 'Pencil',
+        category: 'navigation',
+        description: 'Enter sketch mode'
+    },
+    uiProperties: []
+};

@@ -159,6 +159,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
                                 ext.icon === "Layers" ? <Layers className="mr-2 h-4 w-4" /> :
                                     ext.icon === "Cpu" ? <Cpu className="mr-2 h-4 w-4" /> :
                                         <Package className="mr-2 h-4 w-4" />,
+                isExtension: true,
                 action: () => {
                     toast.success(`Loading extension: ${ext.name}`);
                     // Extensions logic placeholder
@@ -203,7 +204,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
                                                     <div className="p-2.5 rounded-xl bg-white/5 mr-4 group-aria-selected:bg-primary/20 transition-colors shadow-sm">
                                                         {React.cloneElement(item.icon as React.ReactElement, { className: "w-5 h-5" })}
                                                     </div>
-                                                    <span className="font-semibold text-base">{item.label}</span>
+                                                    <div className="flex flex-col">
+                                                        <span className="font-semibold text-base">{item.label}</span>
+                                                        {(item as any).isExtension && <span className="text-[10px] text-primary/60 uppercase font-bold tracking-wider">Extension</span>}
+                                                    </div>
                                                 </CommandItem>
                                             ))}
                                         </CommandGroup>

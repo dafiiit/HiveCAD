@@ -20,7 +20,7 @@ import { extrusionTool, revolveTool, pivotTool, translatePlaneTool } from './ope
 import { joinTool, cutTool, intersectTool } from './boolean';
 
 // Navigation tools
-import { selectTool, panTool, orbitTool, measureTool } from './navigation';
+import { selectTool, panTool, orbitTool, measureTool, sketchTool } from './navigation';
 
 // Auto-register all tools
 const allTools = [
@@ -39,7 +39,7 @@ const allTools = [
     // Boolean
     joinTool, cutTool, intersectTool,
     // Navigation
-    selectTool, panTool, orbitTool, measureTool
+    selectTool, panTool, orbitTool, measureTool, sketchTool
 ];
 
 allTools.forEach(tool => toolRegistry.register(tool));

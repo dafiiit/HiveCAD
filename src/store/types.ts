@@ -29,7 +29,7 @@ export type ToolType =
     | 'move' | 'rotate' | 'scale' | 'copy'
     | 'trim' | 'join' | 'cut' | 'intersect'
     | 'measure' | 'dimension' | 'constrain'
-    | 'axis' | 'point';
+    | 'axis' | 'point' | 'sketchPoint' | 'offset';
 
 export type ViewType = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 'home' | 'isometric';
 
@@ -138,7 +138,7 @@ export interface ObjectSlice {
     objects: CADObject[];
     selectedIds: Set<string>;
     activeTool: ToolType;
-    activeTab: 'SOLID' | 'SURFACE' | 'MESH' | 'SHEET' | 'PLASTIC' | 'MANAGE' | 'UTILITIES' | 'SKETCH';
+    activeTab: 'SOLID' | 'SURFACE' | 'MESH' | 'SHEET' | 'PLASTIC' | 'MANAGE' | 'UTILITIES' | 'SKETCH' | string;
     code: string;
     activeOperation: { type: string; params: any } | null;
     pendingImport: { file: File; type: string; extension: string } | null;
@@ -348,7 +348,56 @@ export interface AssemblySlice {
     solveAssembly: () => void;
 }
 
-// AuthSlice removed and moved to useGlobalStore
+export interface ToolbarSection {
+    id: string;
+    label: string;
+    toolIds: string[];
+}
 
-export type CADState = ObjectSlice & ViewSlice & VersioningSlice & SolverSlice & SketchSlice & SnappingSlice;
+export interface CustomToolbar {
+    id: string;
+    name: string;
+    sections: ToolbarSection[];
+}
+
+export interface ToolbarFolder {
+    id: string;
+    label: string;
+    icon: string;
+    toolIds: string[];
+}
+
+export interface ToolbarSlice {
+    customToolbars: CustomToolbar[];
+    activeToolbarId: string | null;
+    isEditingToolbar: boolean;
+    folders: Record<string, ToolbarFolder>;
+
+    addCustomToolbar: (name?: string) => string;
+    deleteCustomToolbar: (id: string) => void;
+    renameCustomToolbar: (id: string, name: string) => void;
+
+    addSection: (toolbarId: string, label?: string) => void;
+    deleteSection: (toolbarId: string, sectionId: string) => void;
+    renameSection: (toolbarId: string, sectionId: string, label: string) => void;
+    reorderSections: (toolbarId: string, sectionIds: string[]) => void;
+
+    addToolToSection: (toolbarId: string, sectionId: string, toolId: string) => void;
+    removeToolFromSection: (toolbarId: string, sectionId: string, index: number) => void;
+    reorderToolsInSection: (toolbarId: string, sectionId: string, toolIds: string[]) => void;
+    moveToolBetweenSections: (toolbarId: string, sourceSectionId: string, targetSectionId: string, toolId: string, newIndex: number) => void;
+
+    addFolder: (toolbarId: string, sectionId: string, label?: string) => string;
+    deleteFolder: (toolbarId: string, sectionId: string, folderId: string) => void;
+    renameFolder: (folderId: string, label: string) => void;
+    updateFolderIcon: (folderId: string, icon: string) => void;
+    addToolToFolder: (folderId: string, toolId: string) => void;
+    removeToolFromFolder: (folderId: string, toolIndex: number) => void;
+    reorderToolsInFolder: (folderId: string, toolIds: string[]) => void;
+
+    setEditingToolbar: (editing: boolean) => void;
+    setActiveToolbar: (id: string | null) => void;
+}
+
+export type CADState = ObjectSlice & ViewSlice & VersioningSlice & SolverSlice & SketchSlice & SnappingSlice & ToolbarSlice;
 // export type CADState = ObjectSlice & ViewSlice & VersioningSlice & SolverSlice & SketchSlice & SnappingSlice & AssemblySlice & AuthSlice;
