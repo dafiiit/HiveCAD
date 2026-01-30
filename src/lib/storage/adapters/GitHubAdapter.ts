@@ -598,31 +598,44 @@ export class GitHubAdapter implements StorageAdapter {
                 const project: Partial<ProjectData> = { id: projectId };
                 const namespaces: Record<string, any> = {};
 
-                for (const file of projectFiles) {
-                    const relativePath = file.path!.replace(projectPrefix, '');
+                // Fetch and process all files in parallel
+                const filePromises = projectFiles.map(async (file) => {
+                    try {
+                        const relativePath = file.path!.replace(projectPrefix, '');
+                        const { data: fileContent } = await this.octokit!.rest.repos.getContent({
+                            owner: targetOwner,
+                            repo: targetRepo,
+                            path: file.path!,
+                            ref: targetRef,
+                        });
 
-                    // Fetch content
-                    const { data: fileContent } = await this.octokit.rest.repos.getContent({
-                        owner: targetOwner,
-                        repo: targetRepo,
-                        path: file.path!,
-                        ref: targetRef,
-                    });
-
-                    if ('content' in fileContent) {
-                        const content = JSON.parse(atob(fileContent.content.replace(/\n/g, '')));
-
-                        if (relativePath === 'project.json') {
-                            Object.assign(project, content);
-                        } else if (relativePath === 'cad/main.json') {
-                            project.cad = content;
-                        } else if (relativePath.startsWith('extensions/')) {
-                            const namespace = relativePath.replace('extensions/', '').replace('.json', '');
-                            namespaces[namespace] = content;
+                        if ('content' in fileContent) {
+                            return {
+                                path: relativePath,
+                                content: JSON.parse(atob(fileContent.content.replace(/\n/g, '')))
+                            };
                         }
+                    } catch (err) {
+                        console.error(`[GitHubAdapter] Failed to load file ${file.path}:`, err);
                     }
-                }
+                    return null;
+                });
 
+                const results = await Promise.all(filePromises);
+
+                // Process results synchronously
+                results.forEach(result => {
+                    if (!result) return;
+
+                    if (result.path === 'project.json') {
+                        Object.assign(project, result.content);
+                    } else if (result.path === 'cad/main.json') {
+                        project.cad = result.content;
+                    } else if (result.path.startsWith('extensions/')) {
+                        const namespace = result.path.replace('extensions/', '').replace('.json', '');
+                        namespaces[namespace] = result.content;
+                    }
+                });
                 project.namespaces = namespaces;
                 return project as ProjectData;
             }
@@ -997,6 +1010,7 @@ export class GitHubAdapter implements StorageAdapter {
             'hivecad/index.json',
             'hivecad/tags.json',
             '.hivecad/folders.json',
+            'settings/ui.json',
         ];
 
         const missingFiles: string[] = [];
@@ -1056,46 +1070,55 @@ export class GitHubAdapter implements StorageAdapter {
                 content: '',
                 message: 'Initialize thumbnails directory',
             },
+            {
+                path: 'settings/ui.json',
+                content: '{}',
+                message: 'Initialize user settings',
+            },
         ];
 
         for (const file of filesToCreate) {
             try {
-                console.log(`[GitHubAdapter] Creating ${file.path}...`);
+                console.log(`[GitHubAdapter] Checking/Creating ${file.path}...`);
 
-                // ✓ Check if file already exists
+                // ✓ Check if file already exists in default branch or current branch
                 let sha: string | undefined;
                 try {
                     const { data: existing } = await this.octokit.rest.repos.getContent({
                         owner: this.currentOwner!,
                         repo: this.currentRepo!,
                         path: file.path,
-                        ref: this.currentBranchName,
+                        // Don't specify ref here to check the default branch first
                     });
                     if (!Array.isArray(existing) && 'sha' in existing) {
-                        sha = existing.sha;
-                        console.log(`[GitHubAdapter] ${file.path} already exists, skipping`);
-                        continue; // Skip if already exists
+                        console.log(`[GitHubAdapter] ${file.path} already exists, skipping initialization`);
+                        continue;
                     }
                 } catch (error: any) {
-                    // 404 is expected for new files
-                    if (error.status !== 404) throw error;
+                    if (error.status !== 404) {
+                        console.warn(`[GitHubAdapter] Note: Error checking for ${file.path}:`, error.status);
+                    }
                 }
 
                 // ✓ Create the file
+                const content = btoa(file.content);
                 await this.octokit.rest.repos.createOrUpdateFileContents({
                     owner: this.currentOwner!,
                     repo: this.currentRepo!,
                     path: file.path,
                     message: file.message,
-                    content: btoa(file.content),
-                    sha, // Will be undefined for new files
+                    content,
                     branch: this.currentBranchName,
                 });
 
                 console.log(`[GitHubAdapter] ✓ ${file.path} created`);
             } catch (error: any) {
+                // If we get a "sha" error, it means it somehow does exist now (race condition or branch issue)
+                if (error.message?.includes('"sha" wasn\'t supplied') || error.status === 409) {
+                    console.log(`[GitHubAdapter] ${file.path} already exists (detected during creation), skipping`);
+                    continue;
+                }
                 console.error(`[GitHubAdapter] Failed to create ${file.path}:`, error);
-                // ✓ Don't throw - continue with other files
             }
         }
 
@@ -1261,5 +1284,93 @@ export class GitHubAdapter implements StorageAdapter {
             console.error('[GitHubAdapter] Failed to create issue:', error);
             throw new Error(`Failed to submit feedback: ${error.message || String(error)}`);
         }
+    }
+
+    async saveUserSettings(data: any): Promise<void> {
+        if (!this.octokit || !this.currentOwner || !this.currentRepo) return;
+
+        console.log('[GitHubAdapter] Saving user settings...');
+        const path = 'settings/ui.json';
+
+        const performSave = async (sha?: string) => {
+            await this.octokit!.rest.repos.createOrUpdateFileContents({
+                owner: this.currentOwner!,
+                repo: this.currentRepo!,
+                path,
+                message: 'Update user UI settings',
+                content: btoa(JSON.stringify(data, null, 2)),
+                sha,
+                branch: this.currentBranchName,
+            });
+        };
+
+        try {
+            let sha: string | undefined;
+            try {
+                const { data: existing } = await this.octokit.rest.repos.getContent({
+                    owner: this.currentOwner,
+                    repo: this.currentRepo,
+                    path,
+                    ref: this.currentBranchName,
+                });
+                if (!Array.isArray(existing) && 'sha' in existing) {
+                    sha = existing.sha;
+                }
+            } catch (e) {
+                // If not found, that's fine, we'll try to create it
+            }
+
+            try {
+                await performSave(sha);
+            } catch (error: any) {
+                // Handle "sha" mismatch or missing error by retrying once with fresh data
+                if (error.status === 409 || error.message?.includes('"sha" wasn\'t supplied')) {
+                    console.log('[GitHubAdapter] SHA mismatch for settings/ui.json, retrying with fresh SHA...');
+                    const { data: fresh } = await this.octokit.rest.repos.getContent({
+                        owner: this.currentOwner,
+                        repo: this.currentRepo,
+                        path,
+                        ref: this.currentBranchName,
+                    });
+                    if (!Array.isArray(fresh) && 'sha' in fresh) {
+                        await performSave(fresh.sha);
+                        return;
+                    }
+                }
+                throw error;
+            }
+            console.log('[GitHubAdapter] User settings saved successfully');
+        } catch (error) {
+            console.error('[GitHubAdapter] Failed to save user settings:', error);
+            throw error;
+        }
+    }
+
+    async loadUserSettings(): Promise<any> {
+        if (!this.octokit || !this.currentOwner || !this.currentRepo) return null;
+
+        console.log('[GitHubAdapter] Loading user settings...');
+        const path = 'settings/ui.json';
+
+        try {
+            const { data: fileData } = await this.octokit.rest.repos.getContent({
+                owner: this.currentOwner,
+                repo: this.currentRepo,
+                path,
+                ref: this.currentBranchName,
+            });
+
+            if ('content' in fileData) {
+                const content = atob(fileData.content.replace(/\n/g, ''));
+                return JSON.parse(content);
+            }
+        } catch (error: any) {
+            if (error.status === 404) {
+                console.log('[GitHubAdapter] User settings not found, using defaults');
+                return null;
+            }
+            console.error('[GitHubAdapter] Failed to load user settings:', error);
+        }
+        return null;
     }
 }

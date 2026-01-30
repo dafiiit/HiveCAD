@@ -78,6 +78,10 @@ export interface StorageAdapter {
 
     // Feedback
     createIssue?(title: string, body: string): Promise<void>;
+
+    // User Settings persistence
+    saveUserSettings?(data: any): Promise<void>;
+    loadUserSettings?(): Promise<any>;
 }
 
 export interface CommitInfo {

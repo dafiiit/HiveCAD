@@ -51,6 +51,9 @@ export function AuthDialog({ forcePAT = false }: { forcePAT?: boolean }) {
         try {
             await setPAT(token);
             toast.success("GitHub PAT verified and saved!");
+            // Initialize UI store to load global settings
+            const { useUIStore } = await import('@/store/useUIStore');
+            useUIStore.getState().initialize();
         } catch (error: any) {
             toast.error(error.message || "Failed to verify token.");
         } finally {

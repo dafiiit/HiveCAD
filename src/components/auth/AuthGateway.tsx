@@ -28,6 +28,9 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
                         if (success) {
                             console.log('[AuthGateway] GitHub storage connected successfully.');
                             useGlobalStore.getState().setStorageConnected(true);
+                            // Initialize UI store to load global settings
+                            const { useUIStore } = await import('@/store/useUIStore');
+                            useUIStore.getState().initialize();
                         } else {
                             console.error('[AuthGateway] GitHub storage connection failed.');
                             useGlobalStore.getState().setStorageConnected(false);
