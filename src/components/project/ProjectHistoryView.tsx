@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Gitgraph, templateExtend, TemplateName } from '@gitgraph/react';
 import { CommitInfo, BranchInfo } from '@/lib/storage/types';
+import { Commit as VCSCommit } from '@/lib/vcs/types';
+import { VCSGraph } from '../cad/VCSGraph';
 import { StorageManager } from '@/lib/storage/StorageManager';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { ScrollArea } from '../ui/scroll-area';
-import { GitBranch, GitCommit, Calendar, User, Eye, Copy, ArrowRight } from 'lucide-react';
+import { GitBranch, GitCommit, Calendar, User, Eye, Copy, ArrowRight, Clock, RefreshCw } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
+import { get as idbGet } from 'idb-keyval';
 
 interface ProjectHistoryViewProps {
     isOpen: boolean;
@@ -36,14 +38,33 @@ export function ProjectHistoryView({ isOpen, onClose, projectId, onViewVersion }
         setLoading(true);
         try {
             const adapter = StorageManager.getInstance().currentAdapter;
+            let fetchedCommits: CommitInfo[] = [];
+
             if (adapter.getBranches) {
                 const branches = await adapter.getBranches(projectId);
                 setBranches(branches);
             }
+
             if (adapter.getHistory) {
-                const history = await adapter.getHistory(projectId);
-                setCommits(history);
+                fetchedCommits = await adapter.getHistory(projectId);
             }
+
+            if (fetchedCommits.length === 0) {
+                // Try to load from local history if remote is empty
+                const localProject = await idbGet(`project:${projectId}`);
+                if (localProject?.vcs?.commits) {
+                    const localCommits = localProject.vcs.commits.map(([id, commit]: [string, any]) => ({
+                        hash: id,
+                        parents: commit.parentId ? [commit.parentId] : [],
+                        author: { name: commit.author, date: new Date(commit.timestamp).toISOString() },
+                        subject: commit.message,
+                        refNames: commit.branchName ? [`heads/${commit.branchName}`] : []
+                    }));
+                    fetchedCommits = localCommits.sort((a, b: any) => new Date(b.author.date).getTime() - new Date(a.author.date).getTime());
+                }
+            }
+
+            setCommits(fetchedCommits);
         } catch (error) {
             console.error("Failed to load history:", error);
             toast.error("Failed to load project history");
@@ -83,40 +104,28 @@ export function ProjectHistoryView({ isOpen, onClose, projectId, onViewVersion }
         }
     };
 
-    const graphData = useMemo(() => {
-        // Prepare commits for Gitgraph
-        // We need to reverse assuming getHistory returns newest first
-        return [...commits].reverse().map(c => ({
-            hash: c.hash,
-            subject: c.subject,
-            author: c.author.name,
-            date: new Date(c.author.date),
-            refs: c.refNames || [], // Tagging HEAD/Branches
-        }));
-    }, [commits]);
-
-    const options = {
-        template: templateExtend(TemplateName.Metro, {
-            colors: ['#e11d48', '#0ea5e9', '#22c55e', '#eab308'], // primary colors
-            branch: {
-                lineWidth: 3,
-                label: {
-                    display: true,
-                    font: "bold 10pt sans-serif"
-                }
-            },
-            commit: {
-                message: {
-                    displayAuthor: false,
-                    displayHash: false,
-                },
-                dot: {
-                    size: 8,
+    const mappedCommits = useMemo(() => {
+        return commits.map(c => {
+            // Try to find a branch name in refNames (e.g. "heads/main" or just "main")
+            let branchName = 'main';
+            if (c.refNames) {
+                const branchRef = c.refNames.find(r => r.includes('heads/')) || c.refNames[0];
+                if (branchRef) {
+                    branchName = branchRef.replace('heads/', '').replace('origin/', '');
                 }
             }
-        }),
-        // orientation: 'vertical-reverse' as const 
-    };
+
+            return {
+                id: c.hash,
+                parentId: c.parents && c.parents.length > 0 ? c.parents[0] : null,
+                message: c.subject,
+                author: c.author.name,
+                timestamp: new Date(c.author.date).getTime(),
+                branchName
+            } as VCSCommit;
+        });
+    }, [commits]);
+
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -130,115 +139,29 @@ export function ProjectHistoryView({ isOpen, onClose, projectId, onViewVersion }
 
                 <div className="flex-1 flex overflow-hidden">
                     {/* Graph Area */}
-                    <div className="flex-1 bg-[#222] p-4 overflow-auto border-r border-zinc-800 min-w-[400px]">
+                    <div className="flex-1 bg-zinc-950/50 p-6 overflow-auto border-zinc-800">
                         {loading ? (
-                            <div className="flex items-center justify-center h-full text-zinc-500">Loading history...</div>
-                        ) : commits.length === 0 ? (
-                            <div className="flex items-center justify-center h-full text-zinc-500">No history found</div>
-                        ) : (
-                            <Gitgraph options={options}>
-                                {(gitgraph) => {
-                                    // We'll simulate a single branch for now as we just have a linear list or simple diverged list from API
-                                    // Real multi-branch reconstruction is complex. 
-                                    // We will just feed the commits to a "main" branch for visualization 
-                                    // unless we can map them to specific branches.
-                                    // Given we fetched commits for *current* branch, it's mostly linear or merged.
-                                    // We can just add them sequentially.
-                                    const master = gitgraph.branch("history");
-
-                                    // Replay commits
-                                    // Note: Gitgraph expects commits in order.
-                                    // If we rely on the API array, it's chronological.
-                                    // We need to handle parents? Gitgraph handles parents if we use .commit() sequentially?
-                                    // No, Gitgraph builds its own history.
-                                    // If we want to visualize exact structure, we might need `import` (not available in react lib easily)
-                                    // or just render them as a linear log for now, which is still better than nothing.
-                                    // Actually, let's just render them.
-
-                                    commits.slice().reverse().forEach(c => {
-                                        master.commit({
-                                            hash: c.hash,
-                                            subject: c.subject,
-                                            author: c.author.name,
-                                            onClick: () => setSelectedCommit(c),
-                                            onMessageClick: () => setSelectedCommit(c),
-                                            onMouseOver: () => document.body.style.cursor = "pointer",
-                                            onMouseOut: () => document.body.style.cursor = "default",
-                                            renderTooltip: (commit: any) => (
-                                                <div style={{ padding: '5px', background: '#333', border: '1px solid #444', borderRadius: '4px' }}>
-                                                    {c.subject} ({c.author.name})
-                                                </div>
-                                            ) // types conflict sometimes, but let's try
-                                        });
-
-                                        // If this commit corresponds to a known branch head, tag it
-                                        const branch = branches.find(b => b.sha === c.hash);
-                                        if (branch) {
-                                            master.tag(branch.name);
-                                        }
-                                    });
-                                }}
-                            </Gitgraph>
-                        )}
-                    </div>
-
-                    {/* Details Panel */}
-                    <div className="w-80 bg-[#1a1a1a] p-6 flex flex-col gap-6 shrink-0 overflow-y-auto">
-                        {selectedCommit ? (
-                            <>
-                                <div>
-                                    <h3 className="font-bold text-white text-lg mb-2 line-clamp-2">{selectedCommit.subject}</h3>
-                                    <div className="flex items-center gap-2 text-xs text-zinc-500 mb-4">
-                                        <Badge variant="outline" className="font-mono text-[10px]">{selectedCommit.hash.substring(0, 7)}</Badge>
-                                        <span>•</span>
-                                        <span>{formatDistanceToNow(new Date(selectedCommit.author.date))} ago</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-sm text-zinc-400 mb-1">
-                                        <User className="w-4 h-4" />
-                                        {selectedCommit.author.name}
-                                    </div>
-                                    <div className="flex items-center gap-2 text-sm text-zinc-400">
-                                        <Calendar className="w-4 h-4" />
-                                        {new Date(selectedCommit.author.date).toLocaleDateString()}
-                                    </div>
-                                </div>
-
-                                <div className="space-y-3">
-                                    <Button
-                                        className="w-full gap-2"
-                                        variant="secondary"
-                                        onClick={() => onViewVersion(selectedCommit.hash)}
-                                    >
-                                        <Eye className="w-4 h-4" />
-                                        View This Version
-                                    </Button>
-
-                                    <div className="h-px bg-zinc-800 my-2" />
-
-                                    <div className="space-y-3">
-                                        <label className="text-xs font-bold text-zinc-500 uppercase">Branch from here</label>
-                                        <Input
-                                            placeholder="New branch name..."
-                                            value={newBranchName}
-                                            onChange={(e) => setNewBranchName(e.target.value)}
-                                            className="bg-[#2a2a2a] border-zinc-700"
-                                        />
-                                        <Button
-                                            className="w-full gap-2"
-                                            onClick={handleCreateBranch}
-                                            disabled={!newBranchName.trim() || creatingBranch}
-                                        >
-                                            <Copy className="w-4 h-4" />
-                                            {creatingBranch ? 'Creating...' : 'Branch & Edit'}
-                                        </Button>
-                                    </div>
-                                </div>
-                            </>
-                        ) : (
-                            <div className="flex flex-col items-center justify-center h-full text-zinc-500 text-center space-y-4">
-                                <GitCommit className="w-12 h-12 opacity-20" />
-                                <p>Select a commit from the graph to view details and options.</p>
+                            <div className="flex flex-col items-center justify-center h-full text-zinc-500 italic gap-3">
+                                <RefreshCw className="w-8 h-8 animate-spin opacity-20" />
+                                <span>Loading repository history...</span>
                             </div>
+                        ) : commits.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-full text-zinc-500 italic gap-4">
+                                <GitCommit className="w-12 h-12 opacity-10" />
+                                <div className="text-center">
+                                    <p>No history found for this project.</p>
+                                    <p className="text-xs opacity-60 mt-1">Make sure you are connected to GitHub.</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <VCSGraph
+                                commits={mappedCommits}
+                                currentCommitId={selectedCommit?.hash}
+                                onCheckout={(id) => {
+                                    const commit = commits.find(c => c.hash === id);
+                                    if (commit) setSelectedCommit(commit);
+                                }}
+                            />
                         )}
                     </div>
                 </div>

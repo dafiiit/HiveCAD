@@ -6,6 +6,7 @@ import { StorageManager } from '@/lib/storage/StorageManager';
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
 const BODY_FOLDER_ID = 'folder-body';
+let saveTimeout: any = null;
 
 const INITIAL_TOOLBARS: CustomToolbar[] = [
     {
@@ -94,20 +95,27 @@ export const useUIStore = create<UIState>((set, get) => ({
     },
 
     saveSettings: async () => {
-        try {
-            const adapter = StorageManager.getInstance().currentAdapter;
-            if (adapter.saveUserSettings) {
-                const { customToolbars, folders, activeToolbarId } = get();
-                await adapter.saveUserSettings({
-                    customToolbars,
-                    folders,
-                    activeToolbarId
-                });
-                console.log('[UIStore] Settings saved to GitHub');
+        // Debounce saves
+        if (saveTimeout) clearTimeout(saveTimeout);
+
+        saveTimeout = setTimeout(async () => {
+            try {
+                const adapter = StorageManager.getInstance().currentAdapter;
+                if (adapter.saveUserSettings) {
+                    const { customToolbars, folders, activeToolbarId } = get();
+                    await adapter.saveUserSettings({
+                        customToolbars,
+                        folders,
+                        activeToolbarId
+                    });
+                    console.log('[UIStore] Settings saved to GitHub');
+                }
+            } catch (error) {
+                console.error('[UIStore] Failed to save settings:', error);
+            } finally {
+                saveTimeout = null;
             }
-        } catch (error) {
-            console.error('[UIStore] Failed to save settings:', error);
-        }
+        }, 2000);
     },
 
     initialize: () => {

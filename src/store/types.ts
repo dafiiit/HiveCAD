@@ -5,6 +5,7 @@ export interface User {
     email: string;
     pat?: string | null;
 }
+import { Snapshot, Commit as VCSCommit, Repository as VCSRepo } from '../lib/vcs/types';
 import { ConstraintSolver, EntityId, SketchEntity, SketchConstraint, ConstraintType, SolveResult } from '../lib/solver';
 import { SnapPoint, SnappingEngine } from '../lib/snapping';
 import { AssemblyState, AssemblyComponent, AssemblyMate, ComponentId, MateId, MateType } from '../lib/assembly/types';
@@ -68,18 +69,8 @@ export interface Comment {
     position?: [number, number, number];
 }
 
-export interface VersionCommit {
-    id: string;
-    message: string;
-    timestamp: number;
-    author: string;
-    branch: string;
-    parentId: string | null; // null for initial commit
-    snapshot: {
-        objects: CADObject[];
-        code: string;
-        historyIndex: number;
-    };
+export interface VersionCommit extends VCSCommit {
+    // We can add UI-specific fields here if needed
 }
 
 export interface SketchPrimitive {
@@ -225,6 +216,7 @@ export interface VersioningSlice {
     comments: Comment[];
     commentsExpanded: boolean;
     versions: VersionCommit[];
+    fullVersions: VersionCommit[];
     branches: Map<string, string>;
     currentBranch: string;
     currentVersionId: string | null;
@@ -274,12 +266,13 @@ export interface VersioningSlice {
     toggleHelp: () => void;
     toggleNotifications: () => void;
     createVersion: (message: string) => void;
-    createBranch: (branchName: string, fromVersionId?: string) => void;
-    checkoutVersion: (versionId: string) => void;
+    createBranch: (branchName: string) => void;
+    checkoutVersion: (target: string) => void;
     mergeBranch: (branchName: string, targetBranch: string) => void;
     setMainBranch: (versionId: string) => void;
-    compareVersions: (versionA: string, versionB: string) => void;
-    getVersionTree: () => any;
+    compareVersions: (versionA: string | null, versionB: string | null) => void;
+    getVersionTree: () => VCSCommit[] | null;
+    hydrateVCS: (repoData: VCSRepo) => void;
 }
 
 export interface SolverSlice {

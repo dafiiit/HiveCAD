@@ -15,6 +15,7 @@ export class GitHubAdapter implements StorageAdapter {
     private thumbnailSavePromises: Map<string, Promise<void>> = new Map();
     private thumbnailDebounceTimers: Map<string, any> = new Map();
     private lastThumbnailHashes: Map<string, string> = new Map();
+    private settingsSaveLock: boolean = false;
 
     async connect(token?: string): Promise<boolean> {
         console.log('[GitHubAdapter] connect() called', token ? '(with token)' : '(without token)');
@@ -1288,61 +1289,60 @@ export class GitHubAdapter implements StorageAdapter {
 
     async saveUserSettings(data: any): Promise<void> {
         if (!this.octokit || !this.currentOwner || !this.currentRepo) return;
+        if (this.settingsSaveLock) {
+            console.log('[GitHubAdapter] Settings save already in progress, skipping...');
+            return;
+        }
 
+        this.settingsSaveLock = true;
         console.log('[GitHubAdapter] Saving user settings...');
         const path = 'settings/ui.json';
+        const owner = this.currentOwner;
+        const repo = this.currentRepo;
 
-        const performSave = async (sha?: string) => {
-            await this.octokit!.rest.repos.createOrUpdateFileContents({
-                owner: this.currentOwner!,
-                repo: this.currentRepo!,
-                path,
-                message: 'Update user UI settings',
-                content: btoa(JSON.stringify(data, null, 2)),
-                sha,
-                branch: this.currentBranchName,
-            });
+        const fetchSha = async () => {
+            try {
+                const { data: existing } = await this.octokit!.rest.repos.getContent({
+                    owner,
+                    repo,
+                    path,
+                    ref: this.currentBranchName,
+                    headers: { 'If-None-Match': '' } // bypass cache
+                });
+                if (!Array.isArray(existing) && 'sha' in existing) {
+                    return existing.sha;
+                }
+            } catch (e: any) {
+                if (e.status !== 404) throw e;
+            }
+            return undefined;
         };
 
         try {
-            let sha: string | undefined;
-            try {
-                const { data: existing } = await this.octokit.rest.repos.getContent({
-                    owner: this.currentOwner,
-                    repo: this.currentRepo,
-                    path,
-                    ref: this.currentBranchName,
-                });
-                if (!Array.isArray(existing) && 'sha' in existing) {
-                    sha = existing.sha;
-                }
-            } catch (e) {
-                // If not found, that's fine, we'll try to create it
-            }
+            let currentSha = await fetchSha();
 
-            try {
-                await performSave(sha);
-            } catch (error: any) {
-                // Handle "sha" mismatch or missing error by retrying once with fresh data
-                if (error.status === 409 || error.message?.includes('"sha" wasn\'t supplied')) {
-                    console.log('[GitHubAdapter] SHA mismatch for settings/ui.json, retrying with fresh SHA...');
-                    const { data: fresh } = await this.octokit.rest.repos.getContent({
-                        owner: this.currentOwner,
-                        repo: this.currentRepo,
+            await this.retryOperation(
+                async () => {
+                    await this.octokit!.rest.repos.createOrUpdateFileContents({
+                        owner,
+                        repo,
                         path,
-                        ref: this.currentBranchName,
+                        message: 'Update user UI settings',
+                        content: btoa(JSON.stringify(data, null, 2)),
+                        sha: currentSha,
+                        branch: this.currentBranchName,
                     });
-                    if (!Array.isArray(fresh) && 'sha' in fresh) {
-                        await performSave(fresh.sha);
-                        return;
-                    }
+                },
+                async () => {
+                    currentSha = await fetchSha();
                 }
-                throw error;
-            }
+            );
             console.log('[GitHubAdapter] User settings saved successfully');
         } catch (error) {
             console.error('[GitHubAdapter] Failed to save user settings:', error);
             throw error;
+        } finally {
+            this.settingsSaveLock = false;
         }
     }
 

@@ -88,20 +88,15 @@ export const TabManager = () => {
                     store.getState().setCode((project as any).code);
                 }
 
+                if (project.vcs) {
+                    store.getState().hydrateVCS(project.vcs);
+                }
+
                 // Always trigger runCode after loading if we have code
                 if (store.getState().code) {
                     store.getState().runCode();
                 }
 
-                // If we loaded from local cache (which we assume if it has data but maybe not synced), 
-                // we should check if we need to sync. 
-                // Ideally `ProjectDashboard` passes a flag `isLocal`. 
-                // But for now, let's assume if it opens, we just mark it as potentially having changes 
-                // if we want to be safe, OR we assume `ProjectDashboard` will handle it.
-                // Re-reading plan: "Automatically load ... and immediately schedule a background push".
-                // So we should set `hasUnpushedChanges: true` on mount?
-                // A safer bet: The sync logic relies on `hasUnpushedChanges`.
-                // If we set it to true here, `useBackgroundSync` will pick it up.
                 store.setState({ hasUnpushedChanges: true });
                 // Objects loading would happen here if we had them in ProjectData fully, or via storage adapter loading
 
