@@ -30,6 +30,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { FileManagerDialog } from "./FileManagerDialog";
 
 
 interface MenuBarProps {
@@ -70,6 +71,7 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
   const { user } = useGlobalStore();
 
   const [cloudConnectionsOpen, setCloudConnectionsOpen] = useState(false);
+  const [fileManagerOpen, setFileManagerOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState("");
 
@@ -90,8 +92,7 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
   };
 
   const handleOpen = () => {
-    open();
-    toast("Opening file browser...");
+    setFileManagerOpen(true);
   };
 
   const handleUndo = () => {
@@ -145,6 +146,11 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
         onOpenChange={setCloudConnectionsOpen}
       />
 
+      <FileManagerDialog
+        open={fileManagerOpen}
+        onOpenChange={setFileManagerOpen}
+      />
+
       <div className="h-10 bg-background flex items-center justify-between px-2 text-xs relative z-30">
         {/* Bottom border line that runs across but is redundant if we want fusion (kept for non-tab areas) */}
         <div className="absolute bottom-0 left-0 right-0 h-px bg-toolbar-border z-0" />
@@ -185,7 +191,7 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           <button
             className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
             onClick={handleOpen}
-            title="Open (Ctrl+O)"
+            title="File Management"
           >
             <FolderOpen className="w-4 h-4" />
           </button>

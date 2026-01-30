@@ -16,8 +16,7 @@ const INITIAL_TOOLBARS: CustomToolbar[] = [
             { id: generateId(), label: 'COMBINE', toolIds: ['join', 'cut', 'intersect'] },
             { id: generateId(), label: 'CONFIGURE', toolIds: ['parameters', 'pattern'] },
             { id: generateId(), label: 'CONSTRUCT', toolIds: ['plane', 'axis', 'point'] },
-            { id: generateId(), label: 'INSPECT', toolIds: ['measure', 'analyze'] },
-            { id: generateId(), label: 'INSERT', toolIds: ['import', 'export'] }
+            { id: generateId(), label: 'INSPECT', toolIds: ['measure', 'analyze'] }
         ]
     }
 ];
