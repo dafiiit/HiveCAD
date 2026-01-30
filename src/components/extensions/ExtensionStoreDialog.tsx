@@ -42,7 +42,7 @@ export const ExtensionStoreDialog: React.FC<ExtensionStoreDialogProps> = ({
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[950px] h-[650px] flex flex-col gap-0 p-0 overflow-hidden border-border/40 bg-background/95 backdrop-blur-md rounded-[2rem]">
-                <DialogHeader className="p-6 border-b border-border/20 bg-transparent">
+                <DialogHeader className="p-6 pr-14 border-b border-border/20 bg-transparent">
                     <div className="flex items-center justify-between">
                         <div className="space-y-1">
                             <DialogTitle className="text-2xl font-bold flex items-center gap-2">

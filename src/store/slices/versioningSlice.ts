@@ -472,6 +472,7 @@ export const createVersioningSlice: StateCreator<
     toggleComments: () => set(state => ({ commentsExpanded: !state.commentsExpanded })),
 
     toggleSearch: () => set(state => ({ searchOpen: !state.searchOpen })),
+    setSearchOpen: (open) => set({ searchOpen: open }),
     toggleSettings: () => set(state => ({ settingsOpen: !state.settingsOpen })),
     toggleHelp: () => set(state => ({ helpOpen: !state.helpOpen })),
     toggleNotifications: () => set(state => ({ notificationsOpen: !state.notificationsOpen })),

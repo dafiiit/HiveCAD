@@ -49,31 +49,47 @@ interface CommandPaletteProps {
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionStore }) => {
-    const [open, setOpen] = useState(false);
+    const {
+        searchOpen,
+        toggleSearch,
+        setSearchOpen,
+        setActiveTool,
+        startOperation,
+        duplicateSelected,
+        deleteObject,
+        selectedIds,
+        enterSketchMode
+    } = useCADStore();
     const [searchQuery, setSearchQuery] = useState("");
-    const { setActiveTool, startOperation, duplicateSelected, deleteObject, selectedIds } = useCADStore();
 
     useEffect(() => {
         const down = (e: KeyboardEvent) => {
             if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
-                setOpen((open) => !open);
+                toggleSearch();
             }
         };
 
         document.addEventListener("keydown", down);
         return () => document.removeEventListener("keydown", down);
-    }, []);
+    }, [toggleSearch]);
 
     const runCommand = (command: () => void) => {
         command();
-        setOpen(false);
+        setSearchOpen(false);
     };
 
     const handleToolSelect = (tool: ToolType) => {
         runCommand(() => {
             setActiveTool(tool);
             toast(`Tool: ${tool}`);
+        });
+    };
+
+    const handleStartSketch = () => {
+        runCommand(() => {
+            enterSketchMode();
+            toast.success("Sketch mode activated");
         });
     };
 
@@ -88,7 +104,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
         {
             group: "Create",
             items: [
-                { label: "Sketch", icon: <Pencil className="mr-2 h-4 w-4" />, action: () => handleToolSelect('select') }, // Assuming sketch mode trigger is tied to some state
+                { label: "Sketch", icon: <Pencil className="mr-2 h-4 w-4" />, action: handleStartSketch },
                 { label: "Line", icon: <Minus className="mr-2 h-4 w-4" />, action: () => handleToolSelect('line') },
                 { label: "Extrude", icon: <ArrowUpRight className="mr-2 h-4 w-4" />, action: () => handleOperation('extrusion') },
                 { label: "Revolve", icon: <RotateCw className="mr-2 h-4 w-4" />, action: () => handleOperation('revolve') },
@@ -98,6 +114,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
         {
             group: "Modify",
             items: [
+                { label: "Select", icon: <MousePointer2 className="mr-2 h-4 w-4" />, action: () => handleToolSelect('select') },
                 { label: "Move", icon: <Move className="mr-2 h-4 w-4" />, action: () => handleToolSelect('move') },
                 { label: "Rotate", icon: <RotateCw className="mr-2 h-4 w-4" />, action: () => handleToolSelect('rotate') },
                 { label: "Scale", icon: <Scale className="mr-2 h-4 w-4" />, action: () => handleToolSelect('scale') },
@@ -151,9 +168,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
     ];
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
-            <DialogContent className="max-w-2xl bg-transparent border-none shadow-none p-0 overflow-visible [&>button]:hidden">
-                <div className="bg-background/40 backdrop-blur-3xl rounded-[2.5rem] overflow-hidden shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)] border border-white/10 ring-1 ring-white/20">
+        <Dialog open={searchOpen} onOpenChange={setSearchOpen}>
+            <DialogContent
+                className="w-fit max-w-[90vw] bg-transparent border-none shadow-none p-0 overflow-visible [&>button]:hidden"
+                onPointerDownOutside={() => setSearchOpen(false)}
+            >
+                <div className="w-[90vw] max-w-2xl bg-background/40 backdrop-blur-3xl rounded-[2.5rem] overflow-hidden shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)] border border-white/10 ring-1 ring-white/20">
                     <Command className={cn(
                         "bg-transparent [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-14 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5",
                         searchQuery.length === 0 ? "[&_[cmdk-input-wrapper]]:border-none" : "[&_[cmdk-input-wrapper]]:border-white/10"

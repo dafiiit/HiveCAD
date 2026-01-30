@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Github } from "lucide-react";
 import * as Icons from "lucide-react";
 import { LucideProps } from "lucide-react";
+import { IconPicker } from "../ui/IconPicker";
 
 interface CreateExtensionFormProps {
     onCancel: () => void;
@@ -51,8 +52,6 @@ export const CreateExtensionForm: React.FC<CreateExtensionFormProps> = ({ onCanc
         onSuccess();
     };
 
-    // Preview the icon
-    const PreviewIcon = (Icons[iconName as keyof typeof Icons] as React.FC<LucideProps>) || Icons.Package;
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
@@ -80,21 +79,13 @@ export const CreateExtensionForm: React.FC<CreateExtensionFormProps> = ({ onCanc
                 </div>
 
                 <div className="grid gap-1.5">
-                    <Label htmlFor="icon" className="text-sm font-semibold">Lucide Icon Name</Label>
-                    <div className="flex gap-2">
-                        <Input
-                            id="icon"
-                            placeholder="e.g. Zap, Settings, Grid..."
-                            value={iconName}
-                            onChange={(e) => setIconName(e.target.value)}
-                            className="flex-1 rounded-xl h-10 border-border/50 bg-muted/30 focus-visible:ring-primary/20"
-                        />
-                        <div className="flex items-center justify-center w-10 h-10 border border-border/50 rounded-xl bg-muted/50 text-primary">
-                            <PreviewIcon size={20} />
-                        </div>
-                    </div>
+                    <Label htmlFor="icon" className="text-sm font-semibold">Icon</Label>
+                    <IconPicker
+                        value={iconName}
+                        onChange={setIconName}
+                    />
                     <p className="text-[11px] text-muted-foreground">
-                        Search icons at <a href="https://lucide.dev/icons" target="_blank" rel="noreferrer" className="underline hover:text-primary transition-colors">lucide.dev</a>
+                        Select an icon that best represents your tool.
                     </p>
                 </div>
             </div>

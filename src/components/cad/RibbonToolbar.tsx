@@ -19,7 +19,6 @@ import {
   Settings2,
   Download,
   Upload,
-  MousePointer2,
   Pencil,
   Minus,
   CircleDot,
@@ -396,15 +395,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
             <ToolButton icon={<Grid3X3 className="w-5 h-5" />} label="Pattern" hasDropdown onClick={() => toast("Pattern tool")} />
           </ToolGroup>
 
-          <ToolGroup label="SELECT">
-            <ToolButton
-              icon={<MousePointer2 className="w-5 h-5" />}
-              label="Select"
-              hasDropdown
-              isActive={activeTool === 'select'}
-              onClick={() => handleToolSelect('select')}
-            />
-          </ToolGroup>
+
 
           <div className="ml-auto flex items-center gap-2 pr-2">
             <TooltipProvider>
@@ -666,15 +657,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
           </DropdownMenu>
         </ToolGroup>
 
-        <ToolGroup label="SELECT">
-          <ToolButton
-            icon={<MousePointer2 className="w-5 h-5" />}
-            label="Select"
-            hasDropdown
-            isActive={activeTool === 'select'}
-            onClick={() => handleToolSelect('select')}
-          />
-        </ToolGroup>
+
 
         <div className="ml-auto flex items-center pr-4">
           <TooltipProvider>

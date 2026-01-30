@@ -267,6 +267,7 @@ export interface VersioningSlice {
     deleteComment: (id: string) => void;
     toggleComments: () => void;
     toggleSearch: () => void;
+    setSearchOpen: (open: boolean) => void;
     toggleSettings: () => void;
     toggleHelp: () => void;
     toggleNotifications: () => void;

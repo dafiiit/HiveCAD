@@ -20,6 +20,8 @@ const CADLayout = () => {
   const {
     activeTab,
     setActiveTab,
+    activeTool,
+    setActiveTool,
     isSketchMode,
     exitSketchMode,
     finishSketch,
@@ -67,6 +69,9 @@ const CADLayout = () => {
         if (isFullscreen) {
           toggleFullscreen();
           toast("Exited fullscreen");
+        } else if (activeTool !== 'select') {
+          setActiveTool('select');
+          toast("Tool: select");
         } else if (isSketchMode) {
           exitSketchMode();
           toast("Exited sketch mode");
@@ -76,7 +81,7 @@ const CADLayout = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo, save, duplicateSelected, deleteObject, selectedIds, isSketchMode, exitSketchMode, isFullscreen, toggleFullscreen]);
+  }, [undo, redo, save, duplicateSelected, deleteObject, selectedIds, isSketchMode, exitSketchMode, isFullscreen, toggleFullscreen, activeTool, setActiveTool]);
 
   if (isFullscreen) {
     return (

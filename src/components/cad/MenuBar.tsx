@@ -71,7 +71,6 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
   const { activeTabId, closeTab, tabs, switchToTab, createNewTab } = useTabManager();
   const { user } = useGlobalStore();
 
-  const [searchQuery, setSearchQuery] = useState("");
   const [cloudConnectionsOpen, setCloudConnectionsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -165,9 +164,6 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [save, user?.pat]);
 
-  const filteredObjects = objects.filter(obj =>
-    obj.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   return (
     <>
@@ -345,7 +341,7 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           <button
             className={`p-1.5 hover:bg-secondary rounded transition-colors ${searchOpen ? 'bg-secondary text-foreground' : 'text-icon-default hover:text-icon-hover'}`}
             onClick={toggleSearch}
-            title="Search (Ctrl+F)"
+            title="Search (Cmd+K)"
           >
             <Search className="w-4 h-4" />
           </button>
@@ -356,7 +352,6 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
             title="Notifications"
           >
             <Bell className="w-4 h-4" />
-            <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-primary rounded-full" />
           </button>
 
           <button
@@ -386,47 +381,6 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
         </div>
       </div>
 
-      {/* Search Dialog */}
-      <Dialog open={searchOpen} onOpenChange={toggleSearch}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Search Objects</DialogTitle>
-            <DialogDescription>
-              Search for objects in your scene
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Input
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              autoFocus
-            />
-            <div className="max-h-48 overflow-y-auto space-y-1">
-              {filteredObjects.length > 0 ? (
-                filteredObjects.map(obj => (
-                  <div
-                    key={obj.id}
-                    className="p-2 rounded hover:bg-secondary cursor-pointer text-sm flex items-center justify-between"
-                    onClick={() => {
-                      useCADStoreApi().getState().selectObject(obj.id);
-                      toggleSearch();
-                      toast(`Selected: ${obj.name}`);
-                    }}
-                  >
-                    <span>{obj.name}</span>
-                    <span className="text-muted-foreground text-xs">{obj.type}</span>
-                  </div>
-                ))
-              ) : (
-                <div className="text-sm text-muted-foreground p-2">
-                  {searchQuery ? "No objects found" : "Start typing to search"}
-                </div>
-              )}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Settings Dialog */}
       <Dialog open={settingsOpen} onOpenChange={toggleSettings}>
