@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, useCallback, useMemo, useLayoutEffect } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo, useLayoutEffect } from "react";
 import { useThree, ThreeEvent } from "@react-three/fiber";
-import { Html, Grid } from "@react-three/drei";
+import { Html, Grid, Line } from "@react-three/drei";
 import * as THREE from "three";
 import { useCADStore, useCADStoreApi, SketchPrimitive, ToolType } from "../../hooks/useCADStore";
 import { SnappingEngine, SnapResult } from "../../lib/snapping";
@@ -78,6 +78,11 @@ const SketchCanvas = () => {
             snappingEngine.setEntities(activeSketchPrimitives);
         }
     }, [snappingEngine, activeSketchPrimitives]);
+
+    // DEBUG: Log selection changes
+    useEffect(() => {
+        console.log("Selection State Changed:", Array.from(selectedIds));
+    }, [selectedIds]);
 
     const annotationCtx = useMemo(() => sketchPlane ? createAnnotationContext(sketchPlane) : null, [sketchPlane]);
 
@@ -221,9 +226,11 @@ const SketchCanvas = () => {
 
     const hitTest = (p: [number, number]) => {
         // Higher threshold for easier clicking
-        const hitThreshold = 3.5;
+        const hitThreshold = 6.0;
         let closestEntityId: string | null = null;
         let minDistance = hitThreshold;
+
+        console.log("Hit testing at:", p);
 
         // 1. Check Solver Entities (Existing Logic)
         sketchEntities.forEach((entity) => {
@@ -335,6 +342,7 @@ const SketchCanvas = () => {
             }
         });
 
+        console.log("Closest entity:", closestEntityId, "distance:", minDistance);
         return closestEntityId;
     };
 
@@ -353,39 +361,29 @@ const SketchCanvas = () => {
     const handlePointerUp = (e: ThreeEvent<PointerEvent>) => {
         if (e.button !== 0 || !hoverPoint || showDialog) return;
 
-        // Drag Check: If moved too much, it's a view drag (orbit/pan), not a click
+        // Check drag
         if (dragStartRef.current) {
             const dx = e.clientX - dragStartRef.current.x;
             const dy = e.clientY - dragStartRef.current.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
-
-            // Clear ref
             dragStartRef.current = null;
-
-            if (dist > IS_CLICK_THRESHOLD) {
-                // It was a drag, ignore as click
-                return;
-            }
+            if (dist > IS_CLICK_THRESHOLD) return;
         }
 
         e.stopPropagation();
-
         const p2d = hoverPoint;
 
         if (!currentDrawingPrimitive) {
             clearSketchInputLocks();
         }
 
-        // Handle Selection and Dimension Tools
+        // IMPROVED: Hit test for all entity types
         const hitId = hitTest(p2d);
-        // We always allow toggling selection if the tool is 'select' or 'dimension',
-        // OR if we click an object that is already selected (to allow deselecting it in any tool)
         if (hitId && (activeTool === 'select' || activeTool === 'dimension' || selectedIds.has(hitId))) {
-            // For dimension tool, we want to accumulate selection (multi-select behavior mostly)
-            // but if we click the same thing, maybe toggle?
             const multiSelect = e.ctrlKey || e.metaKey || e.shiftKey || activeTool === 'dimension';
             selectObject(hitId, multiSelect);
 
+            // Handle dimension tool logic
             if (activeTool === 'dimension') {
                 // Check if we can apply a dimension with current selection
                 const state = useCADStoreApi().getState();
@@ -414,7 +412,9 @@ const SketchCanvas = () => {
                 }
             }
             return;
-        } else if (!hitId && (activeTool === 'select' || activeTool === 'dimension')) {
+        }
+
+        if (!hitId && (activeTool === 'select' || activeTool === 'dimension')) {
             if (activeTool === 'select' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
                 clearSelection();
             }
@@ -557,14 +557,19 @@ const SketchCanvas = () => {
 
     // Rendering helper - delegates to tool registry
     const renderPrimitive = (prim: SketchPrimitive, isGhost: boolean = false) => {
-        // Look up tool in registry and use its renderPreview if available
         const toolDef = toolRegistry.get(prim.type);
         if (toolDef?.renderPreview) {
-            return toolDef.renderPreview(
-                prim as any, // Cast to tool's SketchPrimitive type
-                to3D,
-                isGhost
-            );
+            const rendered = toolDef.renderPreview(prim as any, to3D, isGhost);
+
+            // Wrap with selection handlers if not a ghost
+            if (!isGhost && rendered) {
+                return React.cloneElement(rendered as React.ReactElement, {
+                    onPointerDown: handlePointerDown as any,
+                    onPointerUp: handlePointerUp as any,
+                    key: prim.id
+                });
+            }
+            return rendered;
         }
 
         // Fallback: render as simple line for any unregistered primitives
@@ -573,17 +578,15 @@ const SketchCanvas = () => {
         if (points.length < 2) return null;
 
         return (
-            <line key={prim.id}>
-                <bufferGeometry>
-                    <bufferAttribute
-                        attach="attributes-position"
-                        count={points.length}
-                        array={new Float32Array(points.flatMap(v => [v.x, v.y, v.z]))}
-                        itemSize={3}
-                    />
-                </bufferGeometry>
-                <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
-            </line>
+            <Line
+                key={prim.id}
+                points={points}
+                color={color}
+                lineWidth={3}
+                depthTest={false}
+                onPointerDown={!isGhost ? (handlePointerDown as any) : undefined}
+                onPointerUp={!isGhost ? (handlePointerUp as any) : undefined}
+            />
         );
     };
 
@@ -603,9 +606,15 @@ const SketchCanvas = () => {
 
     const renderSolverEntity = (entity: any) => {
         const isSelected = selectedIds.has(entity.id);
-        const baseColor = isSelected ? "#ff9900" : "#ffffff";
-        const lineWidth = isSelected ? 3 : 2;
+
+        // DEBUG: High contrast for testing
+        const baseColor = isSelected ? "#ff00ff" : "#ffffff";
+        const lineWidth = isSelected ? 10 : 2;
         const opacity = isSelected ? 1.0 : 0.8;
+
+        if (isSelected) {
+            console.log(`Rendering selected entity ${entity.id} with color ${baseColor} and width ${lineWidth}`);
+        }
 
         if (entity.type === 'line') {
             const p1 = sketchEntities.get(entity.p1Id);
@@ -613,17 +622,17 @@ const SketchCanvas = () => {
             if (!p1 || !p2 || p1.type !== 'point' || p2.type !== 'point') return null;
             const points = [to3D(p1.x, p1.y), to3D(p2.x, p2.y)];
             return (
-                <line key={entity.id}>
-                    <bufferGeometry>
-                        <bufferAttribute
-                            attach="attributes-position"
-                            count={2}
-                            array={new Float32Array(points.flatMap(v => [v.x, v.y, v.z]))}
-                            itemSize={3}
-                        />
-                    </bufferGeometry>
-                    <lineBasicMaterial color={baseColor} linewidth={lineWidth} depthTest={false} transparent opacity={opacity} />
-                </line>
+                <Line
+                    key={entity.id}
+                    points={points}
+                    color={baseColor}
+                    lineWidth={lineWidth} // Drei Line takes direct number
+                    opacity={opacity}
+                    transparent
+                    depthTest={false}
+                    onPointerDown={handlePointerDown as any}
+                    onPointerUp={handlePointerUp as any}
+                />
             );
         }
         if (entity.type === 'circle') {
@@ -638,17 +647,17 @@ const SketchCanvas = () => {
                 circlePoints.push(to3D(x, y));
             }
             return (
-                <line key={entity.id}>
-                    <bufferGeometry>
-                        <bufferAttribute
-                            attach="attributes-position"
-                            count={circlePoints.length}
-                            array={new Float32Array(circlePoints.flatMap(v => [v.x, v.y, v.z]))}
-                            itemSize={3}
-                        />
-                    </bufferGeometry>
-                    <lineBasicMaterial color={baseColor} linewidth={lineWidth} depthTest={false} transparent opacity={opacity} />
-                </line>
+                <Line
+                    key={entity.id}
+                    points={circlePoints}
+                    color={baseColor}
+                    lineWidth={lineWidth}
+                    opacity={opacity}
+                    transparent
+                    depthTest={false}
+                    onPointerDown={handlePointerDown as any}
+                    onPointerUp={handlePointerUp as any}
+                />
             );
         }
         // Points rendering
@@ -657,7 +666,7 @@ const SketchCanvas = () => {
             return (
                 <group key={entity.id} position={to3D(entity.x, entity.y)}>
                     {/* Visual Dot (Small) */}
-                    <mesh visible={true}>
+                    <mesh visible={true} onPointerDown={handlePointerDown as any} onPointerUp={handlePointerUp as any}>
                         <sphereGeometry args={[0.2, 8, 8]} /> {/* Small visible radius */}
                         <meshBasicMaterial
                             color={isSelected ? "#ff9900" : "#aaddff"}
@@ -666,7 +675,7 @@ const SketchCanvas = () => {
                     </mesh>
 
                     {/* Invisible Hit Target (Larger) - This ensures easier clicking */}
-                    <mesh visible={false}>
+                    <mesh visible={false} onPointerDown={handlePointerDown as any} onPointerUp={handlePointerUp as any}>
                         <sphereGeometry args={[0.6, 8, 8]} /> {/* Larger click radius */}
                         <meshBasicMaterial color="red" />
                     </mesh>

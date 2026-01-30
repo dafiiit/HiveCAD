@@ -353,7 +353,7 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
               transparent={isSketch}
               opacity={isSketch ? 0.8 : 1.0}
               depthTest={true}
-              linewidth={object.type === 'datumAxis' ? 3 : 2} // Stronger lines for axes
+              linewidth={isSelectableType ? 4 : 2} // WIDER for selection
               clippingPlanes={clippingPlanes}
               polygonOffset={object.type === 'datumAxis'}
               polygonOffsetFactor={-4}

@@ -35,6 +35,7 @@ import {
 import { logger } from "@/lib/utils/Logger";
 import { StorageManager } from "@/lib/storage/StorageManager";
 import { cn } from "@/lib/utils";
+import { CloudConnectionsDialog } from "@/components/ui/CloudConnectionsDialog";
 
 interface DeveloperFeedbackDialogProps {
     children?: React.ReactNode;
@@ -114,6 +115,8 @@ export const DeveloperFeedbackDialog: React.FC<DeveloperFeedbackDialogProps> = (
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [areaPopoverOpen, setAreaPopoverOpen] = useState(false);
 
+    const [isConnectionOpen, setIsConnectionOpen] = useState(false);
+
     const handleAttachLogs = () => {
         const currentLogs = logger.getLogs();
         setLogs(currentLogs);
@@ -132,6 +135,18 @@ export const DeveloperFeedbackDialog: React.FC<DeveloperFeedbackDialogProps> = (
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        const adapter = StorageManager.getInstance().currentAdapter;
+
+        // Check authentication first
+        if (!adapter.isAuthenticated()) {
+            toast.error("Authentication Required", {
+                description: "Please connect to GitHub to submit feedback.",
+            });
+            setIsConnectionOpen(true);
+            return;
+        }
+
         if (!area) {
             toast.error("Validation Error", {
                 description: "Please select which part of the software this is about.",
@@ -156,7 +171,6 @@ export const DeveloperFeedbackDialog: React.FC<DeveloperFeedbackDialogProps> = (
         setIsSubmitting(true);
 
         try {
-            const adapter = StorageManager.getInstance().currentAdapter;
             if (!adapter.createIssue) {
                 throw new Error("Feedback submission is not supported by the current storage adapter.");
             }
@@ -407,8 +421,14 @@ ${logs || 'No logs attached'}
     );
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            {dialogContent}
-        </Dialog>
+        <>
+            <Dialog open={open} onOpenChange={onOpenChange}>
+                {dialogContent}
+            </Dialog>
+            <CloudConnectionsDialog
+                open={isConnectionOpen}
+                onOpenChange={setIsConnectionOpen}
+            />
+        </>
     );
 };
