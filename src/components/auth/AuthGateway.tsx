@@ -5,15 +5,15 @@ import { AuthDialog } from './AuthDialog';
 import { ProjectDashboard } from '../project/ProjectDashboard';
 
 export function AuthGateway({ children }: { children: React.ReactNode }) {
-    const { user, loadSession, authLoaded, isAutosaveEnabled, showPATDialog, setShowPATDialog } = useGlobalStore();
+    const { user, loadSession, initializeAuth, authLoaded, isAutosaveEnabled, showPATDialog, setShowPATDialog } = useGlobalStore();
 
-
+    // Auth state initialization
     useEffect(() => {
-        const initSession = async () => {
-            await loadSession();
+        const unsubscribe = initializeAuth();
+        return () => {
+            unsubscribe();
         };
-        initSession();
-    }, [loadSession]);
+    }, []); // Run once on mount
 
     // Auto-connect to Storage if PAT is present
     useEffect(() => {

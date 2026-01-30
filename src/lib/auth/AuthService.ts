@@ -75,4 +75,15 @@ export class AuthService {
         const { error } = await supabase.auth.signOut();
         if (error) throw error;
     }
+
+    static onAuthStateChange(callback: (event: string, session: any) => void) {
+        return supabase.auth.onAuthStateChange((event, session) => {
+            const user = session ? {
+                id: session.user.id,
+                email: session.user.email,
+                pat: session.user.user_metadata?.pat || null
+            } : null;
+            callback(event, user);
+        });
+    }
 }
