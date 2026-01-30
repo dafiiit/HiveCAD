@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { Github, MessageSquareWarning, Terminal, ExternalLink, Check, ChevronsUpDown, Search, Mail } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -106,7 +106,6 @@ const TOOL_AREAS = [
 ];
 
 export const DeveloperFeedbackDialog: React.FC<DeveloperFeedbackDialogProps> = ({ children, open, onOpenChange }) => {
-    const { toast } = useToast();
     const [area, setArea] = useState("general");
     const [type, setType] = useState<string>("bug");
     const [description, setDescription] = useState("");
@@ -118,8 +117,7 @@ export const DeveloperFeedbackDialog: React.FC<DeveloperFeedbackDialogProps> = (
     const handleAttachLogs = () => {
         const currentLogs = logger.getLogs();
         setLogs(currentLogs);
-        toast({
-            title: "Logs Attached",
+        toast.success("Logs Attached", {
             description: "Current session logs have been added to the report.",
         });
     };
@@ -135,28 +133,22 @@ export const DeveloperFeedbackDialog: React.FC<DeveloperFeedbackDialogProps> = (
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!area) {
-            toast({
-                title: "Validation Error",
+            toast.error("Validation Error", {
                 description: "Please select which part of the software this is about.",
-                variant: "destructive",
             });
             return;
         }
 
         if (!type) {
-            toast({
-                title: "Validation Error",
+            toast.error("Validation Error", {
                 description: "Please select a feedback type.",
-                variant: "destructive",
             });
             return;
         }
 
         if (!description.trim()) {
-            toast({
-                title: "Validation Error",
+            toast.error("Validation Error", {
                 description: "Please describe the feedback or error.",
-                variant: "destructive",
             });
             return;
         }
@@ -195,8 +187,7 @@ ${logs || 'No logs attached'}
 
             await adapter.createIssue(title, body);
 
-            toast({
-                title: "Feedback Submitted!",
+            toast.success("Feedback Submitted!", {
                 description: "Thank you for helping us improve HiveCAD.",
             });
 
@@ -206,10 +197,8 @@ ${logs || 'No logs attached'}
             setLogs("");
             if (onOpenChange) onOpenChange(false);
         } catch (error: any) {
-            toast({
-                title: "Submission Failed",
+            toast.error("Submission Failed", {
                 description: error.message || "An error occurred while submitting feedback.",
-                variant: "destructive",
             });
         } finally {
             setIsSubmitting(false);

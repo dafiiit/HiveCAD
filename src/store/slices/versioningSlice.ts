@@ -1,7 +1,7 @@
 import { StateCreator } from 'zustand';
 import { toast } from 'sonner';
 import { get as idbGet, set as idbSet } from 'idb-keyval';
-import { CADState, VersioningSlice, VersionCommit, Comment } from '../types';
+import { CADState, VersioningSlice, VersionCommit, Comment, HistoryItem } from '../types';
 import { isProjectEmpty } from '@/lib/storage/projectUtils';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -45,8 +45,18 @@ export const createVersioningSlice: StateCreator<
     [],
     VersioningSlice
 > = (set, get) => ({
-    history: [],
-    historyIndex: -1,
+    history: [
+        {
+            id: 'initial',
+            type: 'initial',
+            name: 'Initial State',
+            timestamp: Date.now(),
+            objects: [],
+            code: 'const main = () => {\n  return;\n};',
+            selectedIds: [],
+        }
+    ],
+    historyIndex: 0,
     fileName: 'Untitled',
     projectId: null,
     isSaved: true,
@@ -62,6 +72,43 @@ export const createVersioningSlice: StateCreator<
         isOpen: false,
         versionA: null,
         versionB: null,
+    },
+    pushToHistory: (type: HistoryItem['type'], name: string) => {
+        const state = get();
+        const currentData: Omit<HistoryItem, 'id' | 'timestamp' | 'type' | 'name'> = {
+            objects: JSON.parse(JSON.stringify(state.objects)),
+            code: state.code,
+            selectedIds: Array.from(state.selectedIds),
+        };
+
+        // Don't push if change is identical to last history item
+        if (state.historyIndex >= 0) {
+            const last = state.history[state.historyIndex];
+            if (last.code === currentData.code && JSON.stringify(last.objects) === JSON.stringify(currentData.objects)) {
+                return;
+            }
+        }
+
+        const newItem: HistoryItem = {
+            id: generateId(),
+            type,
+            name,
+            timestamp: Date.now(),
+            ...currentData,
+        };
+
+        const newHistory = state.history.slice(0, state.historyIndex + 1);
+        newHistory.push(newItem);
+
+        // Limit history size to 50
+        if (newHistory.length > 50) {
+            newHistory.shift();
+        }
+
+        set({
+            history: newHistory,
+            historyIndex: newHistory.length - 1,
+        });
     },
     searchOpen: false,
     settingsOpen: false,
@@ -79,13 +126,51 @@ export const createVersioningSlice: StateCreator<
     lastSaveTime: Date.now(),
     lastSaveError: null,
 
-    undo: () => console.log("Undo"),
-    redo: () => console.log("Redo"),
-    goToHistoryIndex: () => { },
-    skipToStart: () => { },
-    skipToEnd: () => { },
-    stepBack: () => { },
-    stepForward: () => { },
+    undo: () => {
+        const state = get();
+        if (state.historyIndex > 0) {
+            const newIndex = state.historyIndex - 1;
+            const item = state.history[newIndex];
+            set({
+                historyIndex: newIndex,
+                objects: JSON.parse(JSON.stringify(item.objects)),
+                code: item.code,
+                selectedIds: new Set(item.selectedIds),
+            });
+            get().runCode();
+        }
+    },
+    redo: () => {
+        const state = get();
+        if (state.historyIndex < state.history.length - 1) {
+            const newIndex = state.historyIndex + 1;
+            const item = state.history[newIndex];
+            set({
+                historyIndex: newIndex,
+                objects: JSON.parse(JSON.stringify(item.objects)),
+                code: item.code,
+                selectedIds: new Set(item.selectedIds),
+            });
+            get().runCode();
+        }
+    },
+    goToHistoryIndex: (index: number) => {
+        const state = get();
+        if (index >= 0 && index < state.history.length) {
+            const item = state.history[index];
+            set({
+                historyIndex: index,
+                objects: JSON.parse(JSON.stringify(item.objects)),
+                code: item.code,
+                selectedIds: new Set(item.selectedIds),
+            });
+            get().runCode();
+        }
+    },
+    skipToStart: () => get().goToHistoryIndex(0),
+    skipToEnd: () => get().goToHistoryIndex(get().history.length - 1),
+    stepBack: () => get().undo(),
+    stepForward: () => get().redo(),
 
     saveToLocal: async () => {
         const state = get();
@@ -277,6 +362,7 @@ export const createVersioningSlice: StateCreator<
                 YZ: true,
             }
         });
+        get().pushToHistory('initial', 'Reset Project');
     },
 
     setFileName: (name) => {
@@ -427,6 +513,7 @@ export const createVersioningSlice: StateCreator<
                 YZ: true,
             },
         });
+        get().pushToHistory('initial', 'New Project');
 
         console.log('[versioningSlice] Project closed successfully');
     },

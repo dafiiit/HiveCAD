@@ -52,11 +52,12 @@ export interface CADObject {
 
 export interface HistoryItem {
     id: string;
-    type: 'create' | 'modify' | 'delete' | 'sketch';
+    type: 'create' | 'modify' | 'delete' | 'sketch' | 'initial';
     name: string;
     timestamp: number;
-    objectIds: string[];
-    previousState?: CADObject[];
+    objects: CADObject[];
+    code: string;
+    selectedIds: string[];
 }
 
 export interface Comment {
@@ -144,8 +145,8 @@ export interface ObjectSlice {
     meshingProgress: { id: string; stage: string; progress: number } | null;
 
     addObject: (type: CADObject['type'] | string, options?: Partial<CADObject>) => void;
-    updateObject: (id: string, updates: Partial<CADObject>) => void;
-    deleteObject: (id: string) => void;
+    updateObject: (id: string, updates: Partial<CADObject>) => Promise<void>;
+    deleteObject: (id: string) => Promise<void>;
     clearAllObjects: () => void;
     selectObject: (id: string, multiSelect?: boolean) => void;
     clearSelection: () => void;
@@ -154,7 +155,7 @@ export interface ObjectSlice {
     setActiveTab: (tab: ObjectSlice['activeTab']) => void;
     setCode: (code: string) => void;
     runCode: () => Promise<void>;
-    executeOperation: (type: 'join' | 'cut' | 'intersect') => void;
+    executeOperation: (type: 'join' | 'cut' | 'intersect') => Promise<void>;
     startOperation: (type: string) => void;
     updateOperationParams: (params: any) => void;
     cancelOperation: () => void;
@@ -242,6 +243,7 @@ export interface VersioningSlice {
     lastSaveTime: number;
     lastSaveError: string | null;
 
+    pushToHistory: (type: HistoryItem['type'], name: string) => void;
     undo: () => void;
     redo: () => void;
     goToHistoryIndex: (index: number) => void;

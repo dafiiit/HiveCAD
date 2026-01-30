@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { Github } from "lucide-react";
 import * as Icons from "lucide-react";
 import { LucideProps } from "lucide-react";
@@ -15,7 +15,6 @@ interface CreateExtensionFormProps {
 }
 
 export const CreateExtensionForm: React.FC<CreateExtensionFormProps> = ({ onCancel, onSuccess }) => {
-    const { toast } = useToast();
     const [name, setName] = useState("");
     const [id, setId] = useState("");
     const [description, setDescription] = useState("");
@@ -35,17 +34,14 @@ export const CreateExtensionForm: React.FC<CreateExtensionFormProps> = ({ onCanc
         e.preventDefault();
 
         if (!name || !description || !iconName) {
-            toast({
-                title: "Validation Error",
+            toast.error("Validation Error", {
                 description: "Please fill in all required fields.",
-                variant: "destructive",
             });
             return;
         }
 
         // Mock success
-        toast({
-            title: "PR Created!",
+        toast.success("PR Created!", {
             description: `Your extension "${name}" has been submitted to the community library.`,
         });
 

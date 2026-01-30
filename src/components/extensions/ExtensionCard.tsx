@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ThumbsUp, ThumbsDown, Download } from "lucide-react";
 import * as Icons from "lucide-react";
 import { LucideProps } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { Extension } from "@/lib/mock-extensions";
 
 interface ExtensionCardProps {
@@ -12,14 +12,11 @@ interface ExtensionCardProps {
 }
 
 export const ExtensionCard: React.FC<ExtensionCardProps> = ({ extension }) => {
-    const { toast } = useToast();
-
     // Dynamically get the icon component from lucide-react
     const LucideIcon = (Icons[extension.icon as keyof typeof Icons] as React.FC<LucideProps>) || Icons.Package;
 
     const handleInstall = () => {
-        toast({
-            title: "Installing Extension",
+        toast("Installing Extension", {
             description: `Installing ${extension.name}...`,
         });
     };

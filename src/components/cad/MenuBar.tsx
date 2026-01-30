@@ -98,7 +98,7 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
   };
 
   const handleUndo = () => {
-    if (historyIndex < 0) {
+    if (historyIndex <= 0) {
       toast.error("Nothing to undo");
       return;
     }
@@ -231,10 +231,10 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           <div className="w-px h-4 bg-border mx-1" />
 
           <button
-            className={`p-1.5 hover:bg-secondary rounded transition-colors ${historyIndex >= 0 ? 'text-icon-default hover:text-icon-hover' : 'text-muted-foreground/50'}`}
+            className={`p-1.5 hover:bg-secondary rounded transition-colors ${historyIndex > 0 ? 'text-icon-default hover:text-icon-hover' : 'text-muted-foreground/50'}`}
             onClick={handleUndo}
-            disabled={historyIndex < 0}
-            title="Undo (Ctrl+Z)"
+            disabled={historyIndex <= 0}
+            title={historyIndex > 0 ? `Undo ${history[historyIndex]?.name || ''} (Ctrl+Z)` : "Nothing to undo"}
           >
             <Undo2 className="w-4 h-4" />
           </button>
@@ -243,7 +243,7 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
             className={`p-1.5 hover:bg-secondary rounded transition-colors ${historyIndex < history.length - 1 ? 'text-icon-default hover:text-icon-hover' : 'text-muted-foreground/50'}`}
             onClick={handleRedo}
             disabled={historyIndex >= history.length - 1}
-            title="Redo (Ctrl+Y)"
+            title={historyIndex < history.length - 1 ? `Redo ${history[historyIndex + 1]?.name || ''} (Ctrl+Y)` : "Nothing to redo"}
           >
             <Redo2 className="w-4 h-4" />
           </button>

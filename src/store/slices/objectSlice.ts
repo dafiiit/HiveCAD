@@ -224,11 +224,12 @@ export const createObjectSlice: StateCreator<
         }
 
         set({ code: cm.getCode() });
-        get().runCode();
+        await get().runCode();
+        get().pushToHistory('create', `Add ${type}`);
         get().triggerSave();
     },
 
-    updateObject: (id, updates) => {
+    updateObject: async (id, updates) => {
         const state = get();
         if (updates.dimensions) {
             const cm = new CodeManager(state.code);
@@ -249,7 +250,8 @@ export const createObjectSlice: StateCreator<
                 cm.updateOperation(id, opIndex, [newDims.radius]);
             }
             set({ code: cm.getCode() });
-            get().runCode();
+            await get().runCode();
+            get().pushToHistory('modify', `Update ${id}`);
             get().triggerSave();
             return;
         }
@@ -281,7 +283,7 @@ export const createObjectSlice: StateCreator<
         get().triggerSave();
     },
 
-    deleteObject: (id) => {
+    deleteObject: async (id) => {
         const state = get();
 
         // Dispose geometries if the object exists
@@ -298,7 +300,8 @@ export const createObjectSlice: StateCreator<
         const newCode = cm.getCode();
         if (newCode !== state.code) {
             set({ code: newCode });
-            get().runCode();
+            await get().runCode();
+            get().pushToHistory('delete', `Delete ${id}`);
             get().triggerSave();
         } else {
             console.warn("Delete via Code First failed - deleting from view only");
@@ -307,6 +310,7 @@ export const createObjectSlice: StateCreator<
                 selectedIds: new Set([...state.selectedIds].filter(sid => sid !== id)),
                 isSaved: false,
             });
+            get().pushToHistory('delete', `Delete ${id} (view only)`);
             get().triggerSave();
         }
     },
@@ -350,6 +354,8 @@ export const createObjectSlice: StateCreator<
     setActiveTab: (tab) => set({ activeTab: tab }),
     setCode: (code) => {
         set({ code, isSaved: false });
+        // We don't push to history on every character, 
+        // usually history is pushed after runCode (manual or auto-run)
         get().triggerSave();
     },
 
@@ -374,6 +380,7 @@ export const createObjectSlice: StateCreator<
             );
             set({ meshingProgress: null });
             const shapesArray = result.meshes;
+            // Record if this was a significant change (already handled by pushToHistory)
             const newObjects: CADObject[] = shapesArray.map((item: { id: string; meshData?: any; edgeData?: any; faceMapping?: any; edgeMapping?: any }, index: number) => {
                 const astId = item.id;
                 const existing = state.objects.find(o => o.id === astId);
@@ -450,7 +457,7 @@ export const createObjectSlice: StateCreator<
         }
     },
 
-    executeOperation: (type) => {
+    executeOperation: async (type) => {
         const state = get();
         const selectedIds = [...state.selectedIds];
         if (selectedIds.length < 2) {
@@ -469,7 +476,8 @@ export const createObjectSlice: StateCreator<
             cm.removeFeature(id);
         });
         set({ code: cm.getCode() });
-        get().runCode();
+        await get().runCode();
+        get().pushToHistory('modify', `${type} operation`);
         get().triggerSave();
         toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} operation applied`);
     },
