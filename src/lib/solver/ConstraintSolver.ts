@@ -50,7 +50,8 @@ export async function initSolver(): Promise<GcsWrapper> {
     }
 
     initPromise = (async () => {
-        const wrapper = await make_gcs_wrapper();
+        // Pass the explicit path to the WASM file in public dir
+        const wrapper = await make_gcs_wrapper('/planegcs.wasm');
         sharedWrapper = wrapper;
         return wrapper;
     })();
@@ -85,7 +86,7 @@ export class ConstraintSolver {
      */
     async initialize(): Promise<void> {
         // Each solver instance gets its own wrapper for isolation
-        this.wrapper = await make_gcs_wrapper();
+        this.wrapper = await make_gcs_wrapper('/planegcs.wasm');
     }
 
     /**

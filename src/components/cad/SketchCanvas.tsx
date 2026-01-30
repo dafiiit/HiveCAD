@@ -225,6 +225,7 @@ const SketchCanvas = () => {
         let closestEntityId: string | null = null;
         let minDistance = hitThreshold;
 
+        // 1. Check Solver Entities (Existing Logic)
         sketchEntities.forEach((entity) => {
             let distance = Infinity;
             let weight = 1.0;
@@ -274,6 +275,66 @@ const SketchCanvas = () => {
                 closestEntityId = entity.id;
             }
         });
+
+        // 2. NEW: Check Active Primitives (The shapes you just drew)
+        // console.log("Checking Active Primitives:", activeSketchPrimitives.length, "at point:", p);
+        activeSketchPrimitives.forEach((prim) => {
+            let distance = Infinity;
+
+            // Check Points (Endpoints)
+            for (const pt of prim.points) {
+                const dx = pt[0] - p[0];
+                const dy = pt[1] - p[1];
+                const d = Math.sqrt(dx * dx + dy * dy);
+                if (d < minDistance) {
+                    minDistance = d;
+                    closestEntityId = prim.id;
+                }
+            }
+
+            // Check Lines
+            if (prim.type === 'line' && prim.points.length >= 2) {
+                const p1 = prim.points[0];
+                const p2 = prim.points[1];
+                const A = p[0] - p1[0];
+                const B = p[1] - p1[1];
+                const C = p2[0] - p1[0];
+                const D = p2[1] - p1[1];
+                const dot = A * C + B * D;
+                const lenSq = C * C + D * D;
+                let param = -1;
+                if (lenSq !== 0) param = dot / lenSq;
+
+                let xx, yy;
+                if (param < 0) { xx = p1[0]; yy = p1[1]; }
+                else if (param > 1) { xx = p2[0]; yy = p2[1]; }
+                else { xx = p1[0] + param * C; yy = p1[1] + param * D; }
+
+                const dx = p[0] - xx;
+                const dy = p[1] - yy;
+                distance = Math.sqrt(dx * dx + dy * dy);
+
+                // console.log(`Line ${prim.id}: distance=${distance}, p1=${p1}, p2=${p2}, param=${param}`);
+            } else {
+                // console.log("Prim is not line or missing points:", prim.type, prim.points);
+            }
+
+            // Add other types (circle, arc) as needed...
+            if (prim.type === 'circle' && prim.points.length >= 2) {
+                const center = prim.points[0];
+                const end = prim.points[1];
+                const radius = Math.sqrt(Math.pow(end[0] - center[0], 2) + Math.pow(end[1] - center[1], 2));
+                const dx = center[0] - p[0];
+                const dy = center[1] - p[1];
+                distance = Math.abs(Math.sqrt(dx * dx + dy * dy) - radius);
+            }
+
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestEntityId = prim.id;
+            }
+        });
+
         return closestEntityId;
     };
 

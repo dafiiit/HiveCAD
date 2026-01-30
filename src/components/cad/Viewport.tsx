@@ -270,27 +270,19 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
     // Determine Selection ID
     let selectionId = object.id;
 
-    // We use a small hack to determine what was hit:
-    // R3F events 'e' have an 'intersections' array.
-    // We can look for the first Point or LineSegment intersection to prioritize sub-elements.
-    const prioritizedIntersection = e.intersections.find((hit: any) => hit.object.type === 'Points' || hit.object.type === 'LineSegments');
-
-    if (prioritizedIntersection) {
-      const hitObj = prioritizedIntersection.object;
-      const hitIndex = prioritizedIntersection.index;
-
-      if (hitObj.type === 'Points' && hitIndex !== undefined) {
-        selectionId = `${object.id}:vertex-${hitIndex}`;
-      } else if (hitObj.type === 'LineSegments' && object.edgeMapping && hitIndex !== undefined) {
-        const floatOffset = hitIndex * 6;
-        const edge = object.edgeMapping.find(m => floatOffset >= m.start && floatOffset < m.start + m.count);
-        if (edge) {
-          selectionId = `${object.id}:edge-${edge.edgeId}`;
-        }
+    // Handle high-priority vertex/edge hits
+    if (e.object.type === 'Points' && e.index !== undefined) {
+      // Handle Vertex Click
+      selectionId = `${object.id}:vertex-${e.index}`;
+    } else if (e.object.type === 'LineSegments' && object.edgeMapping && e.index !== undefined) {
+      // Handle Edge Click
+      const floatOffset = e.index * 6;
+      const edge = object.edgeMapping.find(m => floatOffset >= m.start && floatOffset < m.start + m.count);
+      if (edge) {
+        selectionId = `${object.id}:edge-${edge.edgeId}`;
       }
-    }
-    // Fallback to the primary intersection (which might be the Mesh face)
-    else if (e.object.type === 'Mesh' && object.faceMapping && e.faceIndex !== undefined) {
+    } else if (e.object.type === 'Mesh' && object.faceMapping && e.faceIndex !== undefined) {
+      // Handle Face Click (Fallback)
       const triangleStartIndex = e.faceIndex * 3;
       const face = object.faceMapping.find(m => triangleStartIndex >= m.start && triangleStartIndex < m.start + m.count);
       if (face) {

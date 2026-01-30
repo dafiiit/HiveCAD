@@ -328,32 +328,42 @@ export const replicadToThreeGeometry = (shape: any): THREE.BufferGeometry => {
  * Extracts edges from a replicad shape/sketch and converts them to Three.js geometry.
  * Uses meshEdges() for robust extraction.
  */
-export const replicadToThreeEdges = (shape: any): THREE.BufferGeometry | null => {
+export const replicadToThreeEdges = (shape: any): { geometry: THREE.BufferGeometry, mapping: any[] } | null => {
     if (!shape) return null;
 
     try {
-        let edgeSource = shape;
-        if (shape && typeof shape.meshEdges !== 'function' && shape.face) {
-            edgeSource = typeof shape.face === 'function' ? shape.face() : shape.face;
+        const lines: number[] = [];
+        const mapping: any[] = [];
+
+        // Use 'edges' iterator if available (standard in Replicad wrappers)
+        const edges = typeof shape.edges === 'function' ? shape.edges() : (shape.edges || []);
+
+        for (const edge of edges) {
+            // Mesh the individual edge
+            const mesh = edge.mesh({ tolerance: 0.1, angularTolerance: 30.0 });
+            if (mesh && mesh.lines && mesh.lines.length > 0) {
+                const start = lines.length; // Start index in the float array
+                lines.push(...mesh.lines);
+                const count = lines.length - start;
+
+                // Store mapping: this range of vertices belongs to this edge ID
+                mapping.push({
+                    edgeId: edge.id || mapping.length, // Fallback if no ID
+                    start,
+                    count
+                });
+            }
         }
 
-        if (!edgeSource || typeof edgeSource.meshEdges !== 'function') {
-            // Fallback for wires/edges if meshEdges is not available
-            return null;
-        }
-
-        const { lines } = edgeSource.meshEdges({
-            tolerance: 0.1,
-            angularTolerance: 30.0
-        });
-
-        if (!lines || lines.length === 0) return null;
+        if (lines.length === 0) return null;
 
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(lines), 3));
-        return geometry;
+
+        // Return BOTH geometry and mapping
+        return { geometry, mapping };
     } catch (e) {
-        console.error("Error extracting edges from Replicad shape:", e);
+        console.error("Error extracting edges:", e);
         return null;
     }
 }
