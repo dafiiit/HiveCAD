@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../../../types';
 import type { CodeManager } from '../../../../code-manager';
 import { generateToolId } from '../../../types';
+import { LineSegment } from '../../../../sketch-graph/Geometry';
 
 // Helper to render a line from points
 const renderLine = (
@@ -37,6 +38,16 @@ export const smoothSplineTool: Tool = {
         { key: 'startTangent', label: 'Start Tangent', type: 'number', default: 0, unit: 'deg' },
         { key: 'endTangent', label: 'End Tangent', type: 'number', default: 0, unit: 'deg' }
     ],
+    getPlanarGeometry(primitive: SketchPrimitiveData): any[] {
+        if (primitive.points.length < 2) return [];
+        const geoms = [];
+        for (let i = 0; i < primitive.points.length - 1; i++) {
+            const p1 = { x: primitive.points[i][0], y: primitive.points[i][1] };
+            const p2 = { x: primitive.points[i + 1][0], y: primitive.points[i + 1][1] };
+            geoms.push(new LineSegment(p1, p2));
+        }
+        return geoms;
+    },
     addToSketch(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void {
         for (let i = 1; i < primitive.points.length; i++) {
             const pt = primitive.points[i];
@@ -104,6 +115,12 @@ export const bezierTool: Tool = {
         description: 'Draw a Bezier curve with control points'
     },
     uiProperties: [],
+    getPlanarGeometry(primitive: SketchPrimitiveData): any[] {
+        if (primitive.points.length < 2) return [];
+        const p1 = { x: primitive.points[0][0], y: primitive.points[0][1] };
+        const p2 = { x: primitive.points[1][0], y: primitive.points[1][1] };
+        return [new LineSegment(p1, p2)];
+    },
     addToSketch(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void {
         const end = primitive.points[1];
         const controlPoints = primitive.points.slice(2).map(p => [p[0], p[1]]);
@@ -167,6 +184,12 @@ export const quadraticBezierTool: Tool = {
         { key: 'ctrlX', label: 'Control X', type: 'number', default: 5, unit: 'mm' },
         { key: 'ctrlY', label: 'Control Y', type: 'number', default: 5, unit: 'mm' }
     ],
+    getPlanarGeometry(primitive: SketchPrimitiveData): any[] {
+        if (primitive.points.length < 2) return [];
+        const p1 = { x: primitive.points[0][0], y: primitive.points[0][1] };
+        const p2 = { x: primitive.points[1][0], y: primitive.points[1][1] };
+        return [new LineSegment(p1, p2)];
+    },
     addToSketch(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void {
         const end = primitive.points[1];
         const ctrlX = primitive.properties?.ctrlX || 5;
@@ -211,6 +234,12 @@ export const cubicBezierTool: Tool = {
         { key: 'ctrlEndX', label: 'Control End X', type: 'number', default: 3, unit: 'mm' },
         { key: 'ctrlEndY', label: 'Control End Y', type: 'number', default: 5, unit: 'mm' }
     ],
+    getPlanarGeometry(primitive: SketchPrimitiveData): any[] {
+        if (primitive.points.length < 2) return [];
+        const p1 = { x: primitive.points[0][0], y: primitive.points[0][1] };
+        const p2 = { x: primitive.points[1][0], y: primitive.points[1][1] };
+        return [new LineSegment(p1, p2)];
+    },
     addToSketch(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void {
         const start = primitive.points[0];
         const end = primitive.points[1];

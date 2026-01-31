@@ -109,75 +109,10 @@ export function processSketch({
         const graph = new PlanarGraph();
 
         syncedPrimitives.forEach(prim => {
-            // Regular line
-            if (prim.type === 'line') {
-                const p1 = { x: prim.points[0][0], y: prim.points[0][1] };
-                const p2 = { x: prim.points[1][0], y: prim.points[1][1] };
-                graph.addGeometry(new LineSegment(p1, p2));
-            }
-
-            // Rectangle
-            else if (prim.type === 'rectangle' || prim.type === 'roundedRectangle') {
-                const [p1, p2] = prim.points;
-                const p3 = { x: p2[0], y: p1[1] };
-                const p4 = { x: p1[0], y: p2[1] };
-
-                graph.addGeometry(new LineSegment({ x: p1[0], y: p1[1] }, p3)); // Top/Bottom
-                graph.addGeometry(new LineSegment(p3, { x: p2[0], y: p2[1] })); // Right
-                graph.addGeometry(new LineSegment({ x: p2[0], y: p2[1] }, p4)); // Bottom/Top
-                graph.addGeometry(new LineSegment(p4, { x: p1[0], y: p1[1] })); // Left
-            }
-            // Circle
-            else if (prim.type === 'circle') {
-                const [center, edge] = prim.points;
-                const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
-                graph.addGeometry(new Circle({ x: center[0], y: center[1] }, radius));
-            }
-            // Standard arcs (threePointsArc, arc)
-            else if (['threePointsArc', 'arc'].includes(prim.type) && prim.points.length >= 3) {
-                const p1 = { x: prim.points[0][0], y: prim.points[0][1] };
-                const p2 = { x: prim.points[1][0], y: prim.points[1][1] }; // End
-                const p3 = { x: prim.points[2][0], y: prim.points[2][1] }; // Mid/Via
-                const arc = arcFromThreePoints(p1, p2, p3);
-                if (arc) graph.addGeometry(arc);
-            }
-
-            // Polygon
-            else if (prim.type === 'polygon' && prim.points.length >= 2) {
-                const center = prim.points[0];
-                const edge = prim.points[1];
-                const sides = prim.properties?.sides || 6;
-                const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
-                const dx = edge[0] - center[0];
-                const dy = edge[1] - center[1];
-                const startAngle = Math.atan2(dy, dx);
-
-                const polyPoints: { x: number; y: number }[] = [];
-                for (let i = 0; i <= sides; i++) {
-                    const theta = startAngle + (i / sides) * Math.PI * 2;
-                    polyPoints.push({
-                        x: center[0] + Math.cos(theta) * radius,
-                        y: center[1] + Math.sin(theta) * radius
-                    });
-                }
-                for (let i = 0; i < polyPoints.length - 1; i++) {
-                    graph.addGeometry(new LineSegment(polyPoints[i], polyPoints[i + 1]));
-                }
-            }
-
-            // Splines
-            else if (['spline', 'smoothSpline'].includes(prim.type) && prim.points.length >= 2) {
-                const pts = prim.points.map(p => ({ x: p[0], y: p[1] }));
-                for (let i = 0; i < pts.length - 1; i++) {
-                    graph.addGeometry(new LineSegment(pts[i], pts[i + 1]));
-                }
-            }
-            // Bezier
-            else if (['bezier', 'quadraticBezier', 'cubicBezier'].includes(prim.type) && prim.points.length >= 2) {
-                const pts = prim.points.map(p => ({ x: p[0], y: p[1] }));
-                if (pts.length >= 2) {
-                    graph.addGeometry(new LineSegment(pts[0], pts[pts.length > 2 ? 1 : pts.length - 1]));
-                }
+            const tool = toolRegistry.get(prim.type);
+            if (tool?.getPlanarGeometry) {
+                const geoms = tool.getPlanarGeometry(prim);
+                geoms.forEach(g => graph.addGeometry(g));
             }
         });
 
@@ -255,53 +190,14 @@ export function processSketch({
             let isFirst = true;
 
             syncedPrimitives.forEach((prim) => {
-                // Line-type
-                if (['line', 'vline', 'hline', 'polarline', 'tangentline'].includes(prim.type)) {
-                    if (prim.points.length >= 2) {
-                        const [p1, p2] = prim.points;
-                        if (isFirst) {
-                            cm.addOperation(sketchName!, 'movePointerTo', [[p1[0], p1[1]]]);
-                            isFirst = false;
-                        }
-                        cm.addOperation(sketchName!, 'lineTo', [[p2[0], p2[1]]]);
-                    }
-                }
-                // Arcs
-                else if (['threePointsArc', 'arc'].includes(prim.type)) {
-                    if (prim.points.length >= 2) {
-                        const p1 = prim.points[0];
-                        const p2 = prim.points[1];
-                        if (isFirst) {
-                            cm.addOperation(sketchName!, 'movePointerTo', [[p1[0], p1[1]]]);
-                            isFirst = false;
-                        }
-                        if (prim.points.length >= 3) {
-                            const via = prim.points[2];
-                            cm.addOperation(sketchName!, 'threePointsArcTo', [[p2[0], p2[1]], [via[0], via[1]]]);
-                        } else {
-                            cm.addOperation(sketchName!, 'lineTo', [[p2[0], p2[1]]]);
-                        }
-                    }
-                }
-                // Splines
-                else if (['spline', 'smoothSpline'].includes(prim.type) && prim.points.length >= 2) {
-                    if (isFirst && prim.points.length > 0) {
-                        cm.addOperation(sketchName!, 'movePointerTo', [[prim.points[0][0], prim.points[0][1]]]);
-                        isFirst = false;
-                    }
-                    for (let i = 1; i < prim.points.length; i++) {
-                        cm.addOperation(sketchName!, 'lineTo', [[prim.points[i][0], prim.points[i][1]]]);
-                    }
-                }
-                // Bezier
-                else if (['bezier', 'quadraticBezier', 'cubicBezier'].includes(prim.type) && prim.points.length >= 2) {
-                    const p1 = prim.points[0];
-                    const p2 = prim.points[1];
+                const tool = toolRegistry.get(prim.type);
+                if (tool?.addToSketch && prim.points.length > 0) {
                     if (isFirst) {
-                        cm.addOperation(sketchName!, 'movePointerTo', [[p1[0], p1[1]]]);
+                        const start = prim.points[0];
+                        cm.addOperation(sketchName!, 'movePointerTo', [[start[0], start[1]]]);
                         isFirst = false;
                     }
-                    cm.addOperation(sketchName!, 'lineTo', [[p2[0], p2[1]]]);
+                    tool.addToSketch(cm, sketchName!, prim);
                 }
             });
 

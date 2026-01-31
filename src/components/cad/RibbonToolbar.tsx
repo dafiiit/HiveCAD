@@ -768,57 +768,87 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
         {/* Sketch Tools */}
         <div className="flex items-center py-1 px-1">
           <ToolGroup label="CREATE">
-            <ToolButton
-              icon={<Minus className="w-5 h-5" />}
-              label="Line"
-              isActive={activeTool === 'line'}
-              onClick={() => handleToolSelect('line')}
-            />
+            {(() => {
+              const sketchTools = toolRegistry.getByCategory('sketch');
+              // Group tools
+              const groups: Record<string, typeof sketchTools> = {};
+              const groupOrder: string[] = []; // To preserve order: Line, Arc, Shape, Spline
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <ToolButton
-                  icon={<ArrowUpRight className="w-5 h-5" />}
-                  label="Arc"
-                  isActive={activeTool === 'threePointsArc'}
-                  onClick={() => handleToolSelect('threePointsArc')}
-                />
-              </DropdownMenuTrigger>
-            </DropdownMenu>
+              sketchTools.forEach(tool => {
+                const group = tool.metadata.group || 'Other';
+                if (!groups[group]) {
+                  groups[group] = [];
+                  groupOrder.push(group);
+                }
+                groups[group].push(tool);
+              });
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <ToolButton
-                  icon={<RectangleHorizontal className="w-5 h-5" />}
-                  label="Shape"
-                  isActive={['rectangle', 'circle', 'polygon', 'roundedRectangle', 'text'].includes(activeTool)}
-                  hasDropdown
-                />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => handleToolSelect('rectangle')}>Rectangle</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleToolSelect('circle')}>Circle</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleToolSelect('roundedRectangle')}>Rounded Rectangle</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleToolSelect('polygon')}>Polygon</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleToolSelect('text')}>Text</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              // Custom order preference if needed, otherwise use registration/discovery order
+              // "Line", "Arc" are usually first.
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <ToolButton
-                  icon={<Spline className="w-5 h-5" />}
-                  label="Spline"
-                  isActive={['spline', 'bezier', 'smoothSpline'].includes(activeTool)}
-                  hasDropdown
-                />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => handleToolSelect('smoothSpline')}>Smooth Spline</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleToolSelect('bezier')}>Bezier Curve</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleToolSelect('spline')}>Point Spline</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              return groupOrder.map(group => {
+                const tools = groups[group];
+                const firstTool = tools[0];
+                const isActive = tools.some(t => activeTool === t.metadata.id);
+
+                if (tools.length === 1) {
+                  return (
+                    <ToolButton
+                      key={firstTool.metadata.id}
+                      icon={getToolIcon(firstTool.metadata.id)}
+                      label={firstTool.metadata.label}
+                      isActive={activeTool === firstTool.metadata.id}
+                      onClick={() => handleToolSelect(firstTool.metadata.id as any)}
+                    />
+                  );
+                }
+
+                return (
+                  <DropdownMenu key={group}>
+                    <DropdownMenuTrigger asChild>
+                      <ToolButton
+                        icon={getToolIcon(firstTool.metadata.id)}
+                        label={group}
+                        isActive={isActive}
+                        hasDropdown
+                        // For Arc, maybe we want the button itself to trigger the first tool if clicked? 
+                        // But DropdownMenuTrigger usually toggles dropdown.
+                        // The existing Arc button had an onClick handler on the Trigger? 
+                        // If I click the button, I might want to select the default tool (first one) AND/OR open dropdown?
+                        // Radix Dropdown trigger opens menu.
+                        // Standard behavior: separate split button or just menu.
+                        // Current implementation assumes menu trigger.
+                        // The legacy Arc button had `onClick={() => handleToolSelect('threePointsArc')}` on the button AND it was a trigger.
+                        // This usually means clicking it selects the tool AND opens the menu.
+                        // I'll stick to standard dropdown behavior for now (click opens menu).
+                        // If user wants split button behavior, that's more complex.
+                        // But wait, the legacy code:
+                        /*
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <ToolButton ... onClick={() => handleToolSelect('threePointsArc')} />
+                          </DropdownMenuTrigger>
+                        </DropdownMenu>
+                        */
+                        // This selects the tool.
+                        // I'll replicate this: clicking the button selects the first tool.
+                        onClick={(e) => {
+                          handleToolSelect(firstTool.metadata.id as any);
+                          // Let the event propagate to trigger dropdown?
+                        }}
+                      />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      {tools.map(tool => (
+                        <DropdownMenuItem key={tool.metadata.id} onClick={() => handleToolSelect(tool.metadata.id as any)}>
+                          {tool.metadata.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                );
+              });
+            })()}
 
             <ToolButton
               icon={<Crosshair className="w-5 h-5" />}

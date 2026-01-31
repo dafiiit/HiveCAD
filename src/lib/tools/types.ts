@@ -164,6 +164,13 @@ export interface Tool {
         startPoint: [number, number],
         properties?: Record<string, any>
     ): SketchPrimitive;
+
+    /**
+     * Get planar geometry for graph analysis (for sketch tools)
+     * @param primitive - The sketch primitive data
+     * @returns Array of Geometry objects for PlanarGraph
+     */
+    getPlanarGeometry?(primitive: SketchPrimitive): any[];
 }
 
 // Helper to generate IDs

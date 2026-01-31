@@ -4,6 +4,7 @@ import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchPlane } from '..
 import type { CodeManager } from '../../../../code-manager';
 import { generateToolId } from '../../../types';
 import { CircleAnnotation, RectangleAnnotation } from '../../../../../components/cad/SketchAnnotations';
+import { LineSegment, Circle } from '../../../../sketch-graph/Geometry';
 
 // Helper function to render a line loop from points
 const renderLineLoop = (
@@ -35,6 +36,21 @@ export const rectangleTool: Tool = {
         description: 'Draw a rectangle'
     },
     uiProperties: [],
+    getPlanarGeometry(primitive: SketchPrimitiveData): any[] {
+        if (primitive.points.length < 2) return [];
+        const [p1, p2] = primitive.points;
+        const p1x = p1[0], p1y = p1[1];
+        const p2x = p2[0], p2y = p2[1];
+        const p3 = { x: p2x, y: p1y };
+        const p4 = { x: p1x, y: p2y };
+
+        return [
+            new LineSegment({ x: p1x, y: p1y }, p3),
+            new LineSegment(p3, { x: p2x, y: p2y }),
+            new LineSegment({ x: p2x, y: p2y }, p4),
+            new LineSegment(p4, { x: p1x, y: p1y })
+        ];
+    },
     createShape(codeManager: CodeManager, primitive: SketchPrimitiveData, plane: string): string {
         const [p1, p2] = primitive.points;
         const width = Math.abs(p2[0] - p1[0]);
@@ -101,6 +117,10 @@ export const roundedRectangleTool: Tool = {
     uiProperties: [
         { key: 'radius', label: 'Corner Radius', type: 'number', default: 3, unit: 'mm', min: 0 }
     ],
+    getPlanarGeometry(primitive: SketchPrimitiveData): any[] {
+        // Reuse rectangle geometry for now (ignoring corners in graph for simplicity, as per legacy implementation)
+        return rectangleTool.getPlanarGeometry!(primitive);
+    },
     createShape(codeManager: CodeManager, primitive: SketchPrimitiveData, plane: string): string {
         const [p1, p2] = primitive.points;
         const width = Math.abs(p2[0] - p1[0]);
@@ -146,6 +166,12 @@ export const circleTool: Tool = {
         description: 'Draw a circle'
     },
     uiProperties: [],
+    getPlanarGeometry(primitive: SketchPrimitiveData): any[] {
+        if (primitive.points.length < 2) return [];
+        const [center, edge] = primitive.points;
+        const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
+        return [new Circle({ x: center[0], y: center[1] }, radius)];
+    },
     createShape(codeManager: CodeManager, primitive: SketchPrimitiveData, plane: string): string {
         const [center, edge] = primitive.points;
         const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
@@ -221,6 +247,31 @@ export const polygonTool: Tool = {
         { key: 'sides', label: 'Sides', type: 'number', default: 6, min: 3, max: 32, step: 1 },
         { key: 'sagitta', label: 'Sagitta', type: 'number', default: 0, unit: 'mm' }
     ],
+    getPlanarGeometry(primitive: SketchPrimitiveData): any[] {
+        if (primitive.points.length < 2) return [];
+        const center = primitive.points[0];
+        const edge = primitive.points[1];
+        const sides = primitive.properties?.sides || 6;
+        const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
+        const dx = edge[0] - center[0];
+        const dy = edge[1] - center[1];
+        const startAngle = Math.atan2(dy, dx);
+
+        const polyPoints: { x: number; y: number }[] = [];
+        for (let i = 0; i <= sides; i++) {
+            const theta = startAngle + (i / sides) * Math.PI * 2;
+            polyPoints.push({
+                x: center[0] + Math.cos(theta) * radius,
+                y: center[1] + Math.sin(theta) * radius
+            });
+        }
+
+        const geoms = [];
+        for (let i = 0; i < polyPoints.length - 1; i++) {
+            geoms.push(new LineSegment(polyPoints[i], polyPoints[i + 1]));
+        }
+        return geoms;
+    },
     createShape(codeManager: CodeManager, primitive: SketchPrimitiveData, plane: string): string {
         const [center, edge] = primitive.points;
         const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
