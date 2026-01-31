@@ -141,26 +141,7 @@ export function processSketch({
                 const arc = arcFromThreePoints(p1, p2, p3);
                 if (arc) graph.addGeometry(arc);
             }
-            // Tangent arc and sagitta arc
-            else if (['tangentArc', 'sagittaArc'].includes(prim.type) && prim.points.length >= 2) {
-                const p1 = { x: prim.points[0][0], y: prim.points[0][1] };
-                const p2 = { x: prim.points[1][0], y: prim.points[1][1] };
-                const sagitta = prim.properties?.sagitta || 0;
-                if (Math.abs(sagitta) > 0.001) {
-                    const midX = (p1.x + p2.x) / 2;
-                    const midY = (p1.y + p2.y) / 2;
-                    const dx = p2.x - p1.x;
-                    const dy = p2.y - p1.y;
-                    const len = Math.sqrt(dx * dx + dy * dy);
-                    const perpX = -dy / len;
-                    const perpY = dx / len;
-                    const via = { x: midX + perpX * sagitta, y: midY + perpY * sagitta };
-                    const arc = arcFromThreePoints(p1, p2, via);
-                    if (arc) graph.addGeometry(arc);
-                } else {
-                    graph.addGeometry(new LineSegment(p1, p2));
-                }
-            }
+
             // Polygon
             else if (prim.type === 'polygon' && prim.points.length >= 2) {
                 const center = prim.points[0];
@@ -183,28 +164,7 @@ export function processSketch({
                     graph.addGeometry(new LineSegment(polyPoints[i], polyPoints[i + 1]));
                 }
             }
-            // Ellipse
-            else if (prim.type === 'ellipse' && prim.points.length >= 2) {
-                const startPt = prim.points[0];
-                const endPt = prim.points[1];
-                const xRadius = prim.properties?.xRadius || 10;
-                const yRadius = prim.properties?.yRadius || 5;
-                const cx = (startPt[0] + endPt[0]) / 2;
-                const cy = (startPt[1] + endPt[1]) / 2;
-                const segments = 32;
 
-                const ellipsePoints: { x: number; y: number }[] = [];
-                for (let i = 0; i <= segments; i++) {
-                    const theta = (i / segments) * Math.PI * 2;
-                    ellipsePoints.push({
-                        x: cx + Math.cos(theta) * xRadius,
-                        y: cy + Math.sin(theta) * yRadius
-                    });
-                }
-                for (let i = 0; i < ellipsePoints.length - 1; i++) {
-                    graph.addGeometry(new LineSegment(ellipsePoints[i], ellipsePoints[i + 1]));
-                }
-            }
             // Splines
             else if (['spline', 'smoothSpline'].includes(prim.type) && prim.points.length >= 2) {
                 const pts = prim.points.map(p => ({ x: p[0], y: p[1] }));
@@ -307,7 +267,7 @@ export function processSketch({
                     }
                 }
                 // Arcs
-                else if (['threePointsArc', 'arc', 'tangentArc', 'sagittaArc'].includes(prim.type)) {
+                else if (['threePointsArc', 'arc'].includes(prim.type)) {
                     if (prim.points.length >= 2) {
                         const p1 = prim.points[0];
                         const p2 = prim.points[1];

@@ -68,7 +68,7 @@ export class SnappingEngine {
         if (pts.length === 0) return;
 
         // 1. Endpoints (Lines, Polylines, Arcs, Splines)
-        if (['line', 'vline', 'hline', 'polarline', 'tangentline', 'tangentArc', 'sagittaArc', 'spline', 'smoothSpline', 'bezier', 'quadraticBezier', 'cubicBezier'].includes(prim.type)) {
+        if (['line', 'vline', 'hline', 'polarline', 'tangentline', 'spline', 'smoothSpline', 'bezier', 'quadraticBezier', 'cubicBezier'].includes(prim.type)) {
             add(pts[0][0], pts[0][1], 'endpoint');
             if (pts.length > 1) {
                 add(pts[pts.length - 1][0], pts[pts.length - 1][1], 'endpoint');

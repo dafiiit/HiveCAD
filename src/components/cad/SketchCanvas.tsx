@@ -5,23 +5,19 @@ import * as THREE from "three";
 import { useCADStore, useCADStoreApi, SketchPrimitive, ToolType } from "../../hooks/useCADStore";
 import { SnappingEngine, SnapResult } from "../../lib/snapping";
 import { toolRegistry } from "../../lib/tools";
-import SketchToolDialog, { TOOL_PARAMS } from "./SketchToolDialog";
+import SketchToolDialog from "./SketchToolDialog";
 import { DimensionBadge, createAnnotationContext } from "./SketchAnnotations";
 
 // ... (existing helper types/components)
 
-// Tools that require parameter dialog before drawing
-const DIALOG_REQUIRED_TOOLS: ToolType[] = [
-    'sagittaArc', 'ellipse',
-    'smoothSpline', 'bezier', 'quadraticBezier', 'cubicBezier',
-    'roundedRectangle', 'polygon', 'text'
-];
-
-// Tools that are "shape wrappers" - create a complete shape in one go
-const SHAPE_TOOLS: ToolType[] = ['rectangle', 'circle', 'polygon', 'roundedRectangle', 'text'];
-
-// Multi-click tools that require multiple points
-const MULTI_POINT_TOOLS: ToolType[] = ['line', 'spline', 'smoothSpline', 'bezier'];
+// Import tool types once at startup for efficiency
+const DIALOG_REQUIRED_TOOLS: ToolType[] = toolRegistry.getDialogTools().map(t => t.metadata.id as ToolType);
+const SHAPE_TOOLS: ToolType[] = toolRegistry.getAll()
+    .filter(t => t.createShape !== undefined)
+    .map(t => t.metadata.id as ToolType);
+const MULTI_POINT_TOOLS: ToolType[] = toolRegistry.getAll()
+    .filter(t => t.metadata.category === 'sketch' && !SHAPE_TOOLS.includes(t.metadata.id as ToolType))
+    .map(t => t.metadata.id as ToolType);
 
 const SketchCanvas = () => {
     const {
@@ -522,7 +518,7 @@ const SketchCanvas = () => {
             return;
         }
 
-        // Two-point finishers (rect, circle, polygon, ellipse, tangentArc, sagittaArc, etc.)
+        // Two-point finishers (rect, circle, polygon, etc.)
         addSketchPrimitive({
             ...currentDrawingPrimitive,
             points: currentDrawingPrimitive.points

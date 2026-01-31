@@ -61,34 +61,43 @@ export const threePointsArcTool: Tool = {
         isGhost: boolean = false
     ) {
         const color = isGhost ? "#00ffff" : "#ffff00";
-        const points = primitive.points.map(p => to3D(p[0], p[1]));
+        // Convert all points to 3D first
+        const points3D = primitive.points.map(p => to3D(p[0], p[1]));
 
-        if (points.length === 2) {
-            // Draw line for preview until third point (Chord line)
-            return renderLine(primitive.id, points, color);
+        // Check if we have enough points
+        if (points3D.length < 2) return null;
+
+        // If only 2 points (Start, End/Mouse), render the chord line
+        if (primitive.points.length === 2) {
+            return renderLine(primitive.id, points3D, color);
         }
 
-        if (points.length >= 3) {
-            const p1 = { x: primitive.points[0][0], y: primitive.points[0][1] };
-            const p2 = { x: primitive.points[1][0], y: primitive.points[1][1] };
-            const p3 = { x: primitive.points[2][0], y: primitive.points[2][1] };
+        // If 3 or more points (Start, End, Via/Mouse), try to render the arc
+        if (primitive.points.length >= 3) {
+            const start = { x: primitive.points[0][0], y: primitive.points[0][1] };
+            const end = { x: primitive.points[1][0], y: primitive.points[1][1] };
+            const via = { x: primitive.points[2][0], y: primitive.points[2][1] }; // The current mouse position or 3rd click
 
-            // Synchronous call to geometry helper
-            const arc = arcFromThreePoints(p1, p2, p3);
+            const arc = arcFromThreePoints(start, end, via);
 
             if (arc) {
+                const { startAngle, endAngle, clockwise } = sanitizeAngles(arc.startAngle, arc.endAngle, arc.ccw);
+
                 const curve = new THREE.EllipseCurve(
                     arc.center.x, arc.center.y,
                     arc.radius, arc.radius,
-                    arc.startAngle, arc.endAngle,
-                    !arc.ccw, 0
+                    startAngle, endAngle,
+                    clockwise,
+                    0
                 );
+
+                // Get points for smooth curve
                 const arcPoints = curve.getPoints(50).map(p => to3D(p.x, p.y));
                 return renderLine(primitive.id, arcPoints, color);
             }
 
-            // Fallback for collinear or invalid
-            return renderLine(primitive.id, points.slice(0, 2), color);
+            // Fallback: if arc fails (e.g. collinear), render the chord line (Start->End)
+            return renderLine(primitive.id, [points3D[0], points3D[1]], color);
         }
 
         return null;
@@ -98,6 +107,7 @@ export const threePointsArcTool: Tool = {
         plane: SketchPlane,
     ) {
         // Step 2: While drawing the chord (Start -> End)
+        // We can show the chord length using LineAnnotation
         if (primitive.points.length === 2) {
             const start = { x: primitive.points[0][0], y: primitive.points[0][1] };
             const end = { x: primitive.points[1][0], y: primitive.points[1][1] };
@@ -119,6 +129,8 @@ export const threePointsArcTool: Tool = {
         const arc = arcFromThreePoints(p1, p2, p3);
         if (!arc) return null;
 
+        const { startAngle, endAngle } = sanitizeAngles(arc.startAngle, arc.endAngle, arc.ccw);
+
         return React.createElement(React.Fragment, null,
             React.createElement(ArcAnnotation, {
                 key: `${primitive.id}-annotation`,
@@ -126,8 +138,8 @@ export const threePointsArcTool: Tool = {
                 start: p1,
                 end: p2,
                 radius: arc.radius,
-                startAngle: arc.startAngle,
-                endAngle: arc.endAngle,
+                startAngle,
+                endAngle,
                 plane
             }),
             // Show marker for the Via point (p3)
@@ -143,159 +155,17 @@ export const threePointsArcTool: Tool = {
     }
 };
 
-export const tangentArcTool: Tool = {
-    metadata: {
-        id: 'tangentArc',
-        label: 'Tangent Arc',
-        icon: 'Rotate3D',
-        category: 'sketch',
-        group: 'Arc',
-        description: 'Draw an arc tangent to the previous segment'
-    },
-    uiProperties: [],
-    addToSketch(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void {
-        const end = primitive.points[1];
-        codeManager.addOperation(sketchName, 'tangentArcTo', [[end[0], end[1]]]);
-    },
-    processPoints(points: [number, number][]): SketchPrimitiveData {
-        return { id: generateToolId(), type: 'tangentArc', points };
-    },
-    createInitialPrimitive(startPoint: [number, number], properties?: Record<string, any>): SketchPrimitive {
-        return {
-            id: generateToolId(),
-            type: 'tangentArc',
-            points: [startPoint, startPoint],
-            properties: properties || {}
-        };
-    },
-    renderPreview(
-        primitive: SketchPrimitive,
-        to3D: (x: number, y: number) => THREE.Vector3,
-        isGhost: boolean = false
-    ) {
-        const color = isGhost ? "#00ffff" : "#ffff00";
-        const points = primitive.points.map(p => to3D(p[0], p[1]));
-        if (points.length < 2) return null;
+function sanitizeAngles(start: number, end: number, ccw: boolean) {
+    const clockwise = !ccw;
+    let s = start;
+    let e = end;
 
-        // Simple line preview for tangent arc
-        return renderLine(primitive.id, points, color);
+    if (!clockwise) {
+        // CCW: End must be greater than Start
+        if (e < s) e += 2 * Math.PI;
+    } else {
+        // CW: End must be less than Start
+        if (e > s) e -= 2 * Math.PI;
     }
-};
-
-export const sagittaArcTool: Tool = {
-    metadata: {
-        id: 'sagittaArc',
-        label: 'Sagitta Arc',
-        icon: 'CurveStepDown',
-        category: 'sketch',
-        group: 'Arc',
-        description: 'Draw an arc with sagitta (bulge) parameter'
-    },
-    uiProperties: [
-        { key: 'sagitta', label: 'Sagitta', type: 'number', default: 3, unit: 'mm' }
-    ],
-    addToSketch(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void {
-        const start = primitive.points[0];
-        const end = primitive.points[1];
-        const dx = end[0] - start[0];
-        const dy = end[1] - start[1];
-        const sagitta = primitive.properties?.sagitta || 3;
-        codeManager.addOperation(sketchName, 'sagittaArc', [dx, dy, sagitta]);
-    },
-    processPoints(points: [number, number][], properties?: Record<string, any>): SketchPrimitiveData {
-        return { id: generateToolId(), type: 'sagittaArc', points, properties };
-    },
-    createInitialPrimitive(startPoint: [number, number], properties?: Record<string, any>): SketchPrimitive {
-        return {
-            id: generateToolId(),
-            type: 'sagittaArc',
-            points: [startPoint, startPoint],
-            properties: { sagitta: properties?.sagitta || 3, ...properties }
-        };
-    },
-    renderPreview(
-        primitive: SketchPrimitive,
-        to3D: (x: number, y: number) => THREE.Vector3,
-        isGhost: boolean = false
-    ) {
-        const color = isGhost ? "#00ffff" : "#ffff00";
-        const points = primitive.points.map(p => to3D(p[0], p[1]));
-        if (points.length < 2) return null;
-
-        // Simple line preview (sagitta arc is complex without actual curve)
-        return renderLine(primitive.id, points, color);
-    }
-};
-
-export const ellipseTool: Tool = {
-    metadata: {
-        id: 'ellipse',
-        label: 'Ellipse',
-        icon: 'Circle',
-        category: 'sketch',
-        group: 'Arc',
-        description: 'Draw an elliptical arc'
-    },
-    uiProperties: [
-        { key: 'xRadius', label: 'X Radius', type: 'number', default: 10, unit: 'mm' },
-        { key: 'yRadius', label: 'Y Radius', type: 'number', default: 5, unit: 'mm' },
-        { key: 'rotation', label: 'Rotation', type: 'number', default: 0, unit: 'deg' },
-        { key: 'longWay', label: 'Long Way', type: 'boolean', default: false },
-        { key: 'counterClockwise', label: 'Counter-clockwise', type: 'boolean', default: false }
-    ],
-    addToSketch(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void {
-        const end = primitive.points[1];
-        const xRadius = primitive.properties?.xRadius || 10;
-        const yRadius = primitive.properties?.yRadius || 5;
-        const rotation = primitive.properties?.rotation || 0;
-        const longWay = primitive.properties?.longWay || false;
-        const counterClockwise = primitive.properties?.counterClockwise || false;
-        codeManager.addOperation(sketchName, 'ellipseTo', [[end[0], end[1]], xRadius, yRadius, rotation, longWay, counterClockwise]);
-    },
-    processPoints(points: [number, number][], properties?: Record<string, any>): SketchPrimitiveData {
-        return { id: generateToolId(), type: 'ellipse', points, properties };
-    },
-    createInitialPrimitive(startPoint: [number, number], properties?: Record<string, any>): SketchPrimitive {
-        return {
-            id: generateToolId(),
-            type: 'ellipse',
-            points: [startPoint, startPoint],
-            properties: {
-                xRadius: properties?.xRadius || 10,
-                yRadius: properties?.yRadius || 5,
-                rotation: properties?.rotation || 0,
-                longWay: properties?.longWay || false,
-                counterClockwise: properties?.counterClockwise || false,
-                ...properties
-            }
-        };
-    },
-    renderPreview(
-        primitive: SketchPrimitive,
-        to3D: (x: number, y: number) => THREE.Vector3,
-        isGhost: boolean = false
-    ) {
-        const color = isGhost ? "#00ffff" : "#ffff00";
-        if (primitive.points.length < 2) return null;
-
-        const startPt = primitive.points[0];
-        const endPt = primitive.points[1];
-        const xRadius = primitive.properties?.xRadius || 10;
-        const yRadius = primitive.properties?.yRadius || 5;
-        const segments = 64;
-        const ellipsePoints: THREE.Vector3[] = [];
-
-        // Simple ellipse approximation centered between start and end
-        const cx = (startPt[0] + endPt[0]) / 2;
-        const cy = (startPt[1] + endPt[1]) / 2;
-
-        for (let i = 0; i <= segments; i++) {
-            const theta = (i / segments) * Math.PI * 2;
-            const x = cx + Math.cos(theta) * xRadius;
-            const y = cy + Math.sin(theta) * yRadius;
-            ellipsePoints.push(to3D(x, y));
-        }
-
-        return renderLine(primitive.id, ellipsePoints, color);
-    }
-};
+    return { startAngle: s, endAngle: e, clockwise };
+}

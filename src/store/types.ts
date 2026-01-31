@@ -17,7 +17,7 @@ export type ToolType =
     // Line tools
     | 'line'
     // Arc tools
-    | 'threePointsArc' | 'tangentArc' | 'ellipse' | 'sagittaArc'
+    | 'threePointsArc'
     // Legacy arc/spline
     | 'arc' | 'spline'
     // Spline tools
@@ -88,7 +88,7 @@ export interface VersionCommit extends VCSCommit {
 export interface SketchPrimitive {
     id: string;
     type: 'line'
-    | 'threePointsArc' | 'tangentArc' | 'ellipse' | 'sagittaArc'
+    | 'threePointsArc'
     | 'bezier' | 'quadraticBezier' | 'cubicBezier' | 'smoothSpline'
     | 'rectangle' | 'circle' | 'polygon' | 'roundedRectangle' | 'text'
     | 'arc' | 'spline'; // Keep legacy if needed

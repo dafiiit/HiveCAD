@@ -86,6 +86,38 @@ export class ToolRegistry {
     }
 
     /**
+     * Check if a tool requires a dialog (has UI properties)
+     */
+    requiresDialog(id: string): boolean {
+        const tool = this.tools.get(id);
+        return tool ? tool.uiProperties.length > 0 : false;
+    }
+
+    /**
+     * Get all tools that require dialogs
+     */
+    getDialogTools(): Tool[] {
+        return Array.from(this.tools.values()).filter(
+            tool => tool.uiProperties.length > 0
+        );
+    }
+
+    /**
+     * Get tool metadata
+     */
+    getMetadata(id: string): ToolMetadata | undefined {
+        const tool = this.tools.get(id);
+        return tool?.metadata;
+    }
+
+    /**
+     * Get all registered tools
+     */
+    getAll(): Tool[] {
+        return Array.from(this.tools.values());
+    }
+
+    /**
      * Get the total number of registered tools
      */
     get size(): number {

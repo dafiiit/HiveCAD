@@ -780,16 +780,10 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
                 <ToolButton
                   icon={<ArrowUpRight className="w-5 h-5" />}
                   label="Arc"
-                  isActive={['threePointsArc', 'tangentArc', 'sagittaArc', 'ellipse'].includes(activeTool)}
-                  hasDropdown
+                  isActive={activeTool === 'threePointsArc'}
+                  onClick={() => handleToolSelect('threePointsArc')}
                 />
               </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => handleToolSelect('threePointsArc')}>3-Point Arc</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleToolSelect('tangentArc')}>Tangent Arc</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleToolSelect('sagittaArc')}>Sagitta Arc</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleToolSelect('ellipse')}>Ellipse</DropdownMenuItem>
-              </DropdownMenuContent>
             </DropdownMenu>
 
             <DropdownMenu>

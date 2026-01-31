@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { X, Check } from "lucide-react";
 import { useCADStore, ToolType } from "@/hooks/useCADStore";
+import { toolRegistry } from "@/lib/tools";
 
 interface SketchToolDialogProps {
     isVisible: boolean;
@@ -9,120 +10,12 @@ interface SketchToolDialogProps {
     onConfirm: (params: Record<string, any>) => void;
 }
 
-// Define parameter configs for each tool type
-const TOOL_PARAMS: Record<string, { label: string; key: string; type: 'number' | 'text' | 'boolean'; default: any }[]> = {
-    // Line tools
-    line: [
-        { label: "X", key: "x", type: "number", default: 0 },
-        { label: "Y", key: "y", type: "number", default: 0 },
-    ],
-    vline: [
-        { label: "Distance Y", key: "dy", type: "number", default: 10 },
-    ],
-    hline: [
-        { label: "Distance X", key: "dx", type: "number", default: 10 },
-    ],
-    polarline: [
-        { label: "Distance", key: "distance", type: "number", default: 10 },
-        { label: "Angle (°)", key: "angle", type: "number", default: 45 },
-    ],
-    tangentline: [
-        { label: "Distance", key: "distance", type: "number", default: 10 },
-    ],
-    movePointer: [
-        { label: "X", key: "x", type: "number", default: 0 },
-        { label: "Y", key: "y", type: "number", default: 0 },
-    ],
-
-    // Arc tools
-    threePointsArc: [
-        { label: "End X", key: "endX", type: "number", default: 10 },
-        { label: "End Y", key: "endY", type: "number", default: 0 },
-        { label: "Via X", key: "viaX", type: "number", default: 5 },
-        { label: "Via Y", key: "viaY", type: "number", default: 5 },
-    ],
-    tangentArc: [
-        { label: "End X", key: "endX", type: "number", default: 10 },
-        { label: "End Y", key: "endY", type: "number", default: 0 },
-    ],
-    sagittaArc: [
-        { label: "Δx", key: "dx", type: "number", default: 10 },
-        { label: "Δy", key: "dy", type: "number", default: 0 },
-        { label: "Sagitta", key: "sagitta", type: "number", default: 3 },
-    ],
-    ellipse: [
-        { label: "End X", key: "endX", type: "number", default: 10 },
-        { label: "End Y", key: "endY", type: "number", default: 5 },
-        { label: "X Radius", key: "xRadius", type: "number", default: 8 },
-        { label: "Y Radius", key: "yRadius", type: "number", default: 4 },
-        { label: "Rotation (°)", key: "rotation", type: "number", default: 0 },
-        { label: "Long Way", key: "longWay", type: "boolean", default: false },
-        { label: "Counter CW", key: "counterClockwise", type: "boolean", default: false },
-    ],
-
-    // Spline tools
-    smoothSpline: [
-        { label: "Δx", key: "dx", type: "number", default: 10 },
-        { label: "Δy", key: "dy", type: "number", default: 5 },
-        { label: "Start Tangent (°)", key: "startTangent", type: "number", default: 0 },
-        { label: "End Tangent (°)", key: "endTangent", type: "number", default: 0 },
-    ],
-    bezier: [
-        { label: "End X", key: "endX", type: "number", default: 10 },
-        { label: "End Y", key: "endY", type: "number", default: 0 },
-        { label: "Control X", key: "ctrlX", type: "number", default: 5 },
-        { label: "Control Y", key: "ctrlY", type: "number", default: 8 },
-    ],
-    quadraticBezier: [
-        { label: "End X", key: "endX", type: "number", default: 10 },
-        { label: "End Y", key: "endY", type: "number", default: 0 },
-        { label: "Control X", key: "ctrlX", type: "number", default: 5 },
-        { label: "Control Y", key: "ctrlY", type: "number", default: 5 },
-    ],
-    cubicBezier: [
-        { label: "End X", key: "endX", type: "number", default: 10 },
-        { label: "End Y", key: "endY", type: "number", default: 0 },
-        { label: "Ctrl Start X", key: "ctrlStartX", type: "number", default: 3 },
-        { label: "Ctrl Start Y", key: "ctrlStartY", type: "number", default: 5 },
-        { label: "Ctrl End X", key: "ctrlEndX", type: "number", default: 7 },
-        { label: "Ctrl End Y", key: "ctrlEndY", type: "number", default: 5 },
-    ],
-
-    // Shape tools
-    rectangle: [
-        { label: "Width", key: "width", type: "number", default: 20 },
-        { label: "Height", key: "height", type: "number", default: 10 },
-    ],
-    roundedRectangle: [
-        { label: "Width", key: "width", type: "number", default: 20 },
-        { label: "Height", key: "height", type: "number", default: 10 },
-        { label: "Corner Radius", key: "radius", type: "number", default: 3 },
-    ],
-    circle: [
-        { label: "Radius", key: "radius", type: "number", default: 10 },
-    ],
-    polygon: [
-        { label: "Radius", key: "radius", type: "number", default: 10 },
-        { label: "Sides", key: "sides", type: "number", default: 6 },
-        { label: "Sagitta", key: "sagitta", type: "number", default: 0 },
-    ],
-    text: [
-        { label: "Text", key: "text", type: "text", default: "Hello" },
-        { label: "Font Size", key: "fontSize", type: "number", default: 16 },
-    ],
-
-    // Corner modification
-    customCorner: [
-        { label: "Radius", key: "radius", type: "number", default: 3 },
-    ],
-};
-
 const SketchToolDialog = ({ isVisible, position, onClose, onConfirm }: SketchToolDialogProps) => {
     const { activeTool } = useCADStore();
     const [values, setValues] = useState<Record<string, any>>({});
 
-    // Get params for current tool
-    const params = TOOL_PARAMS[activeTool] || [];
+    // Get params from tool registry
+    const params = toolRegistry.getUIProperties(activeTool);
 
     // Reset values when tool changes
     useEffect(() => {
@@ -226,6 +119,3 @@ const SketchToolDialog = ({ isVisible, position, onClose, onConfirm }: SketchToo
 };
 
 export default SketchToolDialog;
-
-// Export for use in hooks
-export { TOOL_PARAMS };
