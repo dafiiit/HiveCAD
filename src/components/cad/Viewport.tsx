@@ -7,6 +7,7 @@ import { useGlobalStore } from '@/store/useGlobalStore';
 import { toast } from "sonner";
 import SketchCanvas from "./SketchCanvas";
 import type { ArcballControls as ArcballControlsImpl } from "three-stdlib";
+import { toolRegistry } from "../../lib/tools";
 
 interface ViewportProps {
   isSketchMode: boolean;
@@ -547,135 +548,25 @@ const PlaneSelector = () => {
   );
 };
 
-// Operation Preview - handles visualization for Extrude and Revolve
+// Operation Preview - delegates to tool-specific rendering
 const OperationPreview = () => {
   const activeOperation = useCADStore((state) => state.activeOperation);
+  const selectedIds = useCADStore((state) => state.selectedIds);
   const objects = useCADStore((state) => state.objects);
 
   if (!activeOperation) return null;
 
   const { type, params } = activeOperation;
+  const tool = toolRegistry.get(type);
 
-  // Handle Extrusion
-  if (type === 'extrusion' || type === 'extrude') {
-    const selectedShapeId = params?.selectedShape || params?.profile; // 'profile' is used in new Revolve, 'selectedShape' in old Extrude
-    const distance = params?.distance || 10;
-
-    if (!selectedShapeId) return null;
-
-    const sourceObject = objects.find(obj => obj.id === selectedShapeId);
-    if (!sourceObject || !sourceObject.geometry) return null;
-
-    const sketchPlane = sourceObject.dimensions?.sketchPlane || 'XY';
-
-    let dir: [number, number, number] = [0, 0, 1];
-    let coneRotation: [number, number, number] = [Math.PI / 2, 0, 0];
-
-    if (sketchPlane === 'XZ') {
-      dir = [0, 1, 0];
-      coneRotation = [0, 0, 0];
-    } else if (sketchPlane === 'YZ') {
-      dir = [1, 0, 0];
-      coneRotation = [0, 0, -Math.PI / 2];
-    }
-
-    const offsetHalf = [dir[0] * distance / 2, dir[1] * distance / 2, dir[2] * distance / 2] as [number, number, number];
-    const offsetFull = [dir[0] * distance, dir[1] * distance, dir[2] * distance] as [number, number, number];
-
+  // Delegate rendering to the tool itself
+  if (tool && tool.render3DPreview) {
     return (
-      <group position={sourceObject.position} rotation={sourceObject.rotation}>
-        <mesh geometry={sourceObject.geometry} position={offsetHalf}>
-          <meshStandardMaterial color="#80c0ff" transparent opacity={0.4} side={THREE.DoubleSide} depthWrite={false} />
-        </mesh>
-        <mesh geometry={sourceObject.geometry} position={offsetFull}>
-          <meshStandardMaterial color="#80c0ff" transparent opacity={0.6} side={THREE.DoubleSide} wireframe />
-        </mesh>
-        <line>
-          <bufferGeometry>
-            <bufferAttribute attach="attributes-position" count={2} array={new Float32Array([0, 0, 0, ...offsetFull])} itemSize={3} />
-          </bufferGeometry>
-          <lineBasicMaterial color="#80c0ff" linewidth={2} />
-        </line>
-        <mesh position={offsetFull} rotation={coneRotation}>
-          <coneGeometry args={[1.5, 3, 8]} />
-          <meshStandardMaterial color="#80c0ff" transparent opacity={0.8} />
-        </mesh>
-      </group>
-    );
-  }
-
-  // Handle Revolve
-  if (type === 'revolve') {
-    const profileId = params?.profile;
-    const axisId = params?.axis; // We might not be able to fully visualize without axis data
-    const angle = params?.angle || 360;
-
-    if (!profileId) return null;
-
-    const sourceObject = objects.find(obj => obj.id === profileId);
-    if (!sourceObject || !sourceObject.geometry) return null;
-
-    // Create "ghosts" rotated around the axis
-    // Without known axis data, we default to local Y axis of the sketch? 
-    // Or we try to use the selected axis object if it's a DatumAxis?
-
-    // Basic visualization: Show 4 steps of rotation
-    const steps = 6;
-    const ghosts = [];
-    const angleRad = (angle * Math.PI) / 180;
-
-    // Determine rotation axis. Default to local X for now if no axis selected?
-    // Or if checking sketchPlane...
-    const sketchPlane = sourceObject.dimensions?.sketchPlane || 'XY';
-    let axisVec = new THREE.Vector3(0, 1, 0); // Default revolve axis often Y
-    if (sketchPlane === 'XZ') axisVec.set(0, 0, 1); // Z
-
-    // If we could resolve `axisId`, we would use that direction. 
-    // For now, this is a "nice" enough visualization of *a* revolve.
-
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const rotAngle = angleRad * t;
-
-      ghosts.push(
-        <group key={i} rotation={[
-          axisVec.x * rotAngle,
-          axisVec.y * rotAngle,
-          axisVec.z * rotAngle
-        ]}>
-          <mesh geometry={sourceObject.geometry}>
-            <meshStandardMaterial
-              color="#80c0ff"
-              transparent
-              opacity={0.1 + (0.5 * t)}
-              side={THREE.DoubleSide}
-              wireframe={i === steps}
-            />
-          </mesh>
-        </group>
-      );
-    }
-
-    // Add Arcs to indicate flow?
-
-    return (
-      <group position={sourceObject.position} rotation={sourceObject.rotation}>
-        {ghosts}
-        {/* Axis Line Indicator (Visual only) */}
-        <line>
-          <bufferGeometry>
-            <bufferAttribute
-              attach="attributes-position"
-              count={2}
-              array={new Float32Array([
-                -axisVec.x * 50, -axisVec.y * 50, -axisVec.z * 50,
-                axisVec.x * 50, axisVec.y * 50, axisVec.z * 50
-              ])}
-              itemSize={3}
-            />
-          </bufferGeometry>
-          <lineBasicMaterial color="#ffaa00" linewidth={1} />
-        </line>
+      <group>
+        {tool.render3DPreview(params || {}, {
+          selectedIds: Array.from(selectedIds),
+          objects
+        })}
       </group>
     );
   }

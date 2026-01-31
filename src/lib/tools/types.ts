@@ -1,6 +1,7 @@
 import type { CodeManager } from '../code-manager';
 import type * as THREE from 'three';
 import type { ReactNode } from 'react';
+import type { CADObject } from '../../store/types';
 
 // Re-export SketchPrimitive type for tools to use
 export type SketchPlane = 'XY' | 'XZ' | 'YZ';
@@ -136,6 +137,21 @@ export interface Tool {
         plane: SketchPlane,
         lockedValues?: Record<string, number | null>,
         dimMode?: 'aligned' | 'horizontal' | 'vertical'
+    ): ReactNode;
+
+    /**
+     * Render the 3D preview of an operation (e.g., Extrude ghost)
+     * This replaces the hardcoded OperationPreview in Viewport.tsx
+     * @param params - Operation parameters from UI
+     * @param context - Current selection and objects context
+     * @returns React/Three.js nodes to render as 3D preview
+     */
+    render3DPreview?(
+        params: Record<string, any>,
+        context: {
+            selectedIds: string[];
+            objects: CADObject[];
+        }
     ): ReactNode;
 
     /**
