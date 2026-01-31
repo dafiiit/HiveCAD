@@ -761,6 +761,17 @@ export function ProjectDashboard() {
                 </div>
 
                 <div className="flex items-center gap-4 text-muted-foreground w-64 justify-end">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        asChild
+                        className="hidden xl:flex items-center gap-2 text-[10px] font-black tracking-widest text-muted-foreground hover:text-foreground hover:bg-secondary/50 uppercase rounded-full border border-transparent hover:border-border/50 transition-all"
+                    >
+                        <a href="https://hivecad.org" target="_blank" rel="noopener noreferrer">
+                            <Globe className="w-3.5 h-3.5" />
+                            hivecad.org
+                        </a>
+                    </Button>
                     <Bell className="w-5 h-5 hover:text-foreground cursor-pointer transition-colors" />
                     <HelpCircle className="w-5 h-5 hover:text-foreground cursor-pointer transition-colors" />
                     <div className="flex items-center gap-3 pl-4 border-l border-border ml-2 relative">
