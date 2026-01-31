@@ -279,6 +279,70 @@ export class CodeManager {
         }
     }
 
+    /**
+     * Generate code to extrude a face from an existing solid
+     * Uses the extrudeFace helper function available in the worker execution context
+     * 
+     * @param solidId - The variable name of the solid
+     * @param faceIndex - The display-time face index
+     * @param distance - Extrusion distance
+     * @param options - Optional extrusion options
+     * @returns The variable name of the new extruded shape
+     */
+    addFaceExtrusion(solidId: string, faceIndex: number, distance: number, options?: Record<string, any>): string {
+        if (!this.ast) return '';
+
+        const newVarName = `faceExtrusion${this.features.length + 1}`;
+
+        // Build arguments: extrudeFace(solid, faceIndex, distance, options?)
+        const args: t.Expression[] = [
+            t.identifier(solidId),
+            t.numericLiteral(faceIndex),
+            t.numericLiteral(distance)
+        ];
+
+        if (options && Object.keys(options).length > 0) {
+            args.push(this.convertArgToAST(options));
+        }
+
+        // Generate: const faceExtrusion1 = extrudeFace(solid, faceIndex, distance);
+        const init = t.callExpression(t.identifier('extrudeFace'), args);
+
+        const decl = t.variableDeclaration('const', [
+            t.variableDeclarator(t.identifier(newVarName), init)
+        ]);
+
+        let injected = false;
+
+        // Inject into main function
+        traverse(this.ast, {
+            FunctionDeclaration: (path: any) => {
+                if (path.node.id?.name === 'main') {
+                    this.injectIntoBody(path.node.body.body, decl, newVarName);
+                    injected = true;
+                    path.stop();
+                }
+            },
+            VariableDeclarator: (path: any) => {
+                if (t.isIdentifier(path.node.id) && path.node.id.name === 'main' &&
+                    (t.isArrowFunctionExpression(path.node.init) || t.isFunctionExpression(path.node.init))) {
+                    if (t.isBlockStatement(path.node.init.body)) {
+                        this.injectIntoBody(path.node.init.body.body, decl, newVarName);
+                        injected = true;
+                        path.stop();
+                    }
+                }
+            }
+        });
+
+        if (!injected) {
+            (this.ast.program.body as any[]).push(decl);
+        }
+
+        this.regenerate();
+        return newVarName;
+    }
+
     updateOperation(featureId: string, opIndex: number, args: any[]) {
         const feature = this.features.find(f => f.id === featureId);
         if (!feature) {

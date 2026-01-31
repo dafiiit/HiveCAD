@@ -351,13 +351,47 @@ self.onmessage = async (e) => {
                 return shape;
             };
 
+            // Helper to access a face from a solid by its display index
+            const getFace = (solid: any, faceIndex: number): any => {
+                if (!solid || !solid.faces) {
+                    throw new Error(`Cannot get face: object does not have faces property`);
+                }
+                const faces = Array.from(solid.faces);
+                if (faceIndex < 0 || faceIndex >= faces.length) {
+                    throw new Error(`Face index ${faceIndex} out of range (0-${faces.length - 1})`);
+                }
+                return faces[faceIndex];
+            };
+
+            // Helper to extrude a face from a solid
+            // Uses replicad's basicFaceExtrusion or falls back to manual approach
+            const extrudeFace = (solid: any, faceIndex: number, distance: number, options?: any): any => {
+                const face = getFace(solid, faceIndex);
+
+                // Try basicFaceExtrusion if available on the face
+                if (face.basicFaceExtrusion) {
+                    return face.basicFaceExtrusion(distance);
+                }
+
+                // Alternative: Use makePrism or sweep approach
+                // Get face normal for direction
+                const normal = face.normalAt ? face.normalAt() : null;
+                if (normal && (replicad as any).makePrism) {
+                    const direction = [normal.x * distance, normal.y * distance, normal.z * distance];
+                    return (replicad as any).makePrism(face, direction);
+                }
+
+                // Last resort: create a shell/loft
+                throw new Error(`Face extrusion not supported for this geometry type`);
+            };
+
             const hasDefaultParams = /const\s+defaultParams\s*=/.test(code);
             const mainCall = hasDefaultParams
                 ? "\nreturn main(replicad, defaultParams);"
                 : "\nreturn main();";
 
-            const evaluator = new Function('replicad', '__record', code + mainCall);
-            let result = evaluator(replicad, __record);
+            const evaluator = new Function('replicad', '__record', 'getFace', 'extrudeFace', code + mainCall);
+            let result = evaluator(replicad, __record, getFace, extrudeFace);
 
             // Support async main
             if (result instanceof Promise) {

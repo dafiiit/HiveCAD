@@ -77,14 +77,18 @@ export const extrusionTool: Tool = {
             const faceIndex = parseInt(faceStr);
 
             if (!isNaN(faceIndex)) {
-                const faceVar = codeManager.addFeature('face', baseId, [faceIndex]);
-                if (Object.keys(opts).length > 0) extrudeArgs.push(opts);
-                codeManager.addFeature('extrude', faceVar, extrudeArgs);
+                // Use the new addFaceExtrusion method which generates:
+                // const faceExtrusion1 = extrudeFace(baseId, faceIndex, distance);
+                const resultVar = codeManager.addFaceExtrusion(baseId, faceIndex, distance, opts);
 
                 // Handle boolean operations if selected
-                if (params.operation && params.operation !== 'new') {
-                    // This would need more complex logic to apply the boolean to the base object
-                    // For now, let's keep it simple
+                if (params.operation && params.operation !== 'new' && resultVar) {
+                    // Apply boolean between original solid and the new extrusion
+                    const methodMap: Record<string, string> = { join: 'fuse', cut: 'cut', intersect: 'intersect' };
+                    const methodName = methodMap[params.operation];
+                    if (methodName) {
+                        codeManager.addOperation(baseId, methodName, [{ type: 'raw', content: resultVar }]);
+                    }
                 }
                 return;
             }
