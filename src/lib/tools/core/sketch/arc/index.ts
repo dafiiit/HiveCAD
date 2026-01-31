@@ -88,7 +88,10 @@ export const threePointsArcTool: Tool = {
 
             const arc = arcFromThreePoints(start, end, via);
 
-            if (arc) {
+            // Check if arc is valid and has reasonable radius
+            // (very large radius means points are nearly collinear)
+            const maxReasonableRadius = 10000;
+            if (arc && arc.radius < maxReasonableRadius && arc.radius > 0.01) {
                 const { startAngle, endAngle, clockwise } = sanitizeAngles(arc.startAngle, arc.endAngle, arc.ccw);
 
                 const curve = new THREE.EllipseCurve(
@@ -101,11 +104,27 @@ export const threePointsArcTool: Tool = {
 
                 // Get points for smooth curve
                 const arcPoints = curve.getPoints(50).map(p => to3D(p.x, p.y));
-                return renderLine(primitive.id, arcPoints, color);
+
+                // Validate that we have enough points
+                if (arcPoints.length >= 2) {
+                    return renderLine(primitive.id, arcPoints, color);
+                }
             }
 
-            // Fallback: if arc fails (e.g. collinear), render the chord line (Start->End)
-            return renderLine(primitive.id, [points3D[0], points3D[1]], color);
+            // Fallback: Render a quadratic Bezier curve through the three points
+            // This provides a smooth preview even when the true arc has extreme geometry
+            const curvePoints: THREE.Vector3[] = [];
+            const segments = 32;
+            for (let i = 0; i <= segments; i++) {
+                const t = i / segments;
+                const mt = 1 - t;
+                // Quadratic Bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+                // Use via as control point, start and end as endpoints
+                const x = mt * mt * start.x + 2 * mt * t * via.x + t * t * end.x;
+                const y = mt * mt * start.y + 2 * mt * t * via.y + t * t * end.y;
+                curvePoints.push(to3D(x, y));
+            }
+            return renderLine(primitive.id, curvePoints, color);
         }
 
         return null;
@@ -130,12 +149,45 @@ export const threePointsArcTool: Tool = {
 
         if (primitive.points.length < 3) return null;
 
-        const p1 = { x: primitive.points[0][0], y: primitive.points[0][1] };
-        const p2 = { x: primitive.points[1][0], y: primitive.points[1][1] };
-        const p3 = { x: primitive.points[2][0], y: primitive.points[2][1] };
+        const p1 = { x: primitive.points[0][0], y: primitive.points[0][1] };  // Start
+        const p2 = { x: primitive.points[1][0], y: primitive.points[1][1] };  // End
+        const p3 = { x: primitive.points[2][0], y: primitive.points[2][1] };  // Via
 
         const arc = arcFromThreePoints(p1, p2, p3);
-        if (!arc) return null;
+        const ctx = createAnnotationContext(plane);
+
+        // If arc is invalid or has extreme radius (nearly collinear points),
+        // just show point markers without the confusing radius annotation
+        const maxReasonableRadius = 10000;
+        if (!arc || arc.radius >= maxReasonableRadius || arc.radius < 0.01) {
+            return React.createElement(React.Fragment, null,
+                // Show markers for all three points
+                React.createElement(PointMarker, {
+                    key: `${primitive.id}-start-marker`,
+                    position: p1,
+                    ctx,
+                    size: 0.5,
+                    color: '#00ffff',
+                    shape: 'sphere'
+                }),
+                React.createElement(PointMarker, {
+                    key: `${primitive.id}-end-marker`,
+                    position: p2,
+                    ctx,
+                    size: 0.5,
+                    color: '#00ffff',
+                    shape: 'sphere'
+                }),
+                React.createElement(PointMarker, {
+                    key: `${primitive.id}-via-marker`,
+                    position: p3,
+                    ctx,
+                    size: 0.4,
+                    color: '#ffff00',
+                    shape: 'diamond'
+                })
+            );
+        }
 
         const { startAngle, endAngle } = sanitizeAngles(arc.startAngle, arc.endAngle, arc.ccw);
 
@@ -154,7 +206,7 @@ export const threePointsArcTool: Tool = {
             React.createElement(PointMarker, {
                 key: `${primitive.id}-via-marker`,
                 position: p3,
-                ctx: createAnnotationContext(plane),
+                ctx,
                 size: 0.4,
                 color: '#ffff00',
                 shape: 'diamond'

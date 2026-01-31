@@ -8,8 +8,6 @@ import { toolRegistry } from "../../lib/tools";
 import SketchToolDialog from "./SketchToolDialog";
 import { DimensionBadge, createAnnotationContext } from "./SketchAnnotations";
 
-// ... (existing helper types/components)
-
 // Import tool types once at startup for efficiency
 const DIALOG_REQUIRED_TOOLS: ToolType[] = toolRegistry.getDialogTools().map(t => t.metadata.id as ToolType);
 const SHAPE_TOOLS: ToolType[] = toolRegistry.getAll()

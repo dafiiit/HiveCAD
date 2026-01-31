@@ -811,30 +811,8 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
                         label={group}
                         isActive={isActive}
                         hasDropdown
-                        // For Arc, maybe we want the button itself to trigger the first tool if clicked? 
-                        // But DropdownMenuTrigger usually toggles dropdown.
-                        // The existing Arc button had an onClick handler on the Trigger? 
-                        // If I click the button, I might want to select the default tool (first one) AND/OR open dropdown?
-                        // Radix Dropdown trigger opens menu.
-                        // Standard behavior: separate split button or just menu.
-                        // Current implementation assumes menu trigger.
-                        // The legacy Arc button had `onClick={() => handleToolSelect('threePointsArc')}` on the button AND it was a trigger.
-                        // This usually means clicking it selects the tool AND opens the menu.
-                        // I'll stick to standard dropdown behavior for now (click opens menu).
-                        // If user wants split button behavior, that's more complex.
-                        // But wait, the legacy code:
-                        /*
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <ToolButton ... onClick={() => handleToolSelect('threePointsArc')} />
-                          </DropdownMenuTrigger>
-                        </DropdownMenu>
-                        */
-                        // This selects the tool.
-                        // I'll replicate this: clicking the button selects the first tool.
                         onClick={(e) => {
                           handleToolSelect(firstTool.metadata.id as any);
-                          // Let the event propagate to trigger dropdown?
                         }}
                       />
                     </DropdownMenuTrigger>
