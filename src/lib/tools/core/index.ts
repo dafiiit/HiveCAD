@@ -3,38 +3,55 @@
  * 
  * This module exports all core/builtin tools organized by category.
  * Each tool follows the extension-compatible structure with its own folder.
- * 
- * Categories:
- * - primitive: Basic 3D shapes (box, cylinder, sphere, etc.)
- * - operation: 3D operations (extrude, revolve, etc.)
- * - boolean: Boolean operations (join, cut, intersect)
- * - modify: Transform operations (move, rotate, scale, duplicate, delete)
- * - configure: Configuration tools (parameters, pattern)
- * - construct: Reference geometry (plane, axis, point)
- * - inspect: Measurement and analysis (measure, analyze)
- * - navigation: View and selection tools (select, pan, orbit, sketch)
  */
 
-// Primitive tools
+import { boxTool, cylinderTool, sphereTool, torusTool, coilTool } from './primitive';
+import { extrusionTool, revolveTool, pivotTool, translatePlaneTool } from './operation';
+import { joinTool, cutTool, intersectTool } from './boolean';
+import { moveTool, rotateTool, scaleTool, duplicateTool, deleteTool } from './modify';
+import { parametersTool, patternTool } from './configure';
+import { planeTool, axisTool, pointTool } from './construct';
+import { measureTool, analyzeTool } from './inspect';
+import { selectTool, panTool, orbitTool, sketchTool } from './navigation';
+import {
+    lineTool,
+    threePointsArcTool, tangentArcTool, sagittaArcTool, ellipseTool,
+    smoothSplineTool, bezierTool, quadraticBezierTool, cubicBezierTool,
+    rectangleTool, roundedRectangleTool, circleTool, polygonTool, textTool
+} from './sketch';
+
+// Re-export all categories
 export * from './primitive';
-
-// Operation tools
 export * from './operation';
-
-// Boolean tools
 export * from './boolean';
-
-// Modify tools
 export * from './modify';
-
-// Configure tools
 export * from './configure';
-
-// Construct tools
 export * from './construct';
-
-// Inspect tools
 export * from './inspect';
-
-// Navigation tools
 export * from './navigation';
+export * from './sketch';
+
+// Export aggregated list of all core tools for easy registration
+export const allCoreTools = [
+    // Primitives
+    boxTool, cylinderTool, sphereTool, torusTool, coilTool,
+    // Operations
+    extrusionTool, revolveTool, pivotTool, translatePlaneTool,
+    // Boolean
+    joinTool, cutTool, intersectTool,
+    // Modify
+    moveTool, rotateTool, scaleTool, duplicateTool, deleteTool,
+    // Configure
+    parametersTool, patternTool,
+    // Construct
+    planeTool, axisTool, pointTool,
+    // Inspect
+    measureTool, analyzeTool,
+    // Navigation
+    selectTool, panTool, orbitTool, sketchTool,
+    // Sketch
+    lineTool,
+    threePointsArcTool, tangentArcTool, sagittaArcTool, ellipseTool,
+    smoothSplineTool, bezierTool, quadraticBezierTool, cubicBezierTool,
+    rectangleTool, roundedRectangleTool, circleTool, polygonTool, textTool
+];

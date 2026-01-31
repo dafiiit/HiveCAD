@@ -1,10 +1,10 @@
 import React from 'react';
 import * as THREE from 'three';
-import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchPlane } from '../types';
-import { arcFromThreePoints } from '../../sketch-graph/Geometry';
-import { ArcAnnotation, LineAnnotation, PointMarker, createAnnotationContext } from '../../../components/cad/SketchAnnotations';
-import type { CodeManager } from '../../code-manager';
-import { generateToolId } from '../types';
+import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchPlane } from '../../../types';
+import { arcFromThreePoints } from '../../../../sketch-graph/Geometry';
+import { ArcAnnotation, LineAnnotation, PointMarker, createAnnotationContext } from '../../../../../components/cad/SketchAnnotations';
+import type { CodeManager } from '../../../../code-manager';
+import { generateToolId } from '../../../types';
 
 // Helper to render a line from points
 const renderLine = (

@@ -1,9 +1,9 @@
 import React from 'react';
 import * as THREE from 'three';
-import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchPlane } from '../types';
-import type { CodeManager } from '../../code-manager';
-import { generateToolId } from '../types';
-import { CircleAnnotation, RectangleAnnotation } from '../../../components/cad/SketchAnnotations';
+import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchPlane } from '../../../types';
+import type { CodeManager } from '../../../../code-manager';
+import { generateToolId } from '../../../types';
+import { CircleAnnotation, RectangleAnnotation } from '../../../../../components/cad/SketchAnnotations';
 
 // Helper function to render a line loop from points
 const renderLineLoop = (

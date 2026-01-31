@@ -5,7 +5,7 @@ export const coilTool: Tool = {
     metadata: {
         id: 'coil',
         label: 'Coil',
-        icon: 'Helix', // Using Helix if available, otherwise fallback
+        icon: 'Shell',
         category: 'primitive',
         description: 'Create a coil/helix shape'
     },

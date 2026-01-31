@@ -5,7 +5,7 @@ export const sphereTool: Tool = {
     metadata: {
         id: 'sphere',
         label: 'Sphere',
-        icon: 'Circle',
+        icon: 'Globe',
         category: 'primitive',
         description: 'Create a sphere'
     },

@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ToolRegistry } from '../lib/tools/registry';
-import { boxTool, cylinderTool, sphereTool } from '../lib/tools/primitives';
-import { lineTool, circleTool, rectangleTool } from '../lib/tools/sketch';
+import {
+    boxTool, cylinderTool, sphereTool,
+    lineTool, circleTool, rectangleTool
+} from '../lib/tools';
 
 describe('ToolRegistry', () => {
     let registry: ToolRegistry;

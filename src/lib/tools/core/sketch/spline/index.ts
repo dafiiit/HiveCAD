@@ -1,8 +1,8 @@
 import React from 'react';
 import * as THREE from 'three';
-import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../types';
-import type { CodeManager } from '../../code-manager';
-import { generateToolId } from '../types';
+import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../../../types';
+import type { CodeManager } from '../../../../code-manager';
+import { generateToolId } from '../../../types';
 
 // Helper to render a line from points
 const renderLine = (

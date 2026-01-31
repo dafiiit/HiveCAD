@@ -584,6 +584,8 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
     reorderToolsInFolder
   } = useCADStore();
 
+  const storeApi = useCADStoreApi();
+
   const [isExtensionStoreOpen, setIsExtensionStoreOpen] = React.useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = React.useState(false);
   const [editingToolbarName, setEditingToolbarName] = React.useState<string | null>(null);
@@ -693,21 +695,20 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
       return;
     }
     const ids = [...selectedIds];
-    const deleteObj = useCADStoreApi().getState().deleteObject;
-    ids.forEach(id => deleteObj(id));
+    ids.forEach(id => deleteObject(id));
     toast.success(`Deleted ${ids.length} object(s)`);
   };
 
   const handleJoin = () => {
-    useCADStoreApi().getState().executeOperation('join');
+    storeApi.getState().executeOperation('join');
   };
 
   const handleCut = () => {
-    useCADStoreApi().getState().executeOperation('cut');
+    storeApi.getState().executeOperation('cut');
   };
 
   const handleIntersect = () => {
-    useCADStoreApi().getState().executeOperation('intersect');
+    storeApi.getState().executeOperation('intersect');
   };
 
   const handleMeasure = () => {

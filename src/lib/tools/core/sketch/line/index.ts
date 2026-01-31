@@ -1,9 +1,9 @@
 import React from 'react';
 import * as THREE from 'three';
-import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchPlane } from '../types';
-import type { CodeManager } from '../../code-manager';
-import { generateToolId } from '../types';
-import { LineAnnotation } from '../../../components/cad/SketchAnnotations';
+import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchPlane } from '../../../types';
+import type { CodeManager } from '../../../../code-manager';
+import { generateToolId } from '../../../types';
+import { LineAnnotation } from '../../../../../components/cad/SketchAnnotations';
 
 export const lineTool: Tool = {
     metadata: {
@@ -74,5 +74,3 @@ export const lineTool: Tool = {
         });
     }
 };
-
-

@@ -993,11 +993,21 @@ export class GitHubAdapter implements StorageAdapter {
             const extensionsWithManifests = await Promise.all(
                 data.map(async (item) => {
                     try {
+                        // Determine the ref (branch) to use
+                        // If looking at our own repository, use the current active branch to ensure we see WIP extensions
+                        // Otherwise, rely on the repository's default branch
+                        const isCurrentRepo = this.currentOwner && this.currentRepo &&
+                            item.github_owner === this.currentOwner &&
+                            item.github_repo === this.currentRepo;
+
+                        const ref = isCurrentRepo ? this.currentBranchName : undefined;
+
                         // Fetch manifest.json from GitHub
                         const { data: manifestFileData } = await this.octokit!.rest.repos.getContent({
                             owner: item.github_owner,
                             repo: item.github_repo,
                             path: `extensions/${item.id}/manifest.json`,
+                            ref,
                         });
 
                         if ('content' in manifestFileData) {
@@ -1024,9 +1034,29 @@ export class GitHubAdapter implements StorageAdapter {
                                 manifest,
                             };
                         }
-                    } catch (error) {
-                        console.error(`[GitHubAdapter] Failed to load manifest for ${item.id}:`, error);
-                        return null;
+                    } catch (error: any) {
+                        console.warn(`[GitHubAdapter] Failed to load manifest for ${item.id}:`, error.message);
+                        // Return a placeholder so the extension is visible (and deletable/debuggable)
+                        return {
+                            id: item.id,
+                            github_owner: item.github_owner,
+                            github_repo: item.github_repo,
+                            author: item.author,
+                            status: item.status,
+                            stats: {
+                                downloads: item.downloads || 0,
+                                likes: item.likes || 0,
+                                dislikes: item.dislikes || 0,
+                            },
+                            manifest: {
+                                id: item.id,
+                                name: `${item.id} (Load Failed)`,
+                                description: `Failed to load manifest from ${item.github_owner}/${item.github_repo}. The extension files may be missing or on a different branch.`,
+                                author: item.author,
+                                version: '0.0.0',
+                                icon: 'alert-circle',
+                            },
+                        };
                     }
                     return null;
                 })
