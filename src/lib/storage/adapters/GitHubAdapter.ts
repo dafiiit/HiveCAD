@@ -17,6 +17,14 @@ export class GitHubAdapter implements StorageAdapter {
     private lastThumbnailHashes: Map<string, string> = new Map();
     private settingsSaveLock: boolean = false;
 
+    // Helper to safely encode UTF-8 strings to base64
+    private utf8ToBase64(str: string): string {
+        // Use TextEncoder to convert UTF-8 string to bytes, then base64 encode
+        const bytes = new TextEncoder().encode(str);
+        const binString = Array.from(bytes, (byte) => String.fromCodePoint(byte)).join("");
+        return btoa(binString);
+    }
+
     async connect(token?: string): Promise<boolean> {
         console.log('[GitHubAdapter] connect() called', token ? '(with token)' : '(without token)');
 
@@ -944,6 +952,257 @@ export class GitHubAdapter implements StorageAdapter {
             }));
         }
     }
+
+    async searchCommunityExtensions(query: string): Promise<any[]> {
+        try {
+            // Get current user's email from Supabase auth session
+            const { data: { session } } = await supabase.auth.getSession();
+            const currentUserEmail = session?.user?.email || null;
+
+            console.log('[GitHubAdapter] searchCommunityExtensions called');
+            console.log('[GitHubAdapter] Current user email:', currentUserEmail);
+            console.log('[GitHubAdapter] Search query:', query);
+
+            // Fetch published extensions OR extensions created by the current user
+            let supabaseQuery = supabase
+                .from('extensions')
+                .select('*');
+
+            // Filter: published extensions OR user's own extensions (any status)
+            if (currentUserEmail) {
+                supabaseQuery = supabaseQuery.or(`status.eq.published,author.eq.${currentUserEmail}`);
+            } else {
+                supabaseQuery = supabaseQuery.eq('status', 'published');
+            }
+
+            const { data, error } = await supabaseQuery;
+
+            if (error) throw error;
+
+            console.log(`[GitHubAdapter] Found ${data.length} extension(s) in Supabase`);
+            data.forEach(item => {
+                console.log(`  - ${item.id} (author: ${item.author}, status: ${item.status}, repo: ${item.github_owner}/${item.github_repo})`);
+            });
+
+            // Fetch manifest for each extension from GitHub
+            if (!this.octokit) {
+                console.warn('[GitHubAdapter] Not authenticated, cannot fetch manifests');
+                return [];
+            }
+
+            const extensionsWithManifests = await Promise.all(
+                data.map(async (item) => {
+                    try {
+                        // Fetch manifest.json from GitHub
+                        const { data: manifestFileData } = await this.octokit!.rest.repos.getContent({
+                            owner: item.github_owner,
+                            repo: item.github_repo,
+                            path: `extensions/${item.id}/manifest.json`,
+                        });
+
+                        if ('content' in manifestFileData) {
+                            const manifestContent = atob(manifestFileData.content);
+                            const manifest = JSON.parse(manifestContent);
+
+                            // Filter by query if provided
+                            if (query && !manifest.name.toLowerCase().includes(query.toLowerCase()) &&
+                                !manifest.description.toLowerCase().includes(query.toLowerCase())) {
+                                return null;
+                            }
+
+                            return {
+                                id: item.id,
+                                github_owner: item.github_owner,
+                                github_repo: item.github_repo,
+                                author: item.author,
+                                status: item.status,
+                                stats: {
+                                    downloads: item.downloads || 0,
+                                    likes: item.likes || 0,
+                                    dislikes: item.dislikes || 0,
+                                },
+                                manifest,
+                            };
+                        }
+                    } catch (error) {
+                        console.error(`[GitHubAdapter] Failed to load manifest for ${item.id}:`, error);
+                        return null;
+                    }
+                    return null;
+                })
+            );
+
+            return extensionsWithManifests.filter(ext => ext !== null);
+        } catch (error) {
+            console.error('[GitHubAdapter] Failed to search Supabase extensions:', error);
+            return [];
+        }
+    }
+
+    async submitExtension(extension: any): Promise<string> {
+        if (!this.octokit || !this.currentOwner || !this.currentRepo) {
+            throw new Error('Not authenticated with GitHub');
+        }
+
+        const owner = this.currentOwner;
+        const repo = this.currentRepo;
+        const extensionId = extension.id;
+
+        console.log(`[GitHubAdapter] Creating extension folder for ${extensionId}...`);
+
+        // Create manifest.json
+        const manifest = {
+            id: extensionId,
+            name: extension.name,
+            description: extension.description,
+            author: extension.author,
+            version: extension.version || '1.0.0',
+            icon: extension.icon,
+        };
+
+        // Create README.md
+        const readme = `# ${extension.name}\n\n${extension.description}\n\n## Installation\nThis extension is part of the HiveCAD community library.\n\n## Usage\n[Add usage instructions here]\n\n## Author\n${extension.author}\n\n## Version\n${extension.version || '1.0.0'}\n`;
+
+        // Create template index.ts
+        const indexTs = `// ${extension.name}\n// ${extension.description}\n\nimport { Extension } from '@/lib/extensions/Extension';\n\nexport const extension: Extension = {\n    manifest: {\n        id: '${extensionId}',\n        name: '${extension.name}',\n        version: '${extension.version || '1.0.0'}',\n        description: '${extension.description}',\n        author: '${extension.author}',\n        icon: '${extension.icon}',\n        category: 'modifier',\n    },\n    onRegister: () => {\n        console.log('${extension.name} registered');\n    },\n};\n`;
+
+        // Load EXTENSION_GUIDE.md content
+        const guideResponse = await fetch('/src/extensions/EXTENSION_GUIDE.md');
+        const guideContent = await guideResponse.text();
+
+        try {
+            // Create files in GitHub
+            const files = [
+                {
+                    path: `extensions/${extensionId}/manifest.json`,
+                    content: this.utf8ToBase64(JSON.stringify(manifest, null, 2)),
+                    message: `Create manifest for ${extension.name}`,
+                },
+                {
+                    path: `extensions/${extensionId}/README.md`,
+                    content: this.utf8ToBase64(readme),
+                    message: `Create README for ${extension.name}`,
+                },
+                {
+                    path: `extensions/${extensionId}/index.ts`,
+                    content: this.utf8ToBase64(indexTs),
+                    message: `Create template for ${extension.name}`,
+                },
+                {
+                    path: `extensions/${extensionId}/EXTENSION_GUIDE.md`,
+                    content: this.utf8ToBase64(guideContent),
+                    message: `Add development guide for ${extension.name}`,
+                },
+            ];
+
+            for (const file of files) {
+                await this.octokit.rest.repos.createOrUpdateFileContents({
+                    owner,
+                    repo,
+                    path: file.path,
+                    message: file.message,
+                    content: file.content,
+                    branch: this.currentBranchName,
+                });
+            }
+
+            // Store reference in Supabase (not the content)
+            const { error } = await supabase
+                .from('extensions')
+                .upsert({
+                    id: extensionId,
+                    github_owner: owner,
+                    github_repo: repo,
+                    author: extension.author,
+                    status: 'development',
+                    updated_at: new Date().toISOString(),
+                });
+
+            if (error) throw error;
+
+            console.log(`[GitHubAdapter] Extension ${extension.name} created successfully`);
+
+            // Return GitHub URL
+            return `https://github.com/${owner}/${repo}/tree/${this.currentBranchName}/extensions/${extensionId}`;
+
+        } catch (error) {
+            console.error('[GitHubAdapter] Failed to create extension:', error);
+            throw error;
+        }
+    }
+
+    async updateExtensionStatus(extensionId: string, status: 'development' | 'published'): Promise<void> {
+        try {
+            const { error } = await supabase
+                .from('extensions')
+                .update({ status, updated_at: new Date().toISOString() })
+                .eq('id', extensionId);
+
+            if (error) throw error;
+            console.log(`[GitHubAdapter] Extension ${extensionId} status updated to ${status}`);
+        } catch (error) {
+            console.error('[GitHubAdapter] Failed to update extension status:', error);
+            throw error;
+        }
+    }
+
+    async voteExtension(extensionId: string, voteType: 'like' | 'dislike'): Promise<void> {
+        try {
+            // First, get the current stats
+            const { data: extension, error: fetchError } = await supabase
+                .from('extensions')
+                .select('likes, dislikes')
+                .eq('id', extensionId)
+                .single();
+
+            if (fetchError) throw fetchError;
+
+            // Increment the appropriate counter
+            const updates = voteType === 'like'
+                ? { likes: (extension.likes || 0) + 1 }
+                : { dislikes: (extension.dislikes || 0) + 1 };
+
+            const { error: updateError } = await supabase
+                .from('extensions')
+                .update({ ...updates, updated_at: new Date().toISOString() })
+                .eq('id', extensionId);
+
+            if (updateError) throw updateError;
+            console.log(`[GitHubAdapter] Extension ${extensionId} ${voteType}d`);
+        } catch (error) {
+            console.error(`[GitHubAdapter] Failed to ${voteType} extension:`, error);
+            throw error;
+        }
+    }
+
+    async incrementExtensionDownloads(extensionId: string): Promise<void> {
+        try {
+            // First, get the current download count
+            const { data: extension, error: fetchError } = await supabase
+                .from('extensions')
+                .select('downloads')
+                .eq('id', extensionId)
+                .single();
+
+            if (fetchError) throw fetchError;
+
+            // Increment downloads
+            const { error: updateError } = await supabase
+                .from('extensions')
+                .update({
+                    downloads: (extension.downloads || 0) + 1,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', extensionId);
+
+            if (updateError) throw updateError;
+            console.log(`[GitHubAdapter] Extension ${extensionId} download count incremented`);
+        } catch (error) {
+            console.error('[GitHubAdapter] Failed to increment downloads:', error);
+            throw error;
+        }
+    }
+
 
     async resetRepository(): Promise<void> {
         if (!this.octokit || !this.authenticatedUser || !this.currentOwner || !this.currentRepo) {

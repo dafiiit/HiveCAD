@@ -12,6 +12,32 @@ export interface ProjectNamespaceData {
     [key: string]: any;
 }
 
+export interface ExtensionStats {
+    downloads: number;
+    likes: number;
+    dislikes: number;
+}
+
+export interface ExtensionManifest {
+    id: string;
+    name: string;
+    description: string;
+    author: string;
+    version: string;
+    icon: string;
+}
+
+export interface Extension {
+    id: string;
+    github_owner: string;
+    github_repo: string;
+    author: string;
+    status: 'development' | 'published';
+    stats: ExtensionStats;
+    // Metadata from manifest.json (loaded separately)
+    manifest?: ExtensionManifest;
+}
+
 export interface ProjectData {
     id: string;
     name: string; // The "display name"
@@ -59,6 +85,11 @@ export interface StorageAdapter {
     // Discovery
     listProjects?(): Promise<ProjectData[]>;
     searchCommunityProjects?(query: string): Promise<any[]>;
+    searchCommunityExtensions?(query: string): Promise<Extension[]>;
+    submitExtension?(extension: Partial<Extension>): Promise<string>; // Returns GitHub URL
+    updateExtensionStatus?(extensionId: string, status: 'development' | 'published'): Promise<void>;
+    voteExtension?(extensionId: string, voteType: 'like' | 'dislike'): Promise<void>;
+    incrementExtensionDownloads?(extensionId: string): Promise<void>;
     updateIndex?(projectId: string, updates: Partial<ProjectData>, isDelete?: boolean): Promise<void>;
 
     // Labels management

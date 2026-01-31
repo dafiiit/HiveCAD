@@ -63,6 +63,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { IconPicker } from "../ui/IconPicker";
+import { IconResolver } from "../ui/IconResolver";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -129,10 +130,7 @@ const ToolButton = React.forwardRef<HTMLButtonElement, ToolButtonProps>(({ icon,
 ));
 ToolButton.displayName = 'ToolButton';
 
-const IconResolver = ({ name, className }: { name: string, className?: string }) => {
-  const IconComponent = (Icons as any)[name] || Icons.HelpCircle;
-  return <IconComponent className={className} />;
-};
+
 
 /**
  * Registry-driven icon resolver - replaces hardcoded idToIconMap

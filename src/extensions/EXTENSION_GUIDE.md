@@ -1,29 +1,33 @@
 # HiveCAD Extension Development Guide
 
-This guide explains how to create extensions for HiveCAD's plugin architecture.
+This guide explains how to create and publish extensions for HiveCAD's plugin architecture.
 
-## Quick Start
+## Quick Start (Community Extensions)
 
-1. **Copy the template**: `cp -r src/extensions/_template src/extensions/my-extension`
-2. **Edit `extension.json`**: Update metadata (id, name, description, icon)
-3. **Implement `index.ts`**: Define your tool's logic and UI properties
-4. **Register your extension**: Import in `src/lib/extensions/loader.ts`
-5. **Restart dev server**: Your extension appears in the toolbar
+1. **Create Extension**: Use the "Create New Tool" button in the Extension Store
+2. **Automatic Setup**: HiveCAD creates a GitHub folder with template files
+3. **Edit on GitHub**: Modify `manifest.json`, `index.ts`, and `README.md`
+4. **Test Locally**: Set status to `development` to test privately
+5. **Publish**: Toggle status to `published` when ready to share
 
 ---
 
-## Extension Structure
+## Extension Structure (GitHub)
+
+When you create an extension, HiveCAD generates this structure in your repository:
 
 ```
-src/extensions/my-extension/
-├── extension.json    # Manifest with metadata
-├── index.ts         # Extension implementation
-└── README.md        # Documentation
+extensions/
+  {extension-id}/
+    ├── manifest.json    # Extension metadata (DO NOT rename)
+    ├── index.ts         # Your extension code
+    ├── README.md        # Documentation for users
+    └── thumbnail.png    # (optional) Preview image
 ```
 
-### extension.json
+### manifest.json
 
-Required manifest with extension metadata:
+Auto-generated file containing your extension's metadata:
 
 ```json
 {
@@ -31,42 +35,99 @@ Required manifest with extension metadata:
   "name": "My Extension",
   "version": "1.0.0",
   "description": "What this extension does",
-  "author": "Your Name",
-  "icon": "Package",
-  "category": "primitive"
+  "author": "your.email@example.com",
+  "icon": "Package"
 }
 ```
 
 **Fields:**
-- `id`: Unique identifier (kebab-case, e.g., `gear-generator`)
-- `name`: Display name in UI
-- `version`: Semantic version
-- `description`: Shown in extension store
-- `author`: Your name or organization
+- `id`: Unique identifier (auto-generated from name)
+- `name`: Display name in the Extension Store
+- `version`: Semantic version (increment when updating)
+- `description`: Shown in extension cards
+- `author`: Your email (auto-populated)
 - `icon`: [Lucide icon name](https://lucide.dev/icons)
-- `category`: `primitive`, `sketch`, `operation`, `modifier`, or `utility`
+
+**⚠️ Important**: The manifest is the **single source of truth**. Changes here are reflected immediately in the Extension Store.
+
+---
+
+## Development Workflow
+
+### 1. Initial Creation
+
+Use the HiveCAD UI to create a new extension:
+- Opens Extension Store → "Create New Tool"
+- Fill in name, description, icon
+- Click "Create"
+- You're redirected to your GitHub repository
+
+### 2. Local Development
+
+Edit `index.ts` to implement your tool:
+
+```typescript
+import { Extension } from '@/lib/extensions/Extension';
+import { Tool } from '@/lib/tools/types';
+
+const tool: Tool = {
+    metadata: {
+        id: 'my-extension',
+        label: 'My Extension',
+        icon: 'Package',
+        category: 'modifier'
+    },
+    uiProperties: [
+        { 
+            key: 'width', 
+            label: 'Width', 
+            type: 'number', 
+            default: 10, 
+            unit: 'mm' 
+        }
+    ],
+    create(codeManager, params) {
+        const { width = 10 } = params;
+        return codeManager.addFeature('makeBaseBox', null, [width, width, width]);
+    }
+};
+
+export const extension: Extension = {
+    manifest: {
+        id: 'my-extension',
+        name: 'My Extension',
+        version: '1.0.0',
+        description: 'Creates custom boxes',
+        author: 'you@example.com',
+        icon: 'Package',
+        category: 'primitive',
+    },
+    tool,
+    onRegister: () => {
+        console.log('My extension registered');
+    },
+};
+```
+
+### 3. Status Management
+
+Extensions have two states (managed in HiveCAD UI):
+
+- **`development`** (default): Only visible to you for testing
+- **`published`**: Visible to everyone in the community
+
+Toggle status from the Extension Store on your own extensions.
+
+### 4. Version Updates
+
+When you make changes:
+1. Update `version` in `manifest.json` (e.g., `1.0.0` → `1.1.0`)
+2. Commit and push to GitHub
+3. Changes are live immediately for all users
 
 ---
 
 ## Tool Implementation
-
-### Basic Structure
-
-```typescript
-import type { Extension } from '@/lib/extensions';
-import type { Tool } from '@/lib/tools/types';
-
-const tool: Tool = {
-    metadata: { id, label, icon, category },
-    uiProperties: [...],
-    create(codeManager, params) { ... }
-};
-
-export const extension: Extension = {
-    manifest: { ... },
-    tool
-};
-```
 
 ### UI Properties
 
@@ -75,18 +136,44 @@ Define parameters shown in the OperationProperties panel:
 ```typescript
 uiProperties: [
     // Number input
-    { key: 'width', label: 'Width', type: 'number', default: 10, unit: 'mm', min: 0.1, step: 0.5 },
+    { 
+        key: 'teeth', 
+        label: 'Number of Teeth', 
+        type: 'number', 
+        default: 20, 
+        min: 6, 
+        max: 200, 
+        step: 1 
+    },
     
     // Boolean checkbox
-    { key: 'centered', label: 'Centered', type: 'boolean', default: true },
+    { 
+        key: 'centered', 
+        label: 'Center at Origin', 
+        type: 'boolean', 
+        default: true 
+    },
     
     // Dropdown select
-    { key: 'style', label: 'Style', type: 'select', default: 'solid',
-      options: [{ value: 'solid', label: 'Solid' }, { value: 'hollow', label: 'Hollow' }] },
+    { 
+        key: 'profile', 
+        label: 'Tooth Profile', 
+        type: 'select', 
+        default: 'involute',
+        options: [
+            { value: 'involute', label: 'Involute' },
+            { value: 'cycloidal', label: 'Cycloidal' }
+        ]
+    },
     
-    // Object picker
-    { key: 'targetFace', label: 'Target Face', type: 'selection', default: null,
-      allowedTypes: ['face'] }
+    // Object selection
+    { 
+        key: 'targetFace', 
+        label: 'Target Face', 
+        type: 'selection', 
+        default: null,
+        allowedTypes: ['face']
+    }
 ]
 ```
 
@@ -96,8 +183,10 @@ Generate CAD geometry using the CodeManager:
 
 ```typescript
 create(codeManager: CodeManager, params: Record<string, any>): string {
-    const { width = 10, height = 10 } = params;
-    return codeManager.addFeature('makeBaseBox', null, [width, height, width]);
+    const { width = 10, height = 10, depth = 10 } = params;
+    
+    // Create a primitive shape
+    return codeManager.addFeature('makeBaseBox', null, [width, height, depth]);
 }
 ```
 
@@ -105,101 +194,148 @@ create(codeManager: CodeManager, params: Record<string, any>): string {
 
 ## Custom Data Storage
 
-Extensions can store data on CADObjects:
+Extensions can store persistent data on CADObjects:
 
 ```typescript
-// When creating an object, store extension data
+// When creating an object, store extension-specific data
 const obj: CADObject = {
     ...baseObject,
     extensionData: {
-        'my-extension': {
-            customProperty: 42,
-            settings: { mode: 'advanced' }
+        'gear-generator': {
+            module: 2,
+            pressureAngle: 20,
+            generatedAt: Date.now()
         }
     }
 };
 
 // Later, retrieve the data
-const myData = obj.extensionData?.['my-extension'];
-```
-
----
-
-## 3D Preview (Optional)
-
-Provide custom preview geometry while drawing:
-
-```typescript
-renderPreview(primitive, to3D, isGhost) {
-    const color = isGhost ? "#00ffff" : "#ffff00";
-    const points = primitive.points.map(p => to3D(p[0], p[1]));
-    
-    return React.createElement('line', { key: primitive.id },
-        React.createElement('bufferGeometry', ...),
-        React.createElement('lineBasicMaterial', { color })
-    );
+const gearData = obj.extensionData?.['gear-generator'];
+if (gearData) {
+    console.log('Gear module:', gearData.module);
 }
 ```
 
----
-
-## Registration
-
-Add your extension to `src/lib/extensions/loader.ts`:
-
-```typescript
-import myExtension from '../../extensions/my-extension';
-
-export function loadBuiltinExtensions(): void {
-    // ... existing registrations
-    extensionRegistry.register(myExtension);
-}
-```
+**Best Practice**: Use your extension ID as the key to avoid conflicts.
 
 ---
 
-## Best Practices
+## Tool Categories
 
-1. **Consistent UI**: Use the `uiProperties` system for all parameters
-2. **Meaningful icons**: Choose Lucide icons that represent your tool
-3. **Good defaults**: Set sensible default values for all properties
-4. **Documentation**: Include a README.md with usage instructions
-5. **Namespace data**: Use your extension ID as the key in `extensionData`
+Choose the appropriate category for your extension:
 
----
-
-## Common Patterns
-
-### Primitive Tool (creates a shape)
+### `primitive` - Creates new shapes
 ```typescript
 category: 'primitive'
 create(codeManager, params) {
-    return codeManager.addFeature('makeBaseBox', null, [...]);
+    return codeManager.addFeature('makeBaseBox', null, [10, 10, 10]);
 }
 ```
 
-### Sketch Tool (draws on sketch)
+### `sketch` - Drawing tools
 ```typescript
 category: 'sketch'
 addToSketch(codeManager, sketchName, primitive) {
     codeManager.addOperation(sketchName, 'lineTo', [...]);
 }
-processPoints(points) { return { id, type, points }; }
 ```
 
-### Operation Tool (modifies selection)
+### `operation` - Modifies existing geometry
 ```typescript
 category: 'operation'
-selectionRequirements: { min: 1, allowedTypes: ['sketch'] }
+selectionRequirements: { min: 1, allowedTypes: ['box', 'cylinder'] }
 execute(codeManager, selectedIds, params) {
-    codeManager.addOperation(selectedIds[0], 'extrude', [params.height]);
+    codeManager.addOperation(selectedIds[0], 'fillet', [params.radius]);
 }
 ```
+
+### `modifier` - Transforms or adjusts
+```typescript
+category: 'modifier'
+execute(codeManager, selectedIds, params) {
+    // Apply transformations
+}
+```
+
+### `utility` - Helper tools
+```typescript
+category: 'utility'
+// Measurement, analysis, export tools, etc.
+```
+
+---
+
+## Publishing Checklist
+
+Before publishing your extension:
+
+- [ ] **Test thoroughly** in development mode
+- [ ] **Write clear README.md** with usage instructions
+- [ ] **Choose appropriate icon** from [Lucide](https://lucide.dev/icons)
+- [ ] **Add meaningful description** (shown in Extension Store)
+- [ ] **Version properly** using semantic versioning
+- [ ] **Document parameters** in code comments
+- [ ] **Handle edge cases** (null values, invalid inputs)
+
+---
+
+## Best Practices
+
+1. **Consistent UI**: Use `uiProperties` for all user parameters
+2. **Meaningful icons**: Choose icons that represent your tool's function
+3. **Good defaults**: Set sensible default values for all properties
+4. **Clear documentation**: Include usage examples in README.md
+5. **Namespace data**: Use your extension ID as the key in `extensionData`
+6. **Version semantically**: 
+   - MAJOR: Breaking changes
+   - MINOR: New features (backward compatible)
+   - PATCH: Bug fixes
+7. **Test before publishing**: Toggle to `development` first
+
+---
+
+## GitHub Folder Location
+
+Your extensions live in:
+```
+https://github.com/{your-username}/hivecad-projects/tree/main/extensions/{extension-id}/
+```
+
+All files in this folder are version-controlled, so you have full history.
 
 ---
 
 ## Debugging
 
 - Check browser console for registration logs
-- Verify your extension appears in `extensionRegistry.getAll()`
+- Verify manifest.json is valid JSON
+- Ensure icon name exists in [Lucide icons](https://lucide.dev/icons)
 - Use `onRegister()` hook for initialization debugging
+- Check network tab for manifest loading errors
+
+---
+
+## Common Issues
+
+**Extension not appearing?**
+- Check status is `published`, not `development`
+- Verify manifest.json syntax is valid
+- Ensure icon name is correct
+
+**Parameters not showing?**
+- Check `uiProperties` array syntax
+- Verify `type` is one of: `number`, `boolean`, `select`, `selection`
+
+**Code errors?**
+- Check browser console for TypeScript errors
+- Ensure all imports are correct
+- Verify CodeManager methods are called properly
+
+---
+
+## Support
+
+For questions or issues:
+- Check examples in the Extension Store
+- Review existing extensions in the community
+- Report bugs via GitHub Issues

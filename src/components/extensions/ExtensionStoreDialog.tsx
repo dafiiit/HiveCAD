@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
     Dialog,
     DialogContent,
@@ -9,10 +9,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, PlusCircle, ArrowLeft, Package } from "lucide-react";
-import { MOCK_EXTENSIONS } from "@/lib/mock-extensions";
+import { Search, PlusCircle, ArrowLeft, Package, Loader2 } from "lucide-react";
 import { ExtensionCard } from "./ExtensionCard";
 import { CreateExtensionForm } from "./CreateExtensionForm";
+import { StorageManager } from "@/lib/storage/StorageManager";
+import { Extension } from "@/lib/storage/types";
+import { toolRegistry } from "@/lib/tools";
+import { Tool } from "@/lib/tools/types";
 
 interface ExtensionStoreDialogProps {
     open: boolean;
@@ -25,18 +28,52 @@ export const ExtensionStoreDialog: React.FC<ExtensionStoreDialogProps> = ({
 }) => {
     const [view, setView] = useState<"browse" | "create">("browse");
     const [searchQuery, setSearchQuery] = useState("");
+    const [extensions, setExtensions] = useState<Extension[]>([]);
+    const [loading, setLoading] = useState(false);
 
-    const filteredExtensions = useMemo(() => {
-        return MOCK_EXTENSIONS.filter(
-            (ext) =>
-                ext.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                ext.description.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-    }, [searchQuery]);
+    const fetchExtensions = useCallback(async (query: string) => {
+        setLoading(true);
+        try {
+            const adapter = StorageManager.getInstance().currentAdapter;
+            if (adapter.searchCommunityExtensions) {
+                const results = await adapter.searchCommunityExtensions(query);
+                setExtensions(results);
+
+                // Pre-register these extensions in the toolRegistry so their icons/labels can be resolved
+                results.forEach(ext => {
+                    if (ext.manifest) {
+                        toolRegistry.register({
+                            metadata: {
+                                id: ext.id,
+                                label: ext.manifest.name,
+                                icon: ext.manifest.icon,
+                                category: 'operation',
+                                description: ext.manifest.description
+                            },
+                            uiProperties: []
+                        } as Tool);
+                    }
+                });
+            }
+        } catch (error) {
+            console.error("Failed to fetch extensions:", error);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (view === "browse") {
+            const timer = setTimeout(() => {
+                fetchExtensions(searchQuery);
+            }, 300);
+            return () => clearTimeout(timer);
+        }
+    }, [searchQuery, view, fetchExtensions]);
 
     const handleCreateSuccess = () => {
         setView("browse");
-        // In a real app we might refresh the list here
+        fetchExtensions("");
     };
 
     return (
@@ -106,20 +143,32 @@ export const ExtensionStoreDialog: React.FC<ExtensionStoreDialogProps> = ({
 
                             <ScrollArea className="h-full w-full">
                                 <div className="p-6 pt-24">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
-                                        {filteredExtensions.length > 0 ? (
-                                            filteredExtensions.map((ext) => (
-                                                <ExtensionCard key={ext.id} extension={ext} />
-                                            ))
-                                        ) : (
-                                            <div className="col-span-full py-20 text-center space-y-3">
-                                                <div className="flex justify-center">
-                                                    <Package className="w-12 h-12 text-muted/30" />
+                                    {loading ? (
+                                        <div className="flex flex-col items-center justify-center py-20 gap-3">
+                                            <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                                            <p className="text-muted-foreground animate-pulse">Searching the library...</p>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
+                                            {extensions.length > 0 ? (
+                                                extensions.map((ext) => (
+                                                    <ExtensionCard
+                                                        key={ext.id}
+                                                        extension={ext}
+                                                        onRefresh={() => fetchExtensions(searchQuery)}
+                                                    />
+                                                ))
+                                            ) : (
+                                                <div className="col-span-full py-20 text-center space-y-3">
+                                                    <div className="flex justify-center">
+                                                        <Package className="w-12 h-12 text-muted/30" />
+                                                    </div>
+                                                    <p className="text-muted-foreground font-medium">No tools found matching "{searchQuery}"</p>
+                                                    <p className="text-xs text-muted-foreground/60">Try different keywords or create your own!</p>
                                                 </div>
-                                                <p className="text-muted-foreground">No extensions found matching "{searchQuery}"</p>
-                                            </div>
-                                        )}
-                                    </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </ScrollArea>
                         </>

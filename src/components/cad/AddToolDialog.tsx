@@ -8,8 +8,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Search, Plus } from "lucide-react";
 import { toolRegistry } from "@/lib/tools";
-import { ToolMetadata } from "@/lib/tools/types";
-import { MOCK_EXTENSIONS } from "@/lib/mock-extensions";
+import { ToolMetadata, Tool } from "@/lib/tools/types";
+import { IconResolver } from "@/components/ui/IconResolver";
+import { StorageManager } from "@/lib/storage/StorageManager";
+import { Extension } from "@/lib/storage/types";
 
 interface AddToolDialogProps {
     open: boolean;
@@ -19,6 +21,24 @@ interface AddToolDialogProps {
 
 export const AddToolDialog = ({ open, onOpenChange, onSelectTool }: AddToolDialogProps) => {
     const [searchQuery, setSearchQuery] = React.useState('');
+    const [extensions, setExtensions] = React.useState<Extension[]>([]);
+
+    React.useEffect(() => {
+        if (open) {
+            const fetchExtensions = async () => {
+                try {
+                    const adapter = StorageManager.getInstance().currentAdapter;
+                    if (adapter.searchCommunityExtensions) {
+                        const results = await adapter.searchCommunityExtensions("");
+                        setExtensions(results);
+                    }
+                } catch (error) {
+                    console.error("Failed to fetch extensions for dialog:", error);
+                }
+            };
+            fetchExtensions();
+        }
+    }, [open]);
 
     const tools = React.useMemo(() => {
         const registeredTools = toolRegistry.getAllMetadata().filter(tool =>
@@ -26,19 +46,19 @@ export const AddToolDialog = ({ open, onOpenChange, onSelectTool }: AddToolDialo
             tool.id.toLowerCase().includes(searchQuery.toLowerCase())
         );
 
-        const extensionTools = MOCK_EXTENSIONS.filter(ext =>
-            ext.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            ext.description.toLowerCase().includes(searchQuery.toLowerCase())
+        const extensionTools = extensions.filter(ext =>
+            ext.manifest?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            ext.manifest?.description?.toLowerCase().includes(searchQuery.toLowerCase())
         ).map(ext => ({
             id: ext.id,
-            label: ext.name,
-            description: ext.description,
+            label: ext.manifest?.name || ext.id,
+            description: ext.manifest?.description || '',
             category: 'EXTENSIONS' as any,
-            icon: ext.icon
+            icon: ext.manifest?.icon || ''
         }));
 
         return [...registeredTools, ...extensionTools];
-    }, [searchQuery]);
+    }, [searchQuery, extensions]);
 
     const categories = React.useMemo(() => {
         const cats = Array.from(new Set(tools.map(t => t.category)));
@@ -78,13 +98,33 @@ export const AddToolDialog = ({ open, onOpenChange, onSelectTool }: AddToolDialo
                                     <button
                                         key={tool.id}
                                         onClick={() => {
+                                            // If it's an extension, register it in the registry so other components (like toolbar) can find its metadata
+                                            if (category === 'EXTENSIONS') {
+                                                const extension = extensions.find(ext => ext.id === tool.id);
+                                                if (extension && extension.manifest) {
+                                                    toolRegistry.register({
+                                                        metadata: {
+                                                            id: extension.id,
+                                                            label: extension.manifest.name,
+                                                            icon: extension.manifest.icon,
+                                                            category: 'operation', // Default for extensions
+                                                            description: extension.manifest.description
+                                                        },
+                                                        uiProperties: [] // Extensions will define these in their index.ts later
+                                                    } as Tool);
+                                                }
+                                            }
                                             onSelectTool(tool.id);
                                             onOpenChange(false);
                                         }}
                                         className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/50 transition-all text-left group border border-transparent hover:border-border/50 shadow-sm hover:shadow-md bg-muted/20"
                                     >
                                         <div className="w-10 h-10 rounded-lg bg-background border border-border/50 flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:border-primary/30 transition-all shadow-inner">
-                                            <span className="text-xs font-bold">{tool.label.substring(0, 2).toUpperCase()}</span>
+                                            {tool.icon ? (
+                                                <IconResolver name={tool.icon} className="w-5 h-5" />
+                                            ) : (
+                                                <span className="text-xs font-bold">{tool.label.substring(0, 2).toUpperCase()}</span>
+                                            )}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="text-sm font-semibold truncate group-hover:text-primary transition-colors">{tool.label}</div>

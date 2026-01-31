@@ -8,6 +8,9 @@ import { Github } from "lucide-react";
 import * as Icons from "lucide-react";
 import { LucideProps } from "lucide-react";
 import { IconPicker } from "../ui/IconPicker";
+import { useGlobalStore } from "@/store/useGlobalStore";
+import { StorageManager } from "@/lib/storage/StorageManager";
+import { Extension } from "@/lib/storage/types";
 
 interface CreateExtensionFormProps {
     onCancel: () => void;
@@ -15,10 +18,12 @@ interface CreateExtensionFormProps {
 }
 
 export const CreateExtensionForm: React.FC<CreateExtensionFormProps> = ({ onCancel, onSuccess }) => {
+    const { user } = useGlobalStore();
     const [name, setName] = useState("");
     const [id, setId] = useState("");
     const [description, setDescription] = useState("");
     const [iconName, setIconName] = useState("Package");
+    const [loading, setLoading] = useState(false);
 
     // Auto-generate ID from Name
     useEffect(() => {
@@ -30,7 +35,7 @@ export const CreateExtensionForm: React.FC<CreateExtensionFormProps> = ({ onCanc
         setId(generatedId);
     }, [name]);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
         if (!name || !description || !iconName) {
@@ -40,12 +45,44 @@ export const CreateExtensionForm: React.FC<CreateExtensionFormProps> = ({ onCanc
             return;
         }
 
-        // Mock success
-        toast.success("PR Created!", {
-            description: `Your extension "${name}" has been submitted to the community library.`,
-        });
+        setLoading(true);
+        try {
+            const adapter = StorageManager.getInstance().currentAdapter;
+            if (adapter.submitExtension) {
+                const githubUrl = await adapter.submitExtension({
+                    id,
+                    name,
+                    description,
+                    icon: iconName,
+                    author: user?.email || "Anonymous",
+                    version: "1.0.0",
+                } as any);
 
-        onSuccess();
+                toast.success("Community Tool Created!", {
+                    description: `Your extension "${name}" has been created on GitHub. Redirecting...`,
+                });
+
+                onSuccess();
+
+                // Redirect to GitHub
+                if (githubUrl) {
+                    setTimeout(() => {
+                        window.open(githubUrl, '_blank');
+                    }, 1000);
+                }
+            } else {
+                toast.error("Error", {
+                    description: "Storage adapter does not support extension submission.",
+                });
+            }
+        } catch (error) {
+            console.error("Submission failed:", error);
+            toast.error("Submission Failed", {
+                description: "There was an error submitting your tool to the library.",
+            });
+        } finally {
+            setLoading(false);
+        }
     };
 
 
@@ -87,12 +124,16 @@ export const CreateExtensionForm: React.FC<CreateExtensionFormProps> = ({ onCanc
             </div>
 
             <div className="flex justify-between items-center pt-4 border-t border-border/40">
-                <Button type="button" variant="ghost" onClick={onCancel} className="rounded-full px-6">
+                <Button type="button" variant="ghost" onClick={onCancel} className="rounded-full px-6" disabled={loading}>
                     Cancel
                 </Button>
-                <Button type="submit" className="gap-2 rounded-full px-6 bg-black hover:bg-zinc-800 text-white dark:bg-zinc-200 dark:hover:bg-zinc-300 dark:text-black font-semibold h-11">
-                    <Github size={18} />
-                    Create Tool on GitHub
+                <Button type="submit" className="gap-2 rounded-full px-6 bg-black hover:bg-zinc-800 text-white dark:bg-zinc-200 dark:hover:bg-zinc-300 dark:text-black font-semibold h-11" disabled={loading}>
+                    {loading ? (
+                        <Icons.Loader2 size={18} className="animate-spin" />
+                    ) : (
+                        <Github size={18} />
+                    )}
+                    {loading ? "Submitting..." : "Create Tool on GitHub"}
                 </Button>
             </div>
         </form>

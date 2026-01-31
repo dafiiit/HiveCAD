@@ -42,7 +42,9 @@ import {
 } from "lucide-react";
 import { useCADStore, ToolType } from "@/hooks/useCADStore";
 import { toast } from "sonner";
-import { MOCK_EXTENSIONS } from "@/lib/mock-extensions";
+import { StorageManager } from "@/lib/storage/StorageManager";
+import { Extension } from "@/lib/storage/types";
+import * as LucideIcons from "lucide-react";
 
 interface CommandPaletteProps {
     onOpenExtensionStore?: () => void;
@@ -61,6 +63,24 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
         enterSketchMode
     } = useCADStore();
     const [searchQuery, setSearchQuery] = useState("");
+    const [extensions, setExtensions] = useState<Extension[]>([]);
+
+    useEffect(() => {
+        if (searchOpen) {
+            const fetchExtensions = async () => {
+                try {
+                    const adapter = StorageManager.getInstance().currentAdapter;
+                    if (adapter.searchCommunityExtensions) {
+                        const results = await adapter.searchCommunityExtensions("");
+                        setExtensions(results.slice(0, 5)); // Just top 5 for palette
+                    }
+                } catch (error) {
+                    console.error("Failed to fetch extensions for palette:", error);
+                }
+            };
+            fetchExtensions();
+        }
+    }, [searchOpen]);
 
     useEffect(() => {
         const down = (e: KeyboardEvent) => {
@@ -150,21 +170,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
         },
         {
             group: "Extensions",
-            items: MOCK_EXTENSIONS.map(ext => ({
-                label: ext.name,
-                icon: ext.icon === "Settings" ? <Settings className="mr-2 h-4 w-4" /> :
-                    ext.icon === "Grid" ? <Grid className="mr-2 h-4 w-4" /> :
-                        ext.icon === "Zap" ? <Zap className="mr-2 h-4 w-4" /> :
-                            ext.icon === "Wind" ? <Wind className="mr-2 h-4 w-4" /> :
-                                ext.icon === "Layers" ? <Layers className="mr-2 h-4 w-4" /> :
-                                    ext.icon === "Cpu" ? <Cpu className="mr-2 h-4 w-4" /> :
-                                        <Package className="mr-2 h-4 w-4" />,
-                isExtension: true,
-                action: () => {
-                    toast.success(`Loading extension: ${ext.name}`);
-                    // Extensions logic placeholder
-                }
-            }))
+            items: extensions.map(ext => {
+                const LucideIcon = (LucideIcons[ext.icon as keyof typeof LucideIcons] as React.FC<any>) || LucideIcons.Package;
+                return {
+                    label: ext.name,
+                    icon: <LucideIcon className="mr-2 h-4 w-4" />,
+                    isExtension: true,
+                    action: () => {
+                        toast.success(`Loading extension: ${ext.name}`);
+                        // Extensions logic placeholder
+                    }
+                };
+            })
         }
     ];
 
