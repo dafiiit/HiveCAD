@@ -553,6 +553,7 @@ const OperationPreview = () => {
   const activeOperation = useCADStore((state) => state.activeOperation);
   const selectedIds = useCADStore((state) => state.selectedIds);
   const objects = useCADStore((state) => state.objects);
+  const updateOperationParams = useCADStore((state) => state.updateOperationParams);
 
   if (!activeOperation) return null;
 
@@ -565,7 +566,8 @@ const OperationPreview = () => {
       <group>
         {tool.render3DPreview(params || {}, {
           selectedIds: Array.from(selectedIds),
-          objects
+          objects,
+          updateOperationParams
         })}
       </group>
     );

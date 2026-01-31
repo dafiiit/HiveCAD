@@ -151,6 +151,7 @@ export interface Tool {
         context: {
             selectedIds: string[];
             objects: CADObject[];
+            updateOperationParams: (params: Record<string, any>) => void;
         }
     ): ReactNode;
 

@@ -202,15 +202,14 @@ export class CodeManager {
         const newVarName = `shape${this.features.length + 1}`;
         let init: t.Expression;
 
-        // Generate the init expression (same as before)
+        const args = params.map(p => this.convertArgToAST(p));
+
         if (sourceId) {
-            const args = params.map(p => typeof p === 'string' ? t.stringLiteral(p) : t.numericLiteral(p));
             init = t.callExpression(
                 t.memberExpression(t.identifier(sourceId), t.identifier(type)),
                 args
             );
         } else {
-            const args = params.map(p => typeof p === 'string' ? t.stringLiteral(p) : t.numericLiteral(p));
             init = t.callExpression(
                 t.memberExpression(t.identifier('replicad'), t.identifier(type)),
                 args
@@ -268,34 +267,7 @@ export class CodeManager {
 
         if (feature.path && feature.path.node.init) {
             const currentInit = feature.path.node.init;
-
-            const args = params.map(p => {
-                if (typeof p === 'string') return t.stringLiteral(p);
-                if (typeof p === 'number') return t.numericLiteral(p);
-                if (Array.isArray(p)) {
-                    // Recursively handle array elements? Or just simple primitives for now.
-                    // Assuming [number, number] or similar.
-                    const elements = p.map(el => {
-                        if (typeof el === 'number') return t.numericLiteral(el);
-                        if (typeof el === 'string') return t.stringLiteral(el);
-                        return t.identifier('undefined');
-                    });
-                    return t.arrayExpression(elements);
-                }
-                // Handle raw code/predicate object { type: 'raw', content: '...' }
-                if (typeof p === 'object' && p.type === 'raw' && p.content) {
-                    try {
-                        // Parse the expression: e.g. "(e) => e.inPlane('XY')"
-                        // parse is used, returns File -> Program -> Body -> Declaration -> Init
-                        const ast = parse(`const x = ${p.content}`, { sourceType: 'module' });
-                        return (ast.program.body[0] as any).declarations[0].init;
-                    } catch (e) {
-                        console.error("Failed to parse raw argument", p.content);
-                        return t.identifier('undefined');
-                    }
-                }
-                return t.identifier('undefined');
-            });
+            const args = params.map(p => this.convertArgToAST(p));
 
             const newInit = t.callExpression(
                 t.memberExpression(currentInit, t.identifier(type)),
@@ -371,6 +343,32 @@ export class CodeManager {
         const output = generate(this.ast!);
         this.code = output.code;
         this.parse();
+    }
+
+    private convertArgToAST(p: any): t.Expression {
+        if (typeof p === 'string') return t.stringLiteral(p);
+        if (typeof p === 'number') return t.numericLiteral(p);
+        if (p === null || p === undefined) return t.identifier('undefined');
+        if (Array.isArray(p)) {
+            return t.arrayExpression(p.map(el => this.convertArgToAST(el)));
+        }
+        if (typeof p === 'object') {
+            if (p.type === 'raw' && p.content) {
+                try {
+                    const ast = parse(`const x = ${p.content}`, { sourceType: 'module' });
+                    return (ast.program.body[0] as any).declarations[0].init;
+                } catch (e) {
+                    console.error("Failed to parse raw argument", p.content);
+                    return t.identifier('undefined');
+                }
+            }
+            // General object literal
+            const properties = Object.entries(p).map(([k, v]) =>
+                t.objectProperty(t.identifier(k), this.convertArgToAST(v))
+            );
+            return t.objectExpression(properties);
+        }
+        return t.identifier('undefined');
     }
 
     getCode() {
