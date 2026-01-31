@@ -152,8 +152,16 @@ export interface Tool {
             selectedIds: string[];
             objects: CADObject[];
             updateOperationParams: (params: Record<string, any>) => void;
+            setCameraControlsDisabled: (disabled: boolean) => void;
         }
     ): ReactNode;
+
+    onPropertyChange?(
+        params: Record<string, any>,
+        key: string,
+        value: any,
+        objects: CADObject[]
+    ): Record<string, any> | void;
 
     /**
      * Create the initial primitive state when starting to draw

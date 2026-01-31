@@ -24,6 +24,7 @@ export const createViewSlice: StateCreator<CADState, [], [], ViewSlice> = (set) 
     showMeasurements: false,
     thumbnailCapturer: null,
     fitToScreenSignal: 0,
+    cameraControlsDisabled: false,
 
     setView: (view) => set({ currentView: view }),
     setCameraRotation: (rotation) => set({ cameraRotation: rotation }),
@@ -48,4 +49,5 @@ export const createViewSlice: StateCreator<CADState, [], [], ViewSlice> = (set) 
         sketchOptions: { ...state.sketchOptions, [key]: value }
     })),
     setThumbnailCapturer: (capturer) => set({ thumbnailCapturer: capturer }),
+    setCameraControlsDisabled: (disabled) => set({ cameraControlsDisabled: disabled }),
 });

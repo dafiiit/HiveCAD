@@ -554,6 +554,7 @@ const OperationPreview = () => {
   const selectedIds = useCADStore((state) => state.selectedIds);
   const objects = useCADStore((state) => state.objects);
   const updateOperationParams = useCADStore((state) => state.updateOperationParams);
+  const setCameraControlsDisabled = useCADStore((state) => state.setCameraControlsDisabled);
 
   if (!activeOperation) return null;
 
@@ -567,7 +568,8 @@ const OperationPreview = () => {
         {tool.render3DPreview(params || {}, {
           selectedIds: Array.from(selectedIds),
           objects,
-          updateOperationParams
+          updateOperationParams,
+          setCameraControlsDisabled
         })}
       </group>
     );
@@ -757,7 +759,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
   const controlsRef = useRef<ArcballControlsImpl>(null);
   const api = useCADStoreApi();
   const [showExitDialog, setShowExitDialog] = useState(false);
-  const { backgroundMode, projectionMode, sectionViewEnabled, gridVisible } = useCADStore();
+  const { backgroundMode, projectionMode, sectionViewEnabled, gridVisible, cameraControlsDisabled } = useCADStore();
   const getBackgroundColor = () => {
     switch (backgroundMode) {
       case 'dark': return "hsl(210, 20%, 8%)";
@@ -864,6 +866,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
         <ArcballControls
           ref={controlsRef}
           makeDefault
+          enabled={!cameraControlsDisabled}
           cursorZoom={true}
           minDistance={5}
           maxDistance={5000}

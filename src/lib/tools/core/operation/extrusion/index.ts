@@ -94,7 +94,54 @@ export const extrusionTool: Tool = {
         if (Object.keys(opts).length > 0) extrudeArgs.push(opts);
         codeManager.addOperation(profile, 'extrude', extrudeArgs);
     },
-    render3DPreview(params, { objects, selectedIds, updateOperationParams }) {
+    onPropertyChange(params, key, value, objects) {
+        if (key === 'profile' && value && value.includes(':face-')) {
+            const [baseId, faceSuffix] = value.split(':face-');
+            const obj = objects.find(o => o.id === baseId);
+            if (obj && obj.geometry && obj.faceMapping) {
+                const faceId = parseInt(faceSuffix);
+                const mapping = obj.faceMapping.find(m => m.faceId === faceId);
+                if (mapping && obj.geometry.getAttribute('normal')) {
+                    const normAttr = obj.geometry.getAttribute('normal');
+                    const avgNorm = new THREE.Vector3();
+
+                    // If indexed
+                    if (obj.geometry.index) {
+                        const indices = obj.geometry.index.array;
+                        for (let i = 0; i < mapping.count; i++) {
+                            const idx = indices[mapping.start + i];
+                            avgNorm.add(new THREE.Vector3(normAttr.getX(idx), normAttr.getY(idx), normAttr.getZ(idx)));
+                        }
+                    } else {
+                        for (let i = 0; i < mapping.count; i++) {
+                            const idx = mapping.start + i;
+                            avgNorm.add(new THREE.Vector3(normAttr.getX(idx), normAttr.getY(idx), normAttr.getZ(idx)));
+                        }
+                    }
+
+                    avgNorm.divideScalar(mapping.count).normalize();
+
+                    // Format axis as raw code for normal direction
+                    // If it's close to a standard axis, we could use AXIS_X etc.
+                    const eps = 0.001;
+                    let axisVal: any = { type: 'raw', content: `[${avgNorm.x.toFixed(4)}, ${avgNorm.y.toFixed(4)}, ${avgNorm.z.toFixed(4)}]` };
+
+                    if (Math.abs(avgNorm.x - 1) < eps && Math.abs(avgNorm.y) < eps && Math.abs(avgNorm.z) < eps) axisVal = 'AXIS_X';
+                    else if (Math.abs(avgNorm.x + 1) < eps && Math.abs(avgNorm.y) < eps && Math.abs(avgNorm.z) < eps) axisVal = { type: 'raw', content: '[-1, 0, 0]' };
+                    else if (Math.abs(avgNorm.y - 1) < eps && Math.abs(avgNorm.x) < eps && Math.abs(avgNorm.z) < eps) axisVal = 'AXIS_Y';
+                    else if (Math.abs(avgNorm.y + 1) < eps && Math.abs(avgNorm.x) < eps && Math.abs(avgNorm.z) < eps) axisVal = { type: 'raw', content: '[0, -1, 0]' };
+                    else if (Math.abs(avgNorm.z - 1) < eps && Math.abs(avgNorm.x) < eps && Math.abs(avgNorm.y) < eps) axisVal = 'AXIS_Z';
+                    else if (Math.abs(avgNorm.z + 1) < eps && Math.abs(avgNorm.x) < eps && Math.abs(avgNorm.y) < eps) axisVal = { type: 'raw', content: '[0, 0, -1]' };
+
+                    // Only set if axis is not already manually set
+                    if (!params.axis) {
+                        return { axis: axisVal };
+                    }
+                }
+            }
+        }
+    },
+    render3DPreview(params, { objects, selectedIds, updateOperationParams, setCameraControlsDisabled }) {
         // Automatically use selection if profile not set
         const profileId = params.profile || selectedIds.find(id => id.includes('sketch') || id.includes(':face-'));
         const axisId = params.axis || selectedIds.find(id => id.includes('edge') || id.includes('AXIS_'));
@@ -159,7 +206,13 @@ export const extrusionTool: Tool = {
             if (axisId === 'AXIS_X') direction.set(1, 0, 0);
             else if (axisId === 'AXIS_Y') direction.set(0, 1, 0);
             else if (axisId === 'AXIS_Z') direction.set(0, 0, 1);
-            else {
+            else if (typeof axisId === 'object' && axisId.type === 'raw') {
+                try {
+                    // content might be like "[x, y, z]"
+                    const content = axisId.content.replace('[', '').replace(']', '').split(',').map(Number);
+                    if (content.length === 3) direction.set(content[0], content[1], content[2]).normalize();
+                } catch (e) { }
+            } else {
                 const axisObj = objects.find(obj => obj.id === axisId || axisId.startsWith(obj.id + ':edge-'));
                 if (axisObj && axisObj.edgeGeometry) {
                     const pos = axisObj.edgeGeometry.getAttribute('position');
@@ -170,23 +223,35 @@ export const extrusionTool: Tool = {
                     }
                 }
             }
+        } else if (faceSuffix && baseGeometry.getAttribute('normal')) {
+            // Calculate average face normal
+            const normAttr = baseGeometry.getAttribute('normal');
+            const avgNorm = new THREE.Vector3();
+            for (let i = 0; i < normAttr.count; i++) {
+                avgNorm.add(new THREE.Vector3(normAttr.getX(i), normAttr.getY(i), normAttr.getZ(i)));
+            }
+            direction.copy(avgNorm.divideScalar(normAttr.count).normalize());
         } else {
-            // Default direction based on sketch plane or face normal
+            // Default direction based on sketch plane
             const sketchPlane = sourceObject.dimensions?.sketchPlane || 'XY';
             if (sketchPlane === 'XZ') direction.set(0, 1, 0);
             else if (sketchPlane === 'YZ') direction.set(1, 0, 0);
         }
 
         const offsetVec = direction.clone().multiplyScalar(distance);
+        // Convert to array for React Three Fiber
+        const offsetArray: [number, number, number] = [offsetVec.x, offsetVec.y, offsetVec.z];
 
         // 3. Create Side Walls (Quads connecting base edges to top edges)
         const previewNodes: React.ReactNode[] = [
             // Ghost Base
-            React.createElement('mesh', { key: 'base', geometry: baseGeometry },
+            React.createElement('mesh', { key: 'base' },
+                React.createElement('primitive', { object: baseGeometry, attach: "geometry" }),
                 React.createElement('meshStandardMaterial', { color: "#80c0ff", transparent: true, opacity: 0.3, side: THREE.DoubleSide })
             ),
             // Ghost End Cap
-            React.createElement('mesh', { key: 'endcap', geometry: baseGeometry, position: offsetVec },
+            React.createElement('mesh', { key: 'endcap', position: offsetArray },
+                React.createElement('primitive', { object: baseGeometry, attach: "geometry" }),
                 React.createElement('meshStandardMaterial', { color: "#80c0ff", transparent: true, opacity: 0.6, side: THREE.DoubleSide })
             )
         ];
@@ -205,11 +270,16 @@ export const extrusionTool: Tool = {
                 sideWallVertices.push(v1.x, v1.y, v1.z, v3.x, v3.y, v3.z, v4.x, v4.y, v4.z);
             }
             if (sideWallVertices.length > 0) {
-                const sideWallGeo = new THREE.BufferGeometry();
-                sideWallGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(sideWallVertices), 3));
-                sideWallGeo.computeVertexNormals();
                 previewNodes.push(
-                    React.createElement('mesh', { key: 'sidewalls', geometry: sideWallGeo },
+                    React.createElement('mesh', { key: `sidewalls-${distance}` },
+                        React.createElement('bufferGeometry', {},
+                            React.createElement('bufferAttribute', {
+                                attach: 'attributes-position',
+                                count: sideWallVertices.length / 3,
+                                array: new Float32Array(sideWallVertices),
+                                itemSize: 3
+                            })
+                        ),
                         React.createElement('meshStandardMaterial', { color: "#80c0ff", transparent: true, opacity: 0.4, side: THREE.DoubleSide })
                     )
                 );
@@ -221,14 +291,20 @@ export const extrusionTool: Tool = {
         const center = new THREE.Vector3();
         baseGeometry.boundingBox?.getCenter(center);
 
+        // Determine effective direction for the handle (flip if distance is negative)
+        const effectiveDirection = distance >= 0 ? direction : direction.clone().negate();
+        const effectiveDistance = Math.abs(distance);
+
         previewNodes.push(
             React.createElement(InteractivePreviewHandle, {
                 key: 'handle',
                 position: [center.x, center.y, center.z],
-                direction: [direction.x, direction.y, direction.z],
+                direction: [effectiveDirection.x, effectiveDirection.y, effectiveDirection.z],
                 distance: distance,
                 onDrag: (d: number) => updateOperationParams({ distance: d }),
-                label: `Distance: ${distance}mm`
+                onDragStart: () => setCameraControlsDisabled(true),
+                onDragEnd: () => setCameraControlsDisabled(false),
+                label: `Distance: ${distance.toFixed(1)}mm`
             })
         );
 

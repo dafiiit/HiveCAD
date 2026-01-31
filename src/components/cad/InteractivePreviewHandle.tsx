@@ -8,6 +8,8 @@ interface InteractivePreviewHandleProps {
     direction: [number, number, number]; // Vector direction
     distance: number; // Current distance from base
     onDrag: (distance: number) => void;
+    onDragStart?: () => void;
+    onDragEnd?: () => void;
     color?: string;
     label?: string;
 }
@@ -17,6 +19,8 @@ export const InteractivePreviewHandle: React.FC<InteractivePreviewHandleProps> =
     direction: dirArr,
     distance,
     onDrag,
+    onDragStart,
+    onDragEnd,
     color = "#80c0ff",
     label
 }) => {
@@ -45,6 +49,7 @@ export const InteractivePreviewHandle: React.FC<InteractivePreviewHandleProps> =
         e.target.setPointerCapture(e.pointerId);
 
         setDragging(true);
+        onDragStart?.();
 
         const cameraDir = new THREE.Vector3();
         camera.getWorldDirection(cameraDir);
@@ -85,6 +90,7 @@ export const InteractivePreviewHandle: React.FC<InteractivePreviewHandleProps> =
         if (dragging) {
             setDragging(false);
             e.target.releasePointerCapture(e.pointerId);
+            onDragEnd?.();
         }
     };
 

@@ -195,6 +195,7 @@ export interface ViewSlice {
     sectionViewEnabled: boolean;
     showMeasurements: boolean;
     fitToScreenSignal?: number;
+    cameraControlsDisabled: boolean;
 
     setView: (view: ViewType) => void;
     setCameraRotation: (rotation: { x: number; y: number; z: number }) => void;
@@ -213,6 +214,7 @@ export interface ViewSlice {
     toggleSectionView: () => void;
     toggleMeasurements: () => void;
     setSketchOption: (key: 'lookAt', value: boolean) => void;
+    setCameraControlsDisabled: (disabled: boolean) => void;
 
     // Screenshot capability
     thumbnailCapturer: (() => string | null) | null;
