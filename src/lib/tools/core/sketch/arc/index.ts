@@ -13,15 +13,17 @@ const renderLine = (
     color: string
 ) => {
     if (points.length < 2) return null;
-    return React.createElement('line', { key },
-        React.createElement('bufferGeometry', null,
-            React.createElement('bufferAttribute', {
-                attach: 'attributes-position',
-                count: points.length,
-                array: new Float32Array(points.flatMap(v => [v.x, v.y, v.z])),
-                itemSize: 3
-            })
-        ),
+
+    // Create geometry and set the position attribute
+    // Using a BufferGeometry directly and attaching it ensures React Three Fiber
+    // updates the geometry when the points array changes
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(points.flatMap(v => [v.x, v.y, v.z]));
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    // Use the parent key (with suffixes -chord, -arc, -bezier) to distinguish between
+    // different rendering states without causing recreation lag
+    return React.createElement('line', { key, geometry },
         React.createElement('lineBasicMaterial', { color, linewidth: 3, depthTest: false })
     );
 };
@@ -77,7 +79,8 @@ export const threePointsArcTool: Tool = {
 
         // If only 2 points (Start, End/Mouse), render the chord line
         if (primitive.points.length === 2) {
-            return renderLine(primitive.id, points3D, color);
+            // Use a distinct key suffix '-chord' so React knows this is different from the arc
+            return renderLine(`${primitive.id}-chord`, points3D, color);
         }
 
         // If 3 or more points (Start, End, Via/Mouse), try to render the arc
@@ -89,7 +92,6 @@ export const threePointsArcTool: Tool = {
             const arc = arcFromThreePoints(start, end, via);
 
             // Check if arc is valid and has reasonable radius
-            // (very large radius means points are nearly collinear)
             const maxReasonableRadius = 10000;
             if (arc && arc.radius < maxReasonableRadius && arc.radius > 0.01) {
                 const { startAngle, endAngle, clockwise } = sanitizeAngles(arc.startAngle, arc.endAngle, arc.ccw);
@@ -107,24 +109,23 @@ export const threePointsArcTool: Tool = {
 
                 // Validate that we have enough points
                 if (arcPoints.length >= 2) {
-                    return renderLine(primitive.id, arcPoints, color);
+                    // Use distinct key suffix '-arc'
+                    return renderLine(`${primitive.id}-arc`, arcPoints, color);
                 }
             }
 
             // Fallback: Render a quadratic Bezier curve through the three points
-            // This provides a smooth preview even when the true arc has extreme geometry
             const curvePoints: THREE.Vector3[] = [];
             const segments = 32;
             for (let i = 0; i <= segments; i++) {
                 const t = i / segments;
                 const mt = 1 - t;
-                // Quadratic Bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
-                // Use via as control point, start and end as endpoints
                 const x = mt * mt * start.x + 2 * mt * t * via.x + t * t * end.x;
                 const y = mt * mt * start.y + 2 * mt * t * via.y + t * t * end.y;
                 curvePoints.push(to3D(x, y));
             }
-            return renderLine(primitive.id, curvePoints, color);
+            // Use distinct key suffix '-bezier' for fallback curve
+            return renderLine(`${primitive.id}-bezier`, curvePoints, color);
         }
 
         return null;
@@ -134,7 +135,6 @@ export const threePointsArcTool: Tool = {
         plane: SketchPlane,
     ) {
         // Step 2: While drawing the chord (Start -> End)
-        // We can show the chord length using LineAnnotation
         if (primitive.points.length === 2) {
             const start = { x: primitive.points[0][0], y: primitive.points[0][1] };
             const end = { x: primitive.points[1][0], y: primitive.points[1][1] };
@@ -156,12 +156,9 @@ export const threePointsArcTool: Tool = {
         const arc = arcFromThreePoints(p1, p2, p3);
         const ctx = createAnnotationContext(plane);
 
-        // If arc is invalid or has extreme radius (nearly collinear points),
-        // just show point markers without the confusing radius annotation
         const maxReasonableRadius = 10000;
         if (!arc || arc.radius >= maxReasonableRadius || arc.radius < 0.01) {
             return React.createElement(React.Fragment, null,
-                // Show markers for all three points
                 React.createElement(PointMarker, {
                     key: `${primitive.id}-start-marker`,
                     position: p1,
@@ -202,7 +199,6 @@ export const threePointsArcTool: Tool = {
                 endAngle,
                 plane
             }),
-            // Show marker for the Via point (p3)
             React.createElement(PointMarker, {
                 key: `${primitive.id}-via-marker`,
                 position: p3,
@@ -221,10 +217,8 @@ function sanitizeAngles(start: number, end: number, ccw: boolean) {
     let e = end;
 
     if (!clockwise) {
-        // CCW: End must be greater than Start
         if (e < s) e += 2 * Math.PI;
     } else {
-        // CW: End must be less than Start
         if (e > s) e -= 2 * Math.PI;
     }
     return { startAngle: s, endAngle: e, clockwise };
