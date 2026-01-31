@@ -106,7 +106,7 @@ interface ToolButtonProps {
   label: string;
   isActive?: boolean;
   hasDropdown?: boolean;
-  onClick?: () => void;
+  onClick?: (e?: React.MouseEvent) => void;
   disabled?: boolean;
 }
 
@@ -134,60 +134,30 @@ const IconResolver = ({ name, className }: { name: string, className?: string })
   return <IconComponent className={className} />;
 };
 
-const idToIconMap: Record<string, React.ReactNode> = {
-  sketch: <Pencil className="w-5 h-5" />,
-  extrusion: <ArrowUpRight className="w-5 h-5" />,
-  revolve: <RotateCw className="w-5 h-5" />,
-  box: <Box className="w-5 h-5" />,
-  cylinder: <Cylinder className="w-5 h-5" />,
-  sphere: <Circle className="w-5 h-5" />,
-  torus: <Hexagon className="w-5 h-5" />,
-  coil: <Triangle className="w-5 h-5" />,
-  move: <Move className="w-5 h-5" />,
-  rotate: <RotateCw className="w-5 h-5" />,
-  scale: <Scale className="w-5 h-5" />,
-  duplicate: <Copy className="w-5 h-5" />,
-  delete: <Trash2 className="w-5 h-5" />,
-  join: <Combine className="w-5 h-5" />,
-  cut: <SplitSquareVertical className="w-5 h-5" />,
-  intersect: <Layers className="w-5 h-5" />,
-  parameters: <Settings2 className="w-5 h-5" />,
-  pattern: <Grid3X3 className="w-5 h-5" />,
-  plane: <Square className="w-5 h-5" />,
-  axis: <Minus className="w-5 h-5" />,
-  point: <CircleDot className="w-5 h-5" />,
-  measure: <Ruler className="w-5 h-5" />,
-  analyze: <Eye className="w-5 h-5" />,
-  import: <Download className="w-5 h-5" />,
-  export: <Upload className="w-5 h-5" />,
+/**
+ * Registry-driven icon resolver - replaces hardcoded idToIconMap
+ * Falls back to extension registry for icons
+ */
+const getToolIcon = (id: string): React.ReactNode => {
+  // Check extension registry for icon
+  const ext = toolRegistry.get(id);
+  const iconName = ext?.metadata?.icon;
+  if (iconName) {
+    const IconComponent = (Icons as any)[iconName];
+    if (IconComponent) {
+      return <IconComponent className="w-5 h-5" />;
+    }
+  }
+  // Fallback: show first 2 chars as text
+  return <span className="text-[10px] font-bold opacity-50">{id.substring(0, 2).toUpperCase()}</span>;
 };
 
-const idToLabelMap: Record<string, string> = {
-  sketch: 'Sketch',
-  extrusion: 'Extrude',
-  revolve: 'Revolve',
-  box: 'Box',
-  cylinder: 'Cylinder',
-  sphere: 'Sphere',
-  torus: 'Torus',
-  coil: 'Coil',
-  move: 'Move',
-  rotate: 'Rotate',
-  scale: 'Scale',
-  duplicate: 'Copy',
-  delete: 'Delete',
-  join: 'Join',
-  cut: 'Cut',
-  intersect: 'Intersect',
-  parameters: 'Parameters',
-  pattern: 'Pattern',
-  plane: 'Plane',
-  axis: 'Axis',
-  point: 'Point',
-  measure: 'Measure',
-  analyze: 'Analyze',
-  import: 'Insert',
-  export: 'Export',
+/**
+ * Registry-driven label resolver - replaces hardcoded idToLabelMap
+ */
+const getToolLabel = (id: string): string => {
+  const ext = toolRegistry.get(id);
+  return ext?.metadata?.label || id;
 };
 
 const ToolIcon = ({ id, className }: { id: string, className?: string }) => {
@@ -201,17 +171,10 @@ const ToolIcon = ({ id, className }: { id: string, className?: string }) => {
       </div>
     );
   }
-  const icon = idToIconMap[id];
-  if (icon) return <div className={`flex items-center justify-center ${className}`}>{icon}</div>;
 
-  const metadata = toolRegistry.get(id)?.metadata;
   return (
     <div className={`flex items-center justify-center ${className}`}>
-      {metadata?.icon ? (
-        <IconResolver name={metadata.icon} />
-      ) : (
-        <span className="text-[10px] font-bold opacity-50">{metadata?.label.substring(0, 2).toUpperCase() || id.substring(0, 2).toUpperCase()}</span>
-      )}
+      {getToolIcon(id)}
     </div>
   );
 };
@@ -228,8 +191,6 @@ interface FolderEditDialogProps {
   onRemoveTool: (index: number) => void;
   onAddTool: (toolId: string) => void;
   onReorderTools: (toolIds: string[]) => void;
-  idToIconMap: Record<string, React.ReactNode>;
-  idToLabelMap: Record<string, string>;
 }
 
 const SortableFolderTool = ({ id, toolId, label, icon, onRemove }: {
@@ -292,8 +253,6 @@ const FolderEditDialog = ({
   onRemoveTool,
   onAddTool,
   onReorderTools,
-  idToIconMap,
-  idToLabelMap
 }: FolderEditDialogProps) => {
   const [label, setLabel] = React.useState(initialLabel);
   const [icon, setIcon] = React.useState(initialIcon);
@@ -380,8 +339,8 @@ const FolderEditDialog = ({
                                 key={`${toolId}-${idx}`}
                                 id={toolId}
                                 toolId={toolId}
-                                label={toolRegistry.get(toolId)?.metadata.label || (idToLabelMap[toolId] || toolId)}
-                                icon={idToIconMap[toolId] || <Icons.Package size={16} />}
+                                label={getToolLabel(toolId)}
+                                icon={getToolIcon(toolId)}
                                 onRemove={() => onRemoveTool(idx)}
                               />
                             ))}
@@ -441,8 +400,6 @@ interface ToolFolderButtonProps {
   onEdit: () => void;
   onDelete: () => void;
   onSelectTool: (toolId: string) => void;
-  idToIconMap: Record<string, React.ReactNode>;
-  idToLabelMap: Record<string, string>;
   idToOnClickMap: Record<string, () => void>;
   activeTool: string | null;
 }
@@ -456,8 +413,6 @@ const ToolFolderButton = ({
   onEdit,
   onDelete,
   onSelectTool,
-  idToIconMap,
-  idToLabelMap,
   idToOnClickMap,
   activeTool
 }: ToolFolderButtonProps) => {
@@ -495,9 +450,9 @@ const ToolFolderButton = ({
                     className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all duration-200 group/item ${activeTool === toolId ? 'bg-primary/20 text-primary' : 'hover:bg-muted/50'}`}
                   >
                     <div className={`w-8 h-8 rounded-lg bg-background border border-border/50 flex items-center justify-center transition-colors ${activeTool === toolId ? 'border-primary/30 text-primary' : 'text-muted-foreground group-hover/item:text-primary group-hover/item:border-primary/30'}`}>
-                      {idToIconMap[toolId] || <ToolIcon id={toolId} className="w-4 h-4" />}
+                      {getToolIcon(toolId)}
                     </div>
-                    <span className="text-xs font-semibold">{toolRegistry.get(toolId)?.metadata.label || (idToLabelMap[toolId] || toolId)}</span>
+                    <span className="text-xs font-semibold">{getToolLabel(toolId)}</span>
                   </DropdownMenuItem>
                 ))
               ) : (
@@ -1080,8 +1035,6 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
                               }}
                               onDelete={() => deleteFolder(activeToolbarId!, section.id, folderId)}
                               onSelectTool={(tid) => handleToolSelect(tid as ToolType)}
-                              idToIconMap={idToIconMap}
-                              idToLabelMap={idToLabelMap}
                               idToOnClickMap={idToOnClickMap}
                               activeTool={activeTool}
                             />
@@ -1092,8 +1045,8 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
                       return (
                         <SortableTool key={`${toolId}-${idx}`} id={`tool-${toolId}:${section.id}`} disabled={!isEditingToolbar}>
                           <ToolButton
-                            icon={idToIconMap[toolId] || <ToolIcon id={toolId} className="w-5 h-5" />}
-                            label={toolRegistry.get(toolId)?.metadata.label || (idToLabelMap[toolId] || toolId)}
+                            icon={getToolIcon(toolId)}
+                            label={getToolLabel(toolId)}
                             isActive={activeTool === toolId}
                             onClick={() => {
                               if (idToOnClickMap[toolId]) {
@@ -1238,8 +1191,6 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
           onAddTool={(tid) => addToolToFolder(editingFolderId, tid)}
           onRemoveTool={(index) => removeToolFromFolder(editingFolderId, index)}
           onReorderTools={(tids) => reorderToolsInFolder(editingFolderId, tids)}
-          idToIconMap={idToIconMap}
-          idToLabelMap={idToLabelMap}
         />
       )}
     </div>

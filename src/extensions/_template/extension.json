@@ -1,0 +1,9 @@
+{
+    "id": "my-custom-tool",
+    "name": "My Custom Tool",
+    "version": "1.0.0",
+    "description": "A template extension for creating custom tools in HiveCAD",
+    "author": "Your Name",
+    "icon": "Package",
+    "category": "primitive"
+}

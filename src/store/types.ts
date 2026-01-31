@@ -37,7 +37,11 @@ export type ViewType = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 
 export interface CADObject {
     id: string;
     name: string;
-    type: 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil' | 'sketch' | 'extrusion' | 'revolve' | 'plane' | 'datumAxis';
+    /** 
+     * Object type - can be built-in types or extension-defined types (string).
+     * Extensions can create new object types by using their extension ID as the type.
+     */
+    type: 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil' | 'sketch' | 'extrusion' | 'revolve' | 'plane' | 'datumAxis' | string;
     position: [number, number, number];
     rotation: [number, number, number];
     scale: [number, number, number];
@@ -50,6 +54,13 @@ export interface CADObject {
     vertexGeometry?: THREE.BufferGeometry;
     faceMapping?: { start: number; count: number; faceId: number }[];
     edgeMapping?: { start: number; count: number; edgeId: number }[];
+
+    /**
+     * Extension-specific data storage.
+     * Each extension stores its data under its extension ID as the key.
+     * Example: { "gear-generator": { teeth: 24, module: 2 } }
+     */
+    extensionData?: Record<string, Record<string, any>>;
 }
 
 export interface HistoryItem {
