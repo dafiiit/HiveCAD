@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase';
 import { Provider } from '@supabase/supabase-js';
 import { isDesktop } from '../platform/platform';
 
@@ -42,6 +42,11 @@ export class AuthService {
     }
 
     static async signInWithOAuth(provider: Provider): Promise<void> {
+        // Prevent OAuth attempts when Supabase isn't properly configured
+        if (!isSupabaseConfigured) {
+            throw new Error('Supabase is not configured. Please ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set and rebuild the app.');
+        }
+
         const baseRedirectUrl = import.meta.env.VITE_AUTH_REDIRECT_URL || window.location.origin;
 
         // Use deep link scheme for desktop
