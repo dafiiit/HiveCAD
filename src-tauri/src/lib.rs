@@ -11,7 +11,7 @@ use std::fs;
 use std::sync::Mutex;
 use tauri::State;
 
-mod git;
+pub mod git;
 
 /// Application state
 pub struct AppState {
@@ -122,6 +122,3 @@ pub fn delete_project(
     
     Ok(())
 }
-
-// Re-export git commands
-pub use git::{git_init, git_commit, git_sync, git_status, git_set_remote};

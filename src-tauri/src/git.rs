@@ -3,7 +3,6 @@
 //! Provides local git repository management for project versioning and sync.
 
 use git2::{Repository, Signature, IndexAddOption, PushOptions, RemoteCallbacks, Cred};
-use std::path::Path;
 use tauri::State;
 use crate::AppState;
 

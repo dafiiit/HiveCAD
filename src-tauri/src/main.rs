@@ -16,11 +16,11 @@ fn main() {
             hive_cad_lib::read_project,
             hive_cad_lib::list_projects,
             hive_cad_lib::delete_project,
-            hive_cad_lib::git_init,
-            hive_cad_lib::git_commit,
-            hive_cad_lib::git_sync,
-            hive_cad_lib::git_status,
-            hive_cad_lib::git_set_remote,
+            hive_cad_lib::git::git_init,
+            hive_cad_lib::git::git_commit,
+            hive_cad_lib::git::git_sync,
+            hive_cad_lib::git::git_status,
+            hive_cad_lib::git::git_set_remote,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
