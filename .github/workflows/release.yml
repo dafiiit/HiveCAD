@@ -6,6 +6,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   # Job 1: Create the "Release" on GitHub so we have a place to upload files
   create-release:
