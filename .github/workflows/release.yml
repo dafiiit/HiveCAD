@@ -63,6 +63,6 @@ jobs:
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          # ⬇️ THIS IS THE IMPORTANT PART FOR UPDATES
-          # It tells Tauri: "Please generate the latest.json file for auto-updates"
+          # Force npm instead of auto-detecting bun
+          tauriScript: npx tauri
           tagName: ${{ github.ref_name }}
