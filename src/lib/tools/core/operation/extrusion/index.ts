@@ -77,9 +77,15 @@ export const extrusionTool: Tool = {
             const faceIndex = parseInt(faceStr);
 
             if (!isNaN(faceIndex)) {
+                // For face extrusion, we don't pass extrusionDirection since
+                // the face normal is used automatically. Only pass simple options.
+                const faceOpts: Record<string, any> = {};
+                if (twistAngle) faceOpts.twistAngle = twistAngle;
+                if (endFactor !== undefined && endFactor !== 1) faceOpts.endFactor = endFactor;
+
                 // Use the new addFaceExtrusion method which generates:
-                // const faceExtrusion1 = extrudeFace(baseId, faceIndex, distance);
-                const resultVar = codeManager.addFaceExtrusion(baseId, faceIndex, distance, opts);
+                // const faceExt1 = solid.fuse(extrudeFace(solid, faceIndex, distance, opts));
+                const resultVar = codeManager.addFaceExtrusion(baseId, faceIndex, distance, faceOpts);
 
                 // Handle boolean operations if selected
                 if (params.operation && params.operation !== 'new' && resultVar) {

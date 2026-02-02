@@ -353,10 +353,19 @@ self.onmessage = async (e) => {
 
             // Helper to access a face from a solid by its display index
             const getFace = (solid: any, faceIndex: number): any => {
-                if (!solid || !solid.faces) {
+                if (!solid) {
+                    throw new Error(`Cannot get face: solid is null or undefined`);
+                }
+
+                // Clone the solid to ensure we have a valid reference
+                const workingSolid = solid.clone ? solid.clone() : solid;
+
+                if (!workingSolid.faces) {
+                    console.error("Solid object:", workingSolid);
                     throw new Error(`Cannot get face: object does not have faces property`);
                 }
-                const faces = Array.from(solid.faces);
+
+                const faces = Array.from(workingSolid.faces);
                 if (faceIndex < 0 || faceIndex >= faces.length) {
                     throw new Error(`Face index ${faceIndex} out of range (0-${faces.length - 1})`);
                 }
@@ -364,25 +373,102 @@ self.onmessage = async (e) => {
             };
 
             // Helper to extrude a face from a solid
-            // Uses replicad's basicFaceExtrusion or falls back to manual approach
+            // Creates a Sketch from the face's outer wire and extrudes it along the face normal
+            // Based on the approach from replicad manual section 5.2.3
             const extrudeFace = (solid: any, faceIndex: number, distance: number, options?: any): any => {
                 const face = getFace(solid, faceIndex);
 
-                // Try basicFaceExtrusion if available on the face
-                if (face.basicFaceExtrusion) {
-                    return face.basicFaceExtrusion(distance);
+                // Clone the face to prevent "object has been deleted" errors
+                // OpenCascade may garbage collect the face reference
+                const faceClone = face.clone ? face.clone() : face;
+
+                // Get the face's properties for creating a sketch
+                const outerWire = faceClone.outerWire ? faceClone.outerWire() : null;
+                const faceNormal = faceClone.normalAt ? faceClone.normalAt() : null;
+                const faceCenter = faceClone.center;
+
+                if (!outerWire) {
+                    throw new Error(`Cannot extract outer wire from face ${faceIndex}`);
                 }
 
-                // Alternative: Use makePrism or sweep approach
-                // Get face normal for direction
-                const normal = face.normalAt ? face.normalAt() : null;
-                if (normal && (replicad as any).makePrism) {
-                    const direction = [normal.x * distance, normal.y * distance, normal.z * distance];
-                    return (replicad as any).makePrism(face, direction);
+                if (!faceNormal) {
+                    throw new Error(`Cannot get normal for face ${faceIndex}`);
                 }
 
-                // Last resort: create a shell/loft
-                throw new Error(`Face extrusion not supported for this geometry type`);
+                // Create a Sketch from the face's outer wire
+                // Based on: new r.Sketch(triBase.clone().outerWire(), { 
+                //   defaultDirection: triBase.normalAt(triBase.center), 
+                //   defaultOrigin: triBase.center 
+                // })
+                const Sketch = (replicad as any).Sketch;
+
+                let faceSketch;
+                if (Sketch) {
+                    try {
+                        faceSketch = new Sketch(outerWire.clone(), {
+                            defaultDirection: faceNormal,
+                            defaultOrigin: faceCenter
+                        });
+                    } catch (e) {
+                        console.error("Failed to create Sketch from wire:", e);
+                    }
+                }
+
+                // Determine extrusion direction (along face normal)
+                const extrusionDir = options?.extrusionDirection || [
+                    faceNormal.x * Math.sign(distance),
+                    faceNormal.y * Math.sign(distance),
+                    faceNormal.z * Math.sign(distance)
+                ];
+
+                let extrudedShape = null;
+
+                // Method 1: Extrude the sketch we created
+                if (faceSketch && faceSketch.extrude) {
+                    try {
+                        extrudedShape = faceSketch.extrude(Math.abs(distance), {
+                            extrusionDirection: extrusionDir
+                        });
+                    } catch (e) {
+                        console.error("Sketch extrusion failed:", e);
+                    }
+                }
+
+                // Method 2: Try face.extrude directly if available
+                if (!extrudedShape && face.extrude) {
+                    try {
+                        extrudedShape = face.extrude(distance, {
+                            extrusionDirection: extrusionDir
+                        });
+                    } catch (e) {
+                        console.error("Face.extrude failed:", e);
+                    }
+                }
+
+                // Method 3: Try basicFaceExtrusion
+                if (!extrudedShape && face.basicFaceExtrusion) {
+                    try {
+                        extrudedShape = face.basicFaceExtrusion(distance);
+                    } catch (e) {
+                        console.error("basicFaceExtrusion failed:", e);
+                    }
+                }
+
+                if (!extrudedShape) {
+                    throw new Error(`Face extrusion failed for face ${faceIndex}. None of the available methods worked.`);
+                }
+
+                // If options specify fusing with original solid
+                if (options?.fuseWithOriginal !== false && solid.fuse) {
+                    try {
+                        return solid.fuse(extrudedShape);
+                    } catch (e) {
+                        console.error("Fuse failed, returning standalone extrusion:", e);
+                        return extrudedShape;
+                    }
+                }
+
+                return extrudedShape;
             };
 
             const hasDefaultParams = /const\s+defaultParams\s*=/.test(code);

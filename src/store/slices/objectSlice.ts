@@ -186,8 +186,21 @@ export const createObjectSlice: StateCreator<
                     }
                     if (reqs.allowedTypes) {
                         const invalidSelection = selectedIds.some(id => {
-                            const obj = currentState.objects.find(o => o.id === id);
+                            // Handle face/edge/vertex selections like "shape1:face-0"
+                            const baseId = id.split(':')[0];
+                            const isFaceSelection = id.includes(':face-');
+                            const isEdgeSelection = id.includes(':edge-');
+                            const isVertexSelection = id.includes(':vertex-');
+
+                            const obj = currentState.objects.find(o => o.id === baseId);
                             if (!obj) return true;
+
+                            // Check if the selection type itself is allowed
+                            if (isFaceSelection && reqs.allowedTypes?.includes('face')) return false;
+                            if (isEdgeSelection && reqs.allowedTypes?.includes('edge')) return false;
+                            if (isVertexSelection && reqs.allowedTypes?.includes('vertex')) return false;
+
+                            // Check the object's type
                             if (reqs.allowedTypes?.includes(obj.type as any)) return false;
                             const isSolid = ['box', 'cylinder', 'sphere', 'torus', 'coil', 'extrusion', 'revolve'].includes(obj.type);
                             const isSketch = obj.type === 'sketch' || toolRegistry.get(obj.type)?.metadata.category === 'sketch';

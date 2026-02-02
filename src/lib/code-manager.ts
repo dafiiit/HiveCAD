@@ -283,42 +283,77 @@ export class CodeManager {
      * Generate code to extrude a face from an existing solid
      * Uses the extrudeFace helper function available in the worker execution context
      * 
+     * Generates:
+     *   const _ext1 = extrudeFace(solid, faceIndex, distance, {fuseWithOriginal: false});
+     *   const faceExt1 = solid.fuse(_ext1);
+     * 
      * @param solidId - The variable name of the solid
      * @param faceIndex - The display-time face index
      * @param distance - Extrusion distance
      * @param options - Optional extrusion options
-     * @returns The variable name of the new extruded shape
+     * @returns The variable name of the new fused shape
      */
     addFaceExtrusion(solidId: string, faceIndex: number, distance: number, options?: Record<string, any>): string {
         if (!this.ast) return '';
 
-        const newVarName = `faceExtrusion${this.features.length + 1}`;
+        const tempVarName = `_ext${Date.now() % 10000}`;
+        const newVarName = `faceExt${this.features.length + 1}`;
 
-        // Build arguments: extrudeFace(solid, faceIndex, distance, options?)
-        const args: t.Expression[] = [
+        // Build options with fuseWithOriginal: false so extrudeFace returns just the extrusion
+        const extrudeOpts = { ...options, fuseWithOriginal: false };
+
+        // Build: extrudeFace(solid, faceIndex, distance, {fuseWithOriginal: false})
+        const extrudeArgs: t.Expression[] = [
             t.identifier(solidId),
             t.numericLiteral(faceIndex),
-            t.numericLiteral(distance)
+            t.numericLiteral(distance),
+            this.convertArgToAST(extrudeOpts)
         ];
+        const extrudeCall = t.callExpression(t.identifier('extrudeFace'), extrudeArgs);
 
-        if (options && Object.keys(options).length > 0) {
-            args.push(this.convertArgToAST(options));
-        }
+        // Step 1: const _ext1 = extrudeFace(solid, faceIndex, distance, {fuseWithOriginal: false});
+        const tempDecl = t.variableDeclaration('const', [
+            t.variableDeclarator(t.identifier(tempVarName), extrudeCall)
+        ]);
 
-        // Generate: const faceExtrusion1 = extrudeFace(solid, faceIndex, distance);
-        const init = t.callExpression(t.identifier('extrudeFace'), args);
-
-        const decl = t.variableDeclaration('const', [
-            t.variableDeclarator(t.identifier(newVarName), init)
+        // Step 2: const faceExt1 = solid.fuse(_ext1);
+        const fuseCall = t.callExpression(
+            t.memberExpression(t.identifier(solidId), t.identifier('fuse')),
+            [t.identifier(tempVarName)]
+        );
+        const fuseDecl = t.variableDeclaration('const', [
+            t.variableDeclarator(t.identifier(newVarName), fuseCall)
         ]);
 
         let injected = false;
 
-        // Inject into main function
+        // Inject both statements into main function
         traverse(this.ast, {
             FunctionDeclaration: (path: any) => {
                 if (path.node.id?.name === 'main') {
-                    this.injectIntoBody(path.node.body.body, decl, newVarName);
+                    const body = path.node.body.body;
+                    const returnIdx = body.findIndex((n: any) => t.isReturnStatement(n));
+                    if (returnIdx !== -1) {
+                        // Insert both declarations before return
+                        body.splice(returnIdx, 0, tempDecl, fuseDecl);
+                        // Update return to include the new variable
+                        const returnStmt = body[returnIdx + 2];
+                        if (returnStmt && t.isReturnStatement(returnStmt)) {
+                            if (!returnStmt.argument) {
+                                returnStmt.argument = t.arrayExpression([t.identifier(newVarName)]);
+                            } else if (t.isArrayExpression(returnStmt.argument)) {
+                                returnStmt.argument.elements.push(t.identifier(newVarName));
+                            } else {
+                                returnStmt.argument = t.arrayExpression([
+                                    returnStmt.argument,
+                                    t.identifier(newVarName)
+                                ]);
+                            }
+                        }
+                    } else {
+                        body.push(tempDecl, fuseDecl);
+                        body.push(t.returnStatement(t.arrayExpression([t.identifier(newVarName)])));
+                    }
                     injected = true;
                     path.stop();
                 }
@@ -327,7 +362,27 @@ export class CodeManager {
                 if (t.isIdentifier(path.node.id) && path.node.id.name === 'main' &&
                     (t.isArrowFunctionExpression(path.node.init) || t.isFunctionExpression(path.node.init))) {
                     if (t.isBlockStatement(path.node.init.body)) {
-                        this.injectIntoBody(path.node.init.body.body, decl, newVarName);
+                        const body = path.node.init.body.body;
+                        const returnIdx = body.findIndex((n: any) => t.isReturnStatement(n));
+                        if (returnIdx !== -1) {
+                            body.splice(returnIdx, 0, tempDecl, fuseDecl);
+                            const returnStmt = body[returnIdx + 2];
+                            if (returnStmt && t.isReturnStatement(returnStmt)) {
+                                if (!returnStmt.argument) {
+                                    returnStmt.argument = t.arrayExpression([t.identifier(newVarName)]);
+                                } else if (t.isArrayExpression(returnStmt.argument)) {
+                                    returnStmt.argument.elements.push(t.identifier(newVarName));
+                                } else {
+                                    returnStmt.argument = t.arrayExpression([
+                                        returnStmt.argument,
+                                        t.identifier(newVarName)
+                                    ]);
+                                }
+                            }
+                        } else {
+                            body.push(tempDecl, fuseDecl);
+                            body.push(t.returnStatement(t.arrayExpression([t.identifier(newVarName)])));
+                        }
                         injected = true;
                         path.stop();
                     }
@@ -336,7 +391,7 @@ export class CodeManager {
         });
 
         if (!injected) {
-            (this.ast.program.body as any[]).push(decl);
+            (this.ast.program.body as any[]).push(tempDecl, fuseDecl);
         }
 
         this.regenerate();
