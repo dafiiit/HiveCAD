@@ -1,0 +1,65 @@
+name: Release App
+
+# Trigger the build only when you push a tag starting with 'v' (e.g. v1.0.0)
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # Job 1: Create the "Release" on GitHub so we have a place to upload files
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create Release
+        id: create-release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true  # Make it a draft first so you can check it before publishing
+          prerelease: false
+
+  # Job 2: Build the app for Mac, Windows, and Linux
+  build-tauri:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, ubuntu-22.04, windows-latest]
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Install Linux-specific dependencies (only runs on Ubuntu)
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev build-essential curl wget libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Build Tauri App
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # These secrets must be added to your GitHub Repo Settings!
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          # ⬇️ THIS IS THE IMPORTANT PART FOR UPDATES
+          # It tells Tauri: "Please generate the latest.json file for auto-updates"
+          tagName: ${{ github.ref_name }}

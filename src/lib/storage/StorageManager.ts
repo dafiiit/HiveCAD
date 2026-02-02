@@ -1,18 +1,46 @@
 import { StorageAdapter, StorageType } from './types';
 import { GitHubAdapter } from './adapters/GitHubAdapter';
+import { isDesktop } from '../platform/platform';
 
 export class StorageManager {
     private static instance: StorageManager;
     private adapters: Map<StorageType, StorageAdapter> = new Map();
     private _currentAdapter: StorageAdapter;
+    private _initialized = false;
 
     private constructor() {
-        // Only GitHub is used in the federated architecture
+        // Register GitHubAdapter (always available)
         this.registerAdapter(new GitHubAdapter());
 
-        // Set default
+        // Set GitHub as initial default - will switch after async init if desktop
         this._currentAdapter = this.adapters.get('github')!;
     }
+
+    /**
+     * Initialize platform-specific adapters
+     * Call this once at app startup
+     */
+    async initialize(): Promise<void> {
+        if (this._initialized) return;
+
+        if (isDesktop()) {
+            // Dynamic import to enable tree-shaking in web builds
+            const { LocalGitAdapter } = await import('./adapters/LocalGitAdapter');
+            const localAdapter = new LocalGitAdapter();
+            this.registerAdapter(localAdapter);
+            this._currentAdapter = localAdapter;
+            console.log('[StorageManager] Initialized with LocalGitAdapter for desktop');
+        } else {
+            console.log('[StorageManager] Initialized with GitHubAdapter for web');
+        }
+
+        this._initialized = true;
+    }
+
+    get isInitialized(): boolean {
+        return this._initialized;
+    }
+
 
     static getInstance(): StorageManager {
         if (!StorageManager.instance) {

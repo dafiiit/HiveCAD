@@ -1,10 +1,13 @@
 import { supabase } from './supabase';
 import { Provider } from '@supabase/supabase-js';
+import { isDesktop } from '../platform/platform';
 
 /**
  * AuthService to handle authentication and session management using Supabase.
  */
 export class AuthService {
+    private static deepLinkUnsubscribe: (() => void) | null = null;
+
     static async signup(email: string, password: string): Promise<any> {
         const { data, error } = await supabase.auth.signUp({
             email,
@@ -39,8 +42,39 @@ export class AuthService {
     }
 
     static async signInWithOAuth(provider: Provider): Promise<void> {
-        const redirectUrl = import.meta.env.VITE_AUTH_REDIRECT_URL || window.location.origin;
+        const baseRedirectUrl = import.meta.env.VITE_AUTH_REDIRECT_URL || window.location.origin;
+
+        // Use deep link scheme for desktop
+        const redirectUrl = isDesktop()
+            ? 'hivecad://auth/callback'
+            : baseRedirectUrl;
+
         console.log('Starting OAuth sign-in with redirect URL:', redirectUrl);
+
+        if (isDesktop()) {
+            // Set up deep link listener for OAuth callback
+            await this.setupDesktopAuthListener();
+
+            // Get OAuth URL and open in system browser
+            const { data, error } = await supabase.auth.signInWithOAuth({
+                provider,
+                options: {
+                    redirectTo: redirectUrl,
+                    skipBrowserRedirect: true, // Don't redirect in webview
+                },
+            });
+
+            if (error) throw error;
+
+            // Open the auth URL in system browser
+            if (data.url) {
+                const { openUrl } = await import('../platform/desktop');
+                await openUrl(data.url);
+            }
+            return;
+        }
+
+        // Web flow - standard redirect
         const { error } = await supabase.auth.signInWithOAuth({
             provider,
             options: {
@@ -49,6 +83,46 @@ export class AuthService {
         });
 
         if (error) throw error;
+    }
+
+    /**
+     * Set up deep link listener for desktop OAuth callback
+     */
+    private static async setupDesktopAuthListener(): Promise<void> {
+        if (!isDesktop()) return;
+
+        // Clean up existing listener
+        if (this.deepLinkUnsubscribe) {
+            this.deepLinkUnsubscribe();
+        }
+
+        const { onDeepLink } = await import('../platform/desktop');
+
+        this.deepLinkUnsubscribe = await onDeepLink(async (url: string) => {
+            console.log('[AuthService] Deep link received:', url);
+
+            // Parse the callback URL for access token
+            if (url.includes('auth/callback')) {
+                try {
+                    // Extract tokens from URL hash/query
+                    const urlObj = new URL(url.replace('hivecad://', 'https://'));
+                    const hashParams = new URLSearchParams(urlObj.hash.slice(1));
+                    const accessToken = hashParams.get('access_token');
+                    const refreshToken = hashParams.get('refresh_token');
+
+                    if (accessToken && refreshToken) {
+                        // Set session in Supabase
+                        await supabase.auth.setSession({
+                            access_token: accessToken,
+                            refresh_token: refreshToken,
+                        });
+                        console.log('[AuthService] Desktop OAuth successful');
+                    }
+                } catch (error) {
+                    console.error('[AuthService] Failed to process OAuth callback:', error);
+                }
+            }
+        });
     }
 
     static async updatePAT(email: string, pat: string | null): Promise<void> {
