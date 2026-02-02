@@ -5,10 +5,6 @@ description = "HiveCAD Desktop Application"
 authors = ["HiveCAD"]
 edition = "2021"
 
-[lib]
-name = "hive_cad_lib"
-crate-type = ["lib", "cdylib", "staticlib"]
-
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -24,7 +20,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 git2 = "0.19"
 dirs = "5"
-tokio = { version = "1", features = ["full"] }
 
 [profile.release]
 panic = "abort"
