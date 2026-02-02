@@ -1,3 +1,21 @@
 {
-    "plugins": {}
+    "identifier": "default",
+    "description": "Default permissions for HiveCAD",
+    "windows": [
+        "main"
+    ],
+    "permissions": [
+        "core:default",
+        "shell:allow-open",
+        "shell:allow-execute",
+        "fs:default",
+        "fs:allow-read-text-file",
+        "fs:allow-write-text-file",
+        "fs:allow-exists",
+        "fs:allow-mkdir",
+        "fs:allow-remove",
+        "fs:allow-read-dir",
+        "dialog:default",
+        "http:default"
+    ]
 }
