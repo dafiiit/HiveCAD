@@ -70,7 +70,7 @@ export function AuthDialog({ forcePAT = false }: { forcePAT?: boolean }) {
                             <div className="mx-auto w-48 h-48 relative flex items-center justify-center">
                                 <div className="absolute inset-0 bg-primary/40 rounded-full blur-3xl animate-pulse" />
                                 <div className="relative z-10 w-44 h-44 flex items-center justify-center animate-bounce-slow">
-                                    <img src="/favicon.ico" alt="HiveCAD Logo" className="w-40 h-40 object-contain drop-shadow-[0_0_35px_#1565c0]" />
+                                    <img src="/logo-transparent.png" alt="HiveCAD Logo" className="w-40 h-40 object-contain drop-shadow-[0_0_35px_#1565c0]" />
                                 </div>
                             </div>
                             <div className="space-y-2">
@@ -93,7 +93,7 @@ export function AuthDialog({ forcePAT = false }: { forcePAT?: boolean }) {
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-500">
                         <div className="text-center space-y-2">
                             <div className="mx-auto w-16 h-16 mb-4">
-                                <img src="/favicon.ico" alt="HiveCAD Logo" className="w-full h-full object-contain" />
+                                <img src="/logo-transparent.png" alt="HiveCAD Logo" className="w-full h-full object-contain" />
                             </div>
                             <h2 className="text-2xl font-bold tracking-tight text-white">{mode === 'signup' ? 'Create Account' : 'Welcome Back'}</h2>
                             <p className="text-zinc-500">{mode === 'signup' ? 'Join the federated engineering community.' : 'Enter your credentials to continue.'}</p>
@@ -163,7 +163,7 @@ export function AuthDialog({ forcePAT = false }: { forcePAT?: boolean }) {
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-500">
                         <div className="text-center space-y-2">
                             <div className="mx-auto w-16 h-16 mb-4">
-                                <img src="/favicon.ico" alt="HiveCAD Logo" className="w-full h-full object-contain" />
+                                <img src="/logo-transparent.png" alt="HiveCAD Logo" className="w-full h-full object-contain" />
                             </div>
                             <h2 className="text-2xl font-bold tracking-tight text-white">Link your GitHub</h2>
                             <p className="text-zinc-500">HiveCAD is decentralized. Your designs stay in your GitHub.</p>

@@ -19,7 +19,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({ message, className
                 {/* Logo with scaling pulse */}
                 <div className="relative animate-logo-pulse">
                     <img
-                        src="/favicon.ico"
+                        src="/logo-transparent.png"
                         alt="HiveCAD Logo"
                         className="w-24 h-24 rounded-2xl shadow-2xl border border-primary/20"
                     />

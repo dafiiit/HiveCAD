@@ -61,6 +61,10 @@ jobs:
           # These secrets must be added to your GitHub Repo Settings!
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+          # Supabase configuration - add these as GitHub secrets!
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_AUTH_REDIRECT_URL: hivecad://auth/callback
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           # Force npm instead of auto-detecting bun
