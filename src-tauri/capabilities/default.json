@@ -6,7 +6,14 @@
     ],
     "permissions": [
         "core:default",
-        "shell:allow-open",
+        {
+            "identifier": "shell:allow-open",
+            "allow": [
+                {
+                    "href": "https://**"
+                }
+            ]
+        },
         "shell:allow-execute",
         "fs:default",
         "fs:allow-read-text-file",
