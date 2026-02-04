@@ -21,7 +21,7 @@ jobs:
         id: create-release
         uses: softprops/action-gh-release@v1
         with:
-          draft: true  # Make it a draft first so you can check it before publishing
+          draft: false  # Make it a draft first so you can check it before publishing
           prerelease: false
 
   # Job 2: Build the app for Mac, Windows, and Linux

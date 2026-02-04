@@ -1,34 +1,38 @@
 # HiveCAD
 
-HiveCAD is an advanced CAD suite built with React, Three.js, and Replicad.
+HiveCAD is an advanced, modular CAD suite built with React, Three.js, and Replicad.
+
+## 📚 Documentation
+
+Detailed documentation has been moved to the `docs/` folder:
+
+- **[Release Process](docs/release.md)**: How to trigger a new version release.
+- **[Architecture & Storage](docs/architecture.md)**: High-level app structure and data storage details.
+- **[Modules & Status](docs/modules.md)**: Current state of modules and extensions.
 
 ## Getting Started
 
-To get started with development, follow these steps:
+To get started with development:
 
 ```sh
-# Step 1: Clone the repository
+# Clone the repository
 git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory
 cd hive-cad
 
-# Step 3: Install dependencies
+# Install dependencies
 npm i
 
-# Step 4: Start the development server
+# Start the development server
 npm run dev
 ```
 
 ## Technologies
 
-- **Vite**: Build tool and dev server
-- **TypeScript**: Static typing
-- **React**: UI library
-- **Three.js / React Three Fiber**: 3D rendering
-- **Replicad**: CAD kernel (OpenCASCADE via WASM)
-- **shadcn-ui**: UI components
-- **Tailwind CSS**: Styling
+- **Vite** + **React**
+- **Tauri** (Rust Backend)
+- **Three.js** / **React Three Fiber**
+- **Replicad** (OCCT via WASM)
+- **shadcn-ui** + **Tailwind CSS**
 
 ## License
 
