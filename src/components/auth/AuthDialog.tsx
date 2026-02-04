@@ -198,8 +198,15 @@ export function AuthDialog({ forcePAT = false }: { forcePAT?: boolean }) {
                                     <Button
                                         className="w-full h-14 text-lg bg-primary hover:bg-primary/90 text-white shadow-[0_0_20px_rgba(var(--primary),0.3)]"
                                         onClick={async () => {
-                                            const { openUrl } = await import('@/lib/platform/desktop');
-                                            openUrl("https://github.com/settings/tokens/new?description=HiveCAD%20Storage&scopes=repo,user");
+                                            const url = "https://github.com/settings/tokens/new?description=HiveCAD%20Storage&scopes=repo,user";
+                                            try {
+                                                const { getPlatformApi } = await import('@/lib/platform');
+                                                const platform = await getPlatformApi();
+                                                await platform.openUrl(url);
+                                            } catch (error) {
+                                                // Fallback to window.open for web
+                                                window.open(url, '_blank');
+                                            }
                                             setPatSubStep('verify');
                                         }}
                                     >

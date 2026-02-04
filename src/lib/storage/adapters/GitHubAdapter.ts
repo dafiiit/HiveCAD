@@ -202,6 +202,7 @@ export class GitHubAdapter implements StorageAdapter {
             tags: data.tags || [],
             deletedAt: data.deletedAt,
             folder: data.folder,
+            description: data.description,
         };
 
         // 2. Prepare CAD Data
@@ -263,7 +264,7 @@ export class GitHubAdapter implements StorageAdapter {
                 .upsert({
                     id: projectId,
                     name: projectListData.name,
-                    description: (data as any).description || 'A HiveCAD Project',
+                    description: projectListData.description || 'A HiveCAD Project',
                     thumbnail_url: `${import.meta.env.VITE_GITHUB_PAGES_URL || `https://raw.githubusercontent.com/${owner}/${repo}/main/`}hivecad/thumbnails/${projectId}.png`,
                     github_owner: owner,
                     github_repo: repo,

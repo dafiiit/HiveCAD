@@ -6,6 +6,8 @@
     ],
     "permissions": [
         "core:default",
+        "core:event:default",
+        "deep-link:default",
         {
             "identifier": "shell:allow-open",
             "allow": [

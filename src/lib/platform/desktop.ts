@@ -11,7 +11,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { check } from '@tauri-apps/plugin-updater';
 import { open } from '@tauri-apps/plugin-shell';
-import { listen } from '@tauri-apps/api/event';
 
 // ============================================
 // File System Operations
@@ -137,15 +136,30 @@ export async function installUpdate(): Promise<void> {
 // Deep Linking
 // ============================================
 
+import { onOpenUrl, getCurrent as getDeepLinkCurrent } from '@tauri-apps/plugin-deep-link';
+
 export type DeepLinkCallback = (url: string) => void;
 
 /**
- * Listen for deep link events
+ * Listen for deep link events using the official plugin API
  */
 export async function onDeepLink(callback: DeepLinkCallback): Promise<() => void> {
-    const unlisten = await listen<string>('deep-link://new-url', (event) => {
-        callback(event.payload);
+    // Check for deep links that opened the app
+    try {
+        const startUrls = await getDeepLinkCurrent();
+        if (startUrls && startUrls.length > 0) {
+            startUrls.forEach(url => callback(url));
+        }
+    } catch (error) {
+        console.warn('[Desktop] Failed to get current deep links:', error);
+    }
+
+    // Listen for deep links while the app is running
+    const unlisten = await onOpenUrl((urls) => {
+        console.log('[Desktop] Deep link received:', urls);
+        urls.forEach(url => callback(url));
     });
+
     return unlisten;
 }
 

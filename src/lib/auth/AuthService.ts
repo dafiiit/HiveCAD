@@ -109,11 +109,34 @@ export class AuthService {
             // Parse the callback URL for access token
             if (url.includes('auth/callback')) {
                 try {
-                    // Extract tokens from URL hash/query
+                    // Replace custom scheme with https for URL parsing
                     const urlObj = new URL(url.replace('hivecad://', 'https://'));
-                    const hashParams = new URLSearchParams(urlObj.hash.slice(1));
-                    const accessToken = hashParams.get('access_token');
-                    const refreshToken = hashParams.get('refresh_token');
+
+                    // Try to get tokens from hash first (implicit flow)
+                    let accessToken: string | null = null;
+                    let refreshToken: string | null = null;
+
+                    if (urlObj.hash && urlObj.hash.length > 1) {
+                        const hashParams = new URLSearchParams(urlObj.hash.slice(1));
+                        accessToken = hashParams.get('access_token');
+                        refreshToken = hashParams.get('refresh_token');
+                        console.log('[AuthService] Tokens from hash:', { hasAccessToken: !!accessToken, hasRefreshToken: !!refreshToken });
+                    }
+
+                    // Fallback to query params if not in hash
+                    if (!accessToken) {
+                        accessToken = urlObj.searchParams.get('access_token');
+                        refreshToken = urlObj.searchParams.get('refresh_token');
+                        console.log('[AuthService] Tokens from query:', { hasAccessToken: !!accessToken, hasRefreshToken: !!refreshToken });
+                    }
+
+                    // Check for error in the callback
+                    const error = urlObj.searchParams.get('error') ||
+                        (urlObj.hash && new URLSearchParams(urlObj.hash.slice(1)).get('error'));
+                    if (error) {
+                        console.error('[AuthService] OAuth error:', error, urlObj.searchParams.get('error_description'));
+                        return;
+                    }
 
                     if (accessToken && refreshToken) {
                         // Set session in Supabase
@@ -121,7 +144,9 @@ export class AuthService {
                             access_token: accessToken,
                             refresh_token: refreshToken,
                         });
-                        console.log('[AuthService] Desktop OAuth successful');
+                        console.log('[AuthService] Desktop OAuth successful - session set');
+                    } else {
+                        console.warn('[AuthService] OAuth callback received but no tokens found in URL:', url);
                     }
                 } catch (error) {
                     console.error('[AuthService] Failed to process OAuth callback:', error);

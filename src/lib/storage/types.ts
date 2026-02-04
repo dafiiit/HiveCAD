@@ -56,6 +56,7 @@ export interface ProjectData {
     lastOpenedAt?: number;
     thumbnail?: string;
     folder?: string;
+    description?: string;
 }
 
 export interface StorageAdapter {
