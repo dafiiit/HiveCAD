@@ -5,6 +5,7 @@ export interface StorageConfig {
     name: string;
     icon: string;
     isAuthenticated: boolean;
+    // todo:refine Replace mock token handling with a secure auth/session model.
     token?: string; // For demo purposes, we'll store mock tokens here
 }
 

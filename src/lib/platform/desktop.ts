@@ -181,6 +181,7 @@ const PAT_STORAGE_KEY = 'hivecad_github_pat';
  * Note: For production, consider using tauri-plugin-keyring for system keychain
  */
 export async function storeGitHubPat(pat: string): Promise<void> {
+    // todo:refine Store PAT in system keychain instead of localStorage.
     // For now, use localStorage. In production, use keychain
     localStorage.setItem(PAT_STORAGE_KEY, pat);
 }

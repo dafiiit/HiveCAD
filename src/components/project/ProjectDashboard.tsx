@@ -216,6 +216,7 @@ export function ProjectDashboard() {
 
             // 4. Also copy thumbnail if exists
             if (project.thumbnail) {
+                // todo:refine Fetch and re-save the thumbnail so forked projects have their own cached image.
                 // We'd ideally fetch the image and re-save it, but for now we'll just let the new index entry use the old URL or wait for next save
                 // Actually, save() already triggers the Supabase index update.
             }
@@ -489,7 +490,7 @@ export function ProjectDashboard() {
         }
 
         // Set default thumbnail to prevent broken images before first save
-        // This is a simple 1x1 transparent pixel, or could be a branded placeholder
+        // todo:refine This is a simple 1x1 transparent pixel; consider a branded placeholder.
         const DEFAULT_THUMBNAIL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
         // We'll rely on openProjectInNewTab's internal logic, but we can also pre-seed the local storage
@@ -514,6 +515,7 @@ export function ProjectDashboard() {
             const { StorageManager } = await import('@/lib/storage/StorageManager');
             const adapter = StorageManager.getInstance().currentAdapter;
 
+            // todo:refine Disable or hide reset actions when the adapter lacks reset support.
             if (adapter.resetRepository) {
                 // 1. Clear GitHub Repository
                 await adapter.resetRepository();

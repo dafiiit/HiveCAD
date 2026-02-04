@@ -1,4 +1,5 @@
 
+// todo:refine Prototype script; convert into a real test or integrate into production codegen.
 import parser from '@babel/parser';
 import traverseBabel from '@babel/traverse';
 import generate from '@babel/generator';

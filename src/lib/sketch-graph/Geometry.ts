@@ -281,7 +281,7 @@ export function intersect(g1: Geometry, g2: Geometry): Point2D[] {
         }
     }
     // Circle-Circle / Arc-Arc / Circle-Arc
-    // TODO: Implement if needed. For now, we mainly care about Line/Line and Line/Arc for sketches.
+    // todo:everything Implement if needed. For now, we mainly care about Line/Line and Line/Arc for sketches.
 
     return points;
 }

@@ -32,7 +32,7 @@ export class InteractionManager {
             }
         }
 
-        // Default generic selector (placeholder)
+        // todo:refine Default generic selector placeholder.
         return `(e) => e.id === '${selectionId}'`;
     }
 }

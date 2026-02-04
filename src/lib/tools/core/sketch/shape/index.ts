@@ -118,6 +118,7 @@ export const roundedRectangleTool: Tool = {
         { key: 'radius', label: 'Corner Radius', type: 'number', default: 3, unit: 'mm', min: 0 }
     ],
     getPlanarGeometry(primitive: SketchPrimitiveData): any[] {
+        // todo:refine Generate actual rounded-rectangle edges in the planar graph instead of reusing rectangles.
         // Reuse rectangle geometry for now (ignoring corners in graph for simplicity, as per legacy implementation)
         return rectangleTool.getPlanarGeometry!(primitive);
     },
@@ -151,6 +152,7 @@ export const roundedRectangleTool: Tool = {
         to3D: (x: number, y: number) => THREE.Vector3,
         isGhost: boolean = false
     ) {
+        // todo:refine Render rounded-corner previews instead of reusing rectangle visuals.
         // Same as rectangle for now, rounded corners are complex to preview
         return rectangleTool.renderPreview?.(primitive, to3D, isGhost) ?? null;
     }

@@ -377,6 +377,7 @@ export const createObjectSlice: StateCreator<
         set({ objects: updatedObjects, selectedIds: new Set() });
     },
 
+    // todo:everything Implement duplicate selection in Code First.
     duplicateSelected: () => {
         console.log("Duplicate not implemented in Code First yet");
     },

@@ -790,6 +790,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
   // Section view clipping planes
   const clippingPlanes = React.useMemo(() => {
     if (!sectionViewEnabled) return [];
+    // todo:refine Build section planes from user-defined cutters instead of a fixed demo plane.
     // Just a simple X-plane for now as a demo
     return [new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0)];
   }, [sectionViewEnabled]);

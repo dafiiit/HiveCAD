@@ -100,6 +100,7 @@ export class CleanupUtility {
     static async forceCleanup(): Promise<{ deleted: number; renamed: number }> {
         this.lastRun = 0; // Reset timer
         await this.runBackgroundCleanup();
+        // todo:refine Track deleted/renamed counts during cleanup instead of returning zeros.
         return { deleted: 0, renamed: 0 }; // Would need to track these but log is sufficient for now
     }
 }

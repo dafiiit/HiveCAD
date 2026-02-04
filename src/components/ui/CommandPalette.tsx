@@ -178,7 +178,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
                     isExtension: true,
                     action: () => {
                         toast.success(`Loading extension: ${ext.name}`);
-                        // Extensions logic placeholder
+                        // todo:everything Extensions logic placeholder.
                     }
                 };
             })

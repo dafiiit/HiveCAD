@@ -56,7 +56,7 @@ export class GraphEdge {
             const angle = Math.atan2(p1.y - arc.center.y, p1.x - arc.center.x);
             // Tangent is perpendicular to radius. Direction depends on CW/CCW and if we are at start or end.
             // Simplified: compute a point slightly along the curve
-            // TODO: Analytical tangent is better.
+            // todo:refine Analytical tangent is better.
             const isStart = pointsEqual(p1, arc.startPoint);
             // If traversing from start, we go towards end.
             // If traversing from end, we go towards start (reversing the arc direction effectively)
@@ -73,7 +73,8 @@ export class GraphEdge {
             }
         } else {
             // Circle shouldn't be an edge usually (closed loop itself), but if so...
-            p2 = { x: p1.x + 1, y: p1.y }; // Placeholder
+            // todo:refine Placeholder tangent direction for circle edges.
+            p2 = { x: p1.x + 1, y: p1.y };
         }
 
         // Fallback for line tangent

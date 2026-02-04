@@ -170,6 +170,7 @@ export const DeveloperFeedbackDialog: React.FC<DeveloperFeedbackDialogProps> = (
         setIsSubmitting(true);
 
         try {
+            // todo:refine Disable the submit UI or provide an alternate path when the adapter lacks issue creation.
             if (!adapter.createIssue) {
                 throw new Error("Feedback submission is not supported by the current storage adapter.");
             }

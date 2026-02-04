@@ -80,6 +80,7 @@ export class SnappingEngine {
             // If it's a 3-point arc, we might also want to snap to the 'via' point as a generic point? 
             // For now, let's treat pts[2] as a point too if user wants to snap to it.
             if (pts.length >= 3) {
+                // todo:refine Add a dedicated snap type for arc via-points instead of reusing endpoints.
                 add(pts[2][0], pts[2][1], 'endpoint'); // Call it endpoint for now so it's high priority
             }
         }
@@ -97,6 +98,7 @@ export class SnappingEngine {
         if (prim.type === 'circle' && pts.length >= 1) {
             add(pts[0][0], pts[0][1], 'center');
             // For circle, the second point is on the circumference, which we could treat as "endpoint" or special "quadrant" snap?
+            // todo:refine Add quadrant/edge snaps for circles instead of only snapping to center.
             // For now, let's just do center.
         }
 

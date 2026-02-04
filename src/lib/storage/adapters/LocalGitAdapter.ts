@@ -171,25 +171,25 @@ export class LocalGitAdapter implements StorageAdapter {
     // ============================================
 
     async getHistory(_projectId: string): Promise<CommitInfo[]> {
-        // TODO: Implement using git log
+        // todo:everything Implement using git log
         // For now, return empty - full implementation would parse git log
         console.warn('[LocalGitAdapter] getHistory not fully implemented');
         return [];
     }
 
     async createBranch(_projectId: string, _sourceSha: string, _branchName: string): Promise<void> {
-        // TODO: Implement branch creation
+        // todo:everything Implement branch creation
         console.warn('[LocalGitAdapter] createBranch not implemented');
     }
 
     async getBranches(_projectId: string): Promise<BranchInfo[]> {
-        // TODO: Implement branch listing
+        // todo:everything Implement branch listing
         console.warn('[LocalGitAdapter] getBranches not implemented');
         return [];
     }
 
     async switchBranch(_branchName: string): Promise<void> {
-        // TODO: Implement branch switching
+        // todo:everything Implement branch switching
         console.warn('[LocalGitAdapter] switchBranch not implemented');
     }
 
@@ -257,35 +257,41 @@ export class LocalGitAdapter implements StorageAdapter {
     // ============================================
 
     async searchCommunityProjects(_query: string): Promise<any[]> {
+        // todo:everything Provide desktop-friendly community search or disable this feature in desktop mode.
         // Community search goes through web API
         console.warn('[LocalGitAdapter] Community search not available in desktop mode');
         return [];
     }
 
     async searchCommunityExtensions(_query: string): Promise<any[]> {
+        // todo:everything Provide desktop-friendly extension search or disable this feature in desktop mode.
         // Community search goes through web API
         console.warn('[LocalGitAdapter] Community extension search not available in desktop mode');
         return [];
     }
 
     async submitExtension(_extension: any): Promise<string> {
+        // todo:everything Support extension submission from desktop mode or guard the UI.
         throw new Error('Extension submission requires web mode');
     }
 
     async updateExtensionStatus(_extensionId: string, _status: 'development' | 'published'): Promise<void> {
+        // todo:everything Support extension status updates from desktop mode or guard the UI.
         throw new Error('Extension status updates require web mode');
     }
 
     async voteExtension(_extensionId: string, _voteType: 'like' | 'dislike'): Promise<void> {
+        // todo:everything Support voting from desktop mode or guard the UI.
         throw new Error('Extension voting requires web mode');
     }
 
     async incrementExtensionDownloads(_extensionId: string): Promise<void> {
+        // todo:everything Support download tracking from desktop mode or guard the UI.
         throw new Error('Extension download tracking requires web mode');
     }
 
     async createIssue(_title: string, _body: string): Promise<void> {
-        // TODO: Could implement via GitHub API
+        // todo:everything Could implement via GitHub API
         console.warn('[LocalGitAdapter] createIssue not implemented');
     }
 
@@ -294,6 +300,7 @@ export class LocalGitAdapter implements StorageAdapter {
     }
 
     async resetRepository(): Promise<void> {
+        // todo:everything Implement reset behavior for local repositories.
         console.warn('[LocalGitAdapter] resetRepository not implemented');
     }
 }

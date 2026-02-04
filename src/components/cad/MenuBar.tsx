@@ -159,6 +159,7 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
         <div className="flex items-center gap-1 h-full">
           <button
             className="p-1 rounded transition-colors flex items-center justify-center cursor-default"
+            // todo:refine Restore app menu action or remove the disabled control entirely.
             // Disabled for now - use tab close button (X) instead
             title="HiveCAD"
           >

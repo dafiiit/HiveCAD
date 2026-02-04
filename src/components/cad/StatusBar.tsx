@@ -71,6 +71,7 @@ const StatusBar = () => {
         const x = obj.position[0].toFixed(2);
         const y = obj.position[1].toFixed(2);
         const z = obj.position[2].toFixed(2);
+        // todo:everything Replace dummy mass with actual mass/volume computation from geometry metadata.
         // Dummy mass calculation based on bounding box or random for demo
         const mass = (Math.random() * 100 + 10).toFixed(1);
         return `X: ${x} Y: ${y} Z: ${z} | Mass: ${mass}g`;

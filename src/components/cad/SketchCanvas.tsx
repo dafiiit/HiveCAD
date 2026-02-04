@@ -750,7 +750,7 @@ const SketchCanvas = () => {
                             )}
                             {snapResult.snapPoint.type === 'midpoint' && (
                                 <mesh rotation={[0, 0, Math.PI / 6]}>
-                                    <coneGeometry args={[0.8, 0, 3]} /> {/* Triangle (hacky cone) */}
+                                    <coneGeometry args={[0.8, 0, 3]} /> {/* todo:refine Triangle marker uses a hacky cone. */}
                                     <meshBasicMaterial color="#00ff00" depthTest={false} />
                                 </mesh>
                             )}

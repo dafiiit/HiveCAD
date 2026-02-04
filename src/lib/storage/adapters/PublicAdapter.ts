@@ -23,6 +23,7 @@ export class PublicAdapter implements StorageAdapter {
         // Simulate network delay
         await new Promise(resolve => setTimeout(resolve, 800));
 
+        // todo:everything Replace localStorage mock with real public API persistence.
         // In a real app, this would POST to https://api.hivecad.com/projects
         localStorage.setItem(`hivecad_public_${projectId}`, JSON.stringify({
             ...data,

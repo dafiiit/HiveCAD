@@ -51,7 +51,7 @@ export class AssemblySolver {
         }
 
         // 2. Iterative optimization (Simple Gradient Descent / Relaxation for now)
-        // In a real implementation, we would use a Jacobian-based solver (Newton-Raphson)
+        // todo:refine Replace with a Jacobian-based solver (e.g., Newton-Raphson) for better convergence.
 
         let totalError = 0;
         for (let i = 0; i < this.maxIterations; i++) {
@@ -171,7 +171,7 @@ export class AssemblySolver {
             }
         }
 
-        // TODO: Implement other constraint types (Revolute aka align Z axis)
+        // todo:everything Implement other constraint types (Revolute aka align Z axis)
 
         return error;
     }
@@ -195,7 +195,7 @@ export class AssemblySolver {
         comp.transform.decompose(p, q, s);
 
         // Interpolate current rotation towards target
-        // Note: This is a hacky partial update. In real solver, we apply angular velocity.
+        // todo:refine This is a hacky partial update; in real solver, apply angular velocity.
         q.slerp(targetQ, this.learningRate);
 
         comp.transform.compose(p, q, s);

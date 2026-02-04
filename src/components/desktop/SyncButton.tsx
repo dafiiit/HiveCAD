@@ -24,6 +24,7 @@ export function SyncButton() {
             const manager = StorageManager.getInstance();
             const adapter = manager.currentAdapter as any;
 
+            // todo:refine Hide/disable the sync button when the current adapter lacks sync support.
             if (typeof adapter.sync !== 'function') {
                 throw new Error('Current adapter does not support sync');
             }

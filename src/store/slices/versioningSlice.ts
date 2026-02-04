@@ -452,8 +452,11 @@ export const createVersioningSlice: StateCreator<
             currentVersionId: repo.branches.has(repo.head) ? repo.branches.get(repo.head)! : repo.head,
         });
     },
+    // todo:everything Implement branch merge behavior.
     mergeBranch: (branchName, targetBranch) => console.log('Merge not implemented', { branchName, targetBranch }),
+    // todo:everything Implement set-main-branch behavior.
     setMainBranch: (versionId) => console.log('Set main branch not implemented', versionId),
     saveAs: (name) => set({ fileName: name, isSaved: true }),
+    // todo:everything Implement open behavior.
     open: () => console.log('Open not implemented'),
 });

@@ -52,6 +52,7 @@ export const createSketchHelper = (points: [number, number][], close: boolean = 
         drawing = pen.done();
     }
 
+    // todo:refine Accept a target plane instead of always defaulting to XY.
     // Default to XY plane for now
     return drawing.sketchOnPlane("XY");
 };
@@ -65,6 +66,7 @@ export const createSketchFromPrimitives = (primitives: { type: string, points: [
     const graph = new PlanarGraph();
 
     // 1. Convert Primitives to Graph Geometry
+    // todo:everything Support additional sketch primitives (rounded rectangles, splines, bezier curves, etc.).
     primitives.forEach(prim => {
         try {
             if (prim.type === 'line') {
@@ -397,4 +399,3 @@ export const replicadToThreeVertices = (shape: any): THREE.BufferGeometry | null
         return null;
     }
 }
-

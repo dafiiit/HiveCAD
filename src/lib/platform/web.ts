@@ -1,6 +1,7 @@
 /**
  * Web-specific implementations
- * 
+ *
+ * todo:everything Implement or provide web fallbacks for desktop-only APIs as needed.
  * These are stubs or web-specific implementations that match
  * the desktop API surface for consistent usage.
  */

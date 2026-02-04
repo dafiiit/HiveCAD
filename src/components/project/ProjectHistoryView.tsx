@@ -93,6 +93,7 @@ export function ProjectHistoryView({ isOpen, onClose, projectId, onViewVersion }
                 // We probably need a callback `onSwitchBranch`.
                 // For now, let's just close and let the user see the new branch state if the app handles it.
                 // Wait, App needs to know to reload.
+                // todo:refine Replace full page reload with a proper branch-switch callback that rehydrates project state.
                 window.location.reload(); // Brute force but effective for now to ensure all state is fresh? 
                 // Or better: use useCADStore or similar to trigger reload. 
                 // But we are deep in component.

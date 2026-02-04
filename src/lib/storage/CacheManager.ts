@@ -13,6 +13,7 @@ export class CacheManager {
 
             // Fetch metadata (lastModified) for all projects
             // We use Promise.all but be careful with memory if projects are huge. 
+            // todo:refine Store lightweight metadata separately to avoid loading full project data.
             // Ideally we'd store metadata separately, but for now we load them.
             const projectsWithMeta = await Promise.all(
                 projectKeys.map(async (key) => {

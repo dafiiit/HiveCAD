@@ -101,8 +101,10 @@ const CADLayout = () => {
           </button>
         </div>
 
+        {/* todo:refine Add fullscreen controls beyond the Viewport/ViewCube when requested. */}
         {/* Minimal controls could go here if requested, for now just the Viewport which includes ViewCube */}
 
+        {/* todo:refine Show operation properties in fullscreen when an operation is active. */}
         {/* We might want to show operation properties if an operation is active? Keeping it simple for now as requested. */}
       </div>
     );
