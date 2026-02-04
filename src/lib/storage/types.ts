@@ -1,4 +1,4 @@
-export type StorageType = 'public' | 'github' | 'drive' | 'local';
+export type StorageType = 'public' | 'github' | 'local';
 
 export interface StorageConfig {
     type: StorageType;
