@@ -30,7 +30,9 @@ export type ToolType =
     | 'move' | 'rotate' | 'scale' | 'copy'
     | 'trim' | 'join' | 'cut' | 'intersect'
     | 'measure' | 'dimension' | 'constrain'
-    | 'axis' | 'point' | 'sketchPoint' | 'offset';
+    | 'axis' | 'point' | 'sketchPoint' | 'offset'
+    // Allow extension-defined tool IDs without losing string inference.
+    | (string & {});
 
 export type ViewType = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 'home' | 'isometric';
 
@@ -379,6 +381,8 @@ export interface ToolbarSlice {
     activeToolbarId: string | null;
     isEditingToolbar: boolean;
     folders: Record<string, ToolbarFolder>;
+    extensionStoreOpen: boolean;
+    extensionStoreQuery: string;
 
     addCustomToolbar: (name?: string) => string;
     deleteCustomToolbar: (id: string) => void;
@@ -404,6 +408,8 @@ export interface ToolbarSlice {
 
     setEditingToolbar: (editing: boolean) => void;
     setActiveToolbar: (id: string | null) => void;
+    setExtensionStoreOpen: (open: boolean) => void;
+    setExtensionStoreQuery: (query: string) => void;
 }
 
 export type CADState = ObjectSlice & ViewSlice & VersioningSlice & SolverSlice & SketchSlice & SnappingSlice & ToolbarSlice;

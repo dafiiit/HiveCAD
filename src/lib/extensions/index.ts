@@ -17,4 +17,11 @@ export { toolToExtension, manifestToToolMetadata } from './Extension';
 export { ExtensionRegistry, extensionRegistry } from './ExtensionRegistry';
 
 // Loader
+// Loader
 export { loadBuiltinExtensions } from './loader';
+
+// Runtime loader
+export { loadLocalExtensionById, registerExtension } from './runtime';
+
+// Events
+export * from './events';

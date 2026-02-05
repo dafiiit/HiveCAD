@@ -44,6 +44,7 @@ import { useCADStore, ToolType } from "@/hooks/useCADStore";
 import { toast } from "sonner";
 import { StorageManager } from "@/lib/storage/StorageManager";
 import { Extension } from "@/lib/storage/types";
+import { toolRegistry } from "@/lib/tools";
 import * as LucideIcons from "lucide-react";
 
 interface CommandPaletteProps {
@@ -120,6 +121,63 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
         });
     };
 
+    const handleExtensionSelect = async (extension: Extension) => {
+        setSearchOpen(false);
+
+        if (!extension.manifest) {
+            toast.error("Extension manifest missing");
+            if (onOpenExtensionStore) {
+                onOpenExtensionStore();
+            }
+            return;
+        }
+
+        const tool = toolRegistry.get(extension.id);
+        const hasExecutable =
+            !!tool?.create ||
+            !!tool?.execute ||
+            !!tool?.addToSketch ||
+            !!tool?.processPoints ||
+            !!tool?.createShape ||
+            !!tool?.createInitialPrimitive;
+
+        if (!tool || !hasExecutable) {
+            try {
+                const adapter = StorageManager.getInstance().currentAdapter;
+                if (adapter.incrementExtensionDownloads) {
+                    await adapter.incrementExtensionDownloads(extension.id);
+                }
+            } catch (error) {
+                console.warn("Failed to track extension download:", error);
+            }
+
+            if (onOpenExtensionStore) {
+                onOpenExtensionStore();
+                toast.info(`Open Extensions to install ${extension.manifest.name}`);
+            } else {
+                toast.info(`Open Extensions to install ${extension.manifest.name}`);
+            }
+            return;
+        }
+
+        const label = tool.metadata.label || extension.manifest.name;
+        const isSketchTool =
+            tool.metadata.category === 'sketch' ||
+            !!tool.addToSketch ||
+            !!tool.processPoints ||
+            !!tool.createShape ||
+            !!tool.createInitialPrimitive;
+
+        if (isSketchTool || tool.metadata.category === 'modify' || tool.metadata.category === 'navigation') {
+            setActiveTool(tool.metadata.id as ToolType);
+            toast(`Tool: ${label}`);
+            return;
+        }
+
+        startOperation(tool.metadata.id);
+        toast.info(`Configure ${label} parameters`);
+    };
+
     const menuItems = [
         {
             group: "Create",
@@ -177,8 +235,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
                     icon: <LucideIcon className="mr-2 h-4 w-4" />,
                     isExtension: true,
                     action: () => {
-                        toast.success(`Loading extension: ${ext.name}`);
-                        // todo:everything Extensions logic placeholder.
+                        handleExtensionSelect(ext);
                     }
                 };
             })
