@@ -25,3 +25,7 @@ dist-ssr
 replicad-manual
 .env
 
+# Tauri / Rust
+src-tauri/target
+src-tauri/gen
+

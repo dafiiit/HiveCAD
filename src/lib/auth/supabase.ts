@@ -1,4 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { isDesktop } from '../platform/platform';
+import { SupabaseStorageAdapter } from '../storage/SupabaseStorageAdapter';
 
 // Environment variables are baked in at build time by Vite
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -20,6 +22,14 @@ if (!isSupabaseConfigured) {
 // The placeholder URL is valid format but won't work - prevents createClient from throwing
 export const supabase: SupabaseClient = createClient(
     supabaseUrl || 'https://placeholder.supabase.co',
-    supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder'
+    supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder',
+    isDesktop() ? {
+        auth: {
+            storage: new SupabaseStorageAdapter(),
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true,
+        }
+    } : undefined
 );
 
