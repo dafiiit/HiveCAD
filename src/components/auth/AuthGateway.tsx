@@ -20,19 +20,27 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
         const connectStorage = async () => {
             if (user?.pat && user.pat.trim() !== '') {
                 const { StorageManager } = await import('@/lib/storage/StorageManager');
-                const githubAdapter = StorageManager.getInstance().getAdapter('github');
-                if (githubAdapter) {
-                    if (!githubAdapter.isAuthenticated()) {
-                        console.log('[AuthGateway] Auto-connecting GitHub storage with PAT...');
-                        const success = await githubAdapter.connect(user.pat);
+                const storageManager = StorageManager.getInstance();
+
+                // Use the currently active adapter (LocalGit on desktop, GitHub on web)
+                const adapter = storageManager.currentAdapter;
+
+                if (adapter) {
+                    if (!adapter.isAuthenticated()) {
+                        console.log(`[AuthGateway] Auto-connecting ${adapter.name} storage...`);
+                        const success = await adapter.connect(user.pat);
+
+                        // If connection failed and we are on GitHub adapter, it might be an offline issue
+                        // But if we are on LocalGitAdapter, it should work offline.
+
                         if (success) {
-                            console.log('[AuthGateway] GitHub storage connected successfully.');
+                            console.log(`[AuthGateway] ${adapter.name} storage connected successfully.`);
                             useGlobalStore.getState().setStorageConnected(true);
                             // Initialize UI store to load global settings
                             const { useUIStore } = await import('@/store/useUIStore');
                             useUIStore.getState().initialize();
                         } else {
-                            console.error('[AuthGateway] GitHub storage connection failed.');
+                            console.error(`[AuthGateway] ${adapter.name} storage connection failed.`);
                             useGlobalStore.getState().setStorageConnected(false);
                         }
                     } else {
