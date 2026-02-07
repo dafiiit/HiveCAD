@@ -1,14 +1,158 @@
 /**
- * Topology Reference Types
+ * Topology Module
  * 
- * These types provide a bridge between display-time topology (face/edge/vertex indices
- * from mesh rendering) and code-time topology (references usable in generated code).
+ * This module provides the complete Topological Naming System for HiveCAD.
+ * It solves the "Topological Naming Problem" - ensuring that references to
+ * faces, edges, and vertices survive model regeneration.
+ * 
+ * Core Components:
+ * - StableId: Persistent identifiers for topology entities
+ * - TopologyGraph: Tracks entity relationships and history
+ * - TopologyReference: Smart references with fallback resolution
+ * - TopologyTracker: Global service for tracking topology changes
+ * - ReferenceResolver: Resolves references to current indices
+ * 
+ * @module topology
  */
 
+// ============================================================================
+// Core Types and Utilities
+// ============================================================================
+
+export {
+    // Types
+    type TopologyEntityType,
+    type GeneratorLinkType,
+    type SemanticTag,
+    type SurfaceType,
+    type CurveType,
+    type GeometricSignature,
+    type GeneratorLink,
+    type StableTopologyId,
+
+    // Factory Functions
+    generateTopologyUUID,
+    createStableId,
+    createPrimitiveFaceId,
+    createExtrudedFaceId,
+    createFilletFaceId,
+
+    // Serialization
+    serializeStableId,
+    deserializeStableId,
+
+    // Utilities
+    signaturesMatch,
+    describeStableId,
+} from './StableId';
+
+// ============================================================================
+// Topology Graph
+// ============================================================================
+
+export {
+    // Types
+    type TopologyNode,
+    type TopologySnapshot,
+    type SerializedTopologySnapshot,
+
+    // Class
+    TopologyGraph,
+} from './TopologyGraph';
+
+// ============================================================================
+// Topology Reference
+// ============================================================================
+
+export {
+    // Types
+    type SemanticSelectorType,
+    type SemanticSelector,
+    type GeometricSelector,
+    type TopologyReference,
+
+    // Factory Functions
+    createReferenceFromSelection,
+    createSemanticReference,
+    createTopFaceReference,
+    createBottomFaceReference,
+    createLargestFaceReference,
+    createParallelFaceReference,
+
+    // Utilities
+    hasStableId,
+    hasSelector,
+    isIndexOnlyReference,
+    getReferencePriority,
+    serializeReference,
+    deserializeReference,
+    describeReference,
+    cloneReference,
+    updateReferenceStableId,
+
+    // Legacy Compatibility
+    parseSelectionId,
+    toSelectionId,
+    isFaceSelection,
+    isEdgeSelection,
+    isVertexSelection,
+} from './TopologyReference';
+
+// ============================================================================
+// Topology Tracker
+// ============================================================================
+
+export {
+    // Types
+    type IndexToIdMapping,
+    type FeatureTopologyMapping,
+    type TopologyAnalysisResult,
+
+    // Class and Singleton
+    TopologyTracker,
+    getTopologyTracker,
+} from './TopologyTracker';
+
+// ============================================================================
+// Reference Resolver
+// ============================================================================
+
+export {
+    // Types
+    type ResolveResult,
+    type ShapeAnalysis,
+    type ResolveOptions,
+
+    // Class and Singleton
+    ReferenceResolver,
+    getReferenceResolver,
+} from './ReferenceResolver';
+
+// ============================================================================
+// Shape Analyzer
+// ============================================================================
+
+export {
+    // Types
+    type ReplicadShape,
+    type ReplicadFace,
+    type ReplicadEdge,
+    type ReplicadVertex,
+
+    // Class and Factory
+    ShapeAnalyzer,
+    analyzeShape,
+} from './ShapeAnalyzer';
+
+// ============================================================================
+// Legacy Types (Deprecated - for backward compatibility)
+// ============================================================================
+
 /**
- * Reference to a topological element (face, edge, or vertex) of a solid
+ * @deprecated Use the new TopologyReference from './TopologyReference' instead.
+ * This interface is kept for backward compatibility.
  */
-export interface TopologyReference {
+export interface LegacyTopologyReference {
     /** Type of topological element */
     type: 'face' | 'edge' | 'vertex';
 
@@ -19,77 +163,31 @@ export interface TopologyReference {
     index: number;
 
     /** Optional stable selector for future robustness */
-    selector?: TopologySelector;
+    selector?: LegacyTopologySelector;
 }
 
 /**
- * A selector that can identify topology elements across regenerations
- * For now, we only support index-based selection.
- * Future: geometric selectors like "face parallel to XY" or "largest face"
+ * @deprecated Use SemanticSelector or GeometricSelector instead.
  */
-export interface TopologySelector {
+export interface LegacyTopologySelector {
     type: 'index' | 'parallel_to_plane' | 'normal_vector' | 'largest' | 'at_position';
     params: Record<string, any>;
 }
 
 /**
- * Parse a selection ID (e.g., "body1:face-0") into a TopologyReference
+ * @deprecated Use parseSelectionId from './TopologyReference' instead.
+ * This function is an alias for backward compatibility.
  */
-export function parseSelectionId(selectionId: string): TopologyReference | null {
-    const faceMatch = selectionId.match(/^(.+):face-(\d+)$/);
-    if (faceMatch) {
-        return {
-            type: 'face',
-            baseObjectId: faceMatch[1],
-            index: parseInt(faceMatch[2], 10)
-        };
-    }
+export function parseLegacySelectionId(selectionId: string): LegacyTopologyReference | null {
+    // Import at function level to avoid circular dependency issues
+    const { parseSelectionId: parseRef } = require('./TopologyReference');
+    const result = parseRef(selectionId);
+    if (!result) return null;
 
-    const edgeMatch = selectionId.match(/^(.+):edge-(\d+)$/);
-    if (edgeMatch) {
-        return {
-            type: 'edge',
-            baseObjectId: edgeMatch[1],
-            index: parseInt(edgeMatch[2], 10)
-        };
-    }
-
-    const vertexMatch = selectionId.match(/^(.+):vertex-(\d+)$/);
-    if (vertexMatch) {
-        return {
-            type: 'vertex',
-            baseObjectId: vertexMatch[1],
-            index: parseInt(vertexMatch[2], 10)
-        };
-    }
-
-    return null;
+    return {
+        type: result.type,
+        baseObjectId: result.baseObjectId,
+        index: result.indexHint ?? 0,
+    };
 }
 
-/**
- * Create a selection ID from a TopologyReference
- */
-export function toSelectionId(ref: TopologyReference): string {
-    return `${ref.baseObjectId}:${ref.type}-${ref.index}`;
-}
-
-/**
- * Check if a selection ID refers to a face
- */
-export function isFaceSelection(selectionId: string): boolean {
-    return selectionId.includes(':face-');
-}
-
-/**
- * Check if a selection ID refers to an edge
- */
-export function isEdgeSelection(selectionId: string): boolean {
-    return selectionId.includes(':edge-');
-}
-
-/**
- * Check if a selection ID refers to a vertex
- */
-export function isVertexSelection(selectionId: string): boolean {
-    return selectionId.includes(':vertex-');
-}
