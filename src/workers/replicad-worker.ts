@@ -179,36 +179,33 @@ async function generateMesh(shapesArray: any[]) {
             console.error(`Worker: Failed to extract edges ${shapeIndex}`, err);
         }
 
-        // Extract vertices (corners) with simple mapping
+        // Extract vertices (corners) from edge line data
         let vertexData = null;
         try {
-            console.log(`Worker: Extracting vertices for ${astId}`, {
-                hasEdges: !!shape?.edges,
-                edgesLength: shape?.edges?.length
+            console.log(`Worker: Extracting vertices from edge data for ${astId}`, {
+                hasEdgeData: !!edgeData,
+                edgeDataLength: edgeData?.length
             });
 
-            // Get unique vertices from edge endpoints
-            if (shape && shape.edges && shape.edges.length > 0) {
+            // Get unique vertices from edge line segments
+            if (edgeData && edgeData.length > 0) {
                 const vertexSet = new Map<string, { x: number, y: number, z: number }>();
-                const edges = Array.from(shape.edges);
 
-                for (const edge of edges) {
-                    try {
-                        const e: any = edge; // Type as any to access Replicad edge properties
-                        // Get start and end vertices of the edge
-                        if (e.startVertex && e.startVertex.point) {
-                            const p = e.startVertex.point;
-                            const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
-                            vertexSet.set(key, { x: p.x, y: p.y, z: p.z });
-                        }
-                        if (e.endVertex && e.endVertex.point) {
-                            const p = e.endVertex.point;
-                            const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
-                            vertexSet.set(key, { x: p.x, y: p.y, z: p.z });
-                        }
-                    } catch (e) {
-                        // Skip edges that don't have vertex data
-                    }
+                // Each line segment has 2 vertices (6 floats: x1,y1,z1, x2,y2,z2)
+                for (let i = 0; i < edgeData.length; i += 6) {
+                    // Start vertex of segment
+                    const x1 = edgeData[i];
+                    const y1 = edgeData[i + 1];
+                    const z1 = edgeData[i + 2];
+                    const key1 = `${x1.toFixed(6)},${y1.toFixed(6)},${z1.toFixed(6)}`;
+                    vertexSet.set(key1, { x: x1, y: y1, z: z1 });
+
+                    // End vertex of segment
+                    const x2 = edgeData[i + 3];
+                    const y2 = edgeData[i + 4];
+                    const z2 = edgeData[i + 5];
+                    const key2 = `${x2.toFixed(6)},${y2.toFixed(6)},${z2.toFixed(6)}`;
+                    vertexSet.set(key2, { x: x2, y: y2, z: z2 });
                 }
 
                 if (vertexSet.size > 0) {
@@ -220,12 +217,12 @@ async function generateMesh(shapesArray: any[]) {
                         positions[idx++] = vertex.z;
                     }
                     vertexData = positions;
-                    console.log(`Worker: Created vertexData with ${vertexData.length} floats (${vertexData.length / 3} unique vertices from ${edges.length} edges)`);
+                    console.log(`Worker: Created vertexData with ${vertexData.length} floats (${vertexData.length / 3} unique vertices from ${edgeData.length / 6} edge segments)`);
                 } else {
-                    console.warn(`Worker: No vertices found from edges for ${astId}`);
+                    console.warn(`Worker: No unique vertices found in edge data for ${astId}`);
                 }
             } else {
-                console.warn(`Worker: No shape.edges found for ${astId}`);
+                console.warn(`Worker: No edge data available to extract vertices for ${astId}`);
             }
         } catch (err) {
             console.error(`Worker: Failed to extract vertices ${shapeIndex}`, err);
