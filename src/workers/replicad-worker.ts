@@ -127,52 +127,52 @@ async function generateMesh(shapesArray: any[]) {
 
         // Extract edges with mapping
         try {
-            // Try iterating edges
-            if (shape && shape.edges && shape.edges.length > 0) {
-                const allLines: number[] = [];
-                let lineOffset = 0;
-                const edges = Array.from(shape.edges);
-                const totalEdges = edges.length;
+            console.log(`Worker: Extracting edges for ${astId}`, {
+                hasEdges: !!shape?.edges,
+                edgesLength: shape?.edges?.length,
+                hasMeshEdges: typeof shape?.meshEdges === 'function',
+                shapeType: shape?.constructor?.name,
+            });
 
-                for (let i = 0; i < totalEdges; i++) {
-                    const edge: any = edges[i];
-                    const { lines } = edge.mesh({ tolerance: 0.1, angularTolerance: 30.0 });
-                    if (lines && lines.length > 0) {
-                        allLines.push(...lines);
+            // Use shape.meshEdges() to get all edge lines at once
+            if (shape && typeof shape.meshEdges === 'function') {
+                const edgeMeshResult = shape.meshEdges({ tolerance: 0.1, angularTolerance: 30.0 });
+                console.log(`Worker: meshEdges result:`, {
+                    hasLines: !!edgeMeshResult?.lines,
+                    linesLength: edgeMeshResult?.lines?.length,
+                    hasEdgeGroups: !!edgeMeshResult?.edgeGroups,
+                    edgeGroupsLength: edgeMeshResult?.edgeGroups?.length,
+                    resultKeys: edgeMeshResult ? Object.keys(edgeMeshResult) : 'null'
+                });
+
+                if (edgeMeshResult?.lines && edgeMeshResult.lines.length > 0) {
+                    edgeData = new Float32Array(edgeMeshResult.lines);
+                    console.log(`Worker: Created edgeData with ${edgeData.length} floats (${edgeData.length / 6} segments)`);
+
+                    // Create edge mapping from edgeGroups if available
+                    if (edgeMeshResult.edgeGroups && edgeMeshResult.edgeGroups.length > 0) {
+                        for (const group of edgeMeshResult.edgeGroups) {
+                            edgeMapping.push({
+                                start: group.start,
+                                count: group.count,
+                                edgeId: edgeMapping.length // Use index as edge ID
+                            });
+                        }
+                        console.log(`Worker: Created ${edgeMapping.length} edge mappings from edgeGroups`);
+                    } else {
+                        // Fallback: treat all lines as one edge
                         edgeMapping.push({
-                            start: lineOffset,
-                            count: lines.length, // Number of floats
-                            edgeId: i
+                            start: 0,
+                            count: edgeData.length,
+                            edgeId: 0
                         });
-                        lineOffset += lines.length;
+                        console.log(`Worker: Created fallback edge mapping (all lines as one edge)`);
                     }
-
-                    // Yield and report progress for complex shapes
-                    if (totalEdges > 100 && i % Math.max(1, Math.floor(totalEdges / 10)) === 0) {
-                        self.postMessage({
-                            type: 'MESH_PROGRESS',
-                            id: astId,
-                            stage: 'edges',
-                            progress: Math.floor((i / totalEdges) * 100)
-                        });
-                        await yieldControl();
-                    }
+                } else {
+                    console.warn(`Worker: meshEdges returned no lines for ${astId}`);
                 }
-
-                if (allLines.length > 0) {
-                    edgeData = new Float32Array(allLines);
-                }
-
             } else {
-                // Fallback
-                let edgeSource = shape;
-                if (shape && typeof shape.meshEdges !== 'function' && shape.face) {
-                    edgeSource = typeof shape.face === 'function' ? shape.face() : shape.face;
-                }
-                if (edgeSource && typeof edgeSource.meshEdges === 'function') {
-                    const { lines } = edgeSource.meshEdges({ tolerance: 0.1, angularTolerance: 30.0 });
-                    edgeData = lines;
-                }
+                console.warn(`Worker: shape.meshEdges not available for ${astId}`);
             }
 
         } catch (err) {
@@ -182,20 +182,50 @@ async function generateMesh(shapesArray: any[]) {
         // Extract vertices (corners) with simple mapping
         let vertexData = null;
         try {
-            if (shape && shape.vertices && shape.vertices.length > 0) {
-                const verts = Array.from(shape.vertices);
-                const positions = new Float32Array(verts.length * 3);
-                for (let i = 0; i < verts.length; i++) {
-                    const vertex: any = verts[i];
-                    // Vertex in Replicad/OC has a point or center property
-                    const p = vertex.point || vertex.center;
-                    if (p) {
-                        positions[i * 3] = p.x;
-                        positions[i * 3 + 1] = p.y;
-                        positions[i * 3 + 2] = p.z;
+            console.log(`Worker: Extracting vertices for ${astId}`, {
+                hasEdges: !!shape?.edges,
+                edgesLength: shape?.edges?.length
+            });
+
+            // Get unique vertices from edge endpoints
+            if (shape && shape.edges && shape.edges.length > 0) {
+                const vertexSet = new Map<string, { x: number, y: number, z: number }>();
+                const edges = Array.from(shape.edges);
+
+                for (const edge of edges) {
+                    try {
+                        const e: any = edge; // Type as any to access Replicad edge properties
+                        // Get start and end vertices of the edge
+                        if (e.startVertex && e.startVertex.point) {
+                            const p = e.startVertex.point;
+                            const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
+                            vertexSet.set(key, { x: p.x, y: p.y, z: p.z });
+                        }
+                        if (e.endVertex && e.endVertex.point) {
+                            const p = e.endVertex.point;
+                            const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
+                            vertexSet.set(key, { x: p.x, y: p.y, z: p.z });
+                        }
+                    } catch (e) {
+                        // Skip edges that don't have vertex data
                     }
                 }
-                vertexData = positions;
+
+                if (vertexSet.size > 0) {
+                    const positions = new Float32Array(vertexSet.size * 3);
+                    let idx = 0;
+                    for (const vertex of vertexSet.values()) {
+                        positions[idx++] = vertex.x;
+                        positions[idx++] = vertex.y;
+                        positions[idx++] = vertex.z;
+                    }
+                    vertexData = positions;
+                    console.log(`Worker: Created vertexData with ${vertexData.length} floats (${vertexData.length / 3} unique vertices from ${edges.length} edges)`);
+                } else {
+                    console.warn(`Worker: No vertices found from edges for ${astId}`);
+                }
+            } else {
+                console.warn(`Worker: No shape.edges found for ${astId}`);
             }
         } catch (err) {
             console.error(`Worker: Failed to extract vertices ${shapeIndex}`, err);
