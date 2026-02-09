@@ -22,7 +22,22 @@ Implement **Persistent Naming** that tracks the *genealogy* of geometry:
 
 ---
 
+## Implementation Status
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Foundation (Core Data Structures) | ✅ Complete |
+| 2 | Sketch Entity Tagging | ✅ Complete |
+| 3 | Operation Instrumentation | ✅ Complete |
+| 4 | Worker Integration | ✅ Complete |
+| 5 | User Interface | ✅ Complete |
+| 6 | Code Manager Integration | ✅ Complete |
+| 7 | Testing & Validation | ✅ Complete |
+
+---
+
 ## Architecture Overview
+
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -395,85 +410,156 @@ Phase 3 has been fully implemented with the following operation analyzers:
 
 **Goal**: Resolve TopologyReferences to current geometry.
 
-#### Files to Create:
+**Implementation Notes**:
+Phase 4 has been fully implemented with the following modules:
 
-1. **`src/lib/topology/ReferenceResolver.ts`**
-   ```typescript
-   export class ReferenceResolver {
-     /**
-      * Resolve a reference to a current face/edge/vertex index.
-      * Returns null if unresolvable (prompts user in that case).
-      */
-     resolve(
-       ref: TopologyReference,
-       currentTopology: TopologyGraph,
-       shape: any
-     ): { index: number; confidence: number } | null;
-     
-     /**
-      * Strategy 1: Exact StableId match
-      */
-     private resolveByStableId(ref: TopologyReference): number | null;
-     
-     /**
-      * Strategy 2: Semantic selector (e.g., "top face")
-      */
-     private resolveBySemanticSelector(ref: TopologyReference, shape: any): number | null;
-     
-     /**
-      * Strategy 3: Geometric heuristics (position, normal, area)
-      */
-     private resolveByGeometry(ref: TopologyReference, shape: any): { index: number; confidence: number } | null;
-   }
-   ```
+#### Files Created:
 
-2. **`src/lib/topology/GeometricMatcher.ts`**
-   - Implements fuzzy matching algorithms
-   - Computes similarity scores between GeometricSignatures
-   - Handles degenerate cases (multiple matches, no matches)
+1. **`src/lib/topology/WorkerTopologyBridge.ts`** ✅
+   - `SerializedTopologyData` interface for worker-to-main-thread communication
+   - `TopologyEnhancedMeshResult` for mesh data with topology
+   - `ObjectTopologyState` for storing topology in CADObjects
+   - `extractFaceSignature` and `extractEdgeSignature` for worker-side extraction
+   - `generateTopologyForShape` for creating topology data in worker
+   - `reconstructTopologyId` and `reconstructTopologyData` for main-thread parsing
+   - `buildTopologyState` and `createEmptyTopologyState` utilities
+   - Full serialization/deserialization for persistence
 
 ---
 
-### Phase 5: User Interface (Week 5-6)
+### Phase 5: User Interface ✅ COMPLETE
 
 **Goal**: Handle unresolvable references gracefully.
 
-#### Features:
+**Implementation Notes**:
+Phase 5 has been fully implemented with the following modules:
 
-1. **Broken Reference Indicators**
-   - Visual highlight on features with broken references
-   - Error message in feature tree
+#### Files Created:
 
-2. **Reference Repair Dialog**
-   - When reference cannot be resolved:
-     - Show candidates with confidence scores
-     - Allow user to select the correct entity
-     - Option to use geometric selector going forward
+1. **`src/lib/topology/ReferenceManager.ts`** ✅
+   - `ReferenceStatus` type: valid, warning, broken, pending, migrated
+   - `ReferenceState` interface for tracking reference status
+   - `ReferenceEvent` types for status changes and repairs
+   - `ReferenceManager` singleton class for global reference tracking
+   - Methods for registering, updating, and repairing references
+   - Feature-level and global status queries
+   - Event listener system for UI updates
 
-3. **Reference Migration Tool**
-   - Batch repair for projects with legacy index-based refs
-   - Automatic geometric selector generation
+2. **`src/components/cad/ReferenceIndicator.tsx`** ✅
+   - Color-coded status indicator (green/yellow/red)
+   - Tooltip with status description
+   - Click handler for opening repair dialog
+   - Size variants (sm, md, lg)
+
+3. **`src/components/cad/ReferenceRepairDialog.tsx`** ✅
+   - Modal for repairing broken references
+   - Shows candidates with confidence scores
+   - Accept best match or select manually
+   - Highlights entities in viewport
+   - Skip functionality for unresolvable references
+
+4. **`src/hooks/useReferenceStatus.ts`** ✅
+   - `useFeatureReferenceStatus` hook for feature-level status
+   - `useGlobalReferenceStatus` hook for application-wide status
+   - `useReferenceEvents` hook for subscribing to changes
 
 ---
 
-### Phase 6: Code Manager Integration (Week 6-7)
+### Phase 6: Code Manager Integration ✅ COMPLETE
 
 **Goal**: Generate code with stable references.
 
-#### Current Code Generation:
+**Implementation Notes**:
+Phase 6 has been fully implemented with the following modules:
+
+#### Files Created:
+
+1. **`src/lib/topology/CodeGeneration.ts`** ✅
+   - `ReferenceCodeOptions` for configuring code output
+   - `ReferenceCodeGenerator` class with methods:
+     - `generateReferenceCode` for any TopologyReference
+     - `generateFaceSelector` and `generateEdgeSelector`
+     - `generateSemanticSelector` and `generateGeometricSelector`
+     - `generateFilletCode`, `generateChamferCode`, `generateFaceExtrusionCode`
+   - Factory function: `createReferenceCodeGenerator`
+   - Quick helpers: `generateFaceSelectionCode`, `generateEdgeSelectionCode`
+   - Migration utilities:
+     - `transformIndexToStableReference` for upgrading legacy code
+     - `extractIndexReferences` for finding index-based references
+     - `generateMigrationReport` for analyzing code
+
+#### Example Generated Code:
+
+**Before (legacy index-based):**
 ```javascript
 const shape1 = replicad.makeBox(10, 10, 10);
 const shape2 = shape1.fillet(1, (e) => e.inDirection([0, 0, 1]));
 ```
 
-#### New Code Generation:
+**After (stable references):**
 ```javascript
 const shape1 = replicad.makeBox(10, 10, 10);
-// Reference by StableId with fallback selector
 const shape2 = shape1.fillet(1, (e) => selectEdge(shape1, {
   stableId: "edge-uuid-12345",
-  fallback: { type: "inDirection", params: [0, 0, 1] }
+  semantic: { type: "topmost" },
+  geometric: { normalDirection: [0, 0, 1] },
+  indexHint: 4
 }));
+```
+
+---
+
+### Phase 7: Testing & Validation ✅ COMPLETE
+
+**Goal**: Comprehensive test coverage for all topology modules.
+
+**Implementation Notes**:
+Phase 7 has been fully implemented with comprehensive tests for all new modules.
+
+#### Test Files Created:
+
+1. **`src/lib/topology/topology.test.ts`** (existing) ✅
+   - 52 tests covering core topology functionality
+   - Tests for StableId generation and serialization
+   - Tests for TopologyGraph node management
+   - Tests for TopologyReference creation
+   - Tests for TopologyTracker operations
+   - Tests for ReferenceResolver strategies
+   - Tests for ShapeAnalyzer extraction
+
+2. **`src/lib/topology/topology-phase456.test.ts`** ✅
+   - 65 tests covering Phases 4, 5, and 6
+   - **WorkerTopologyBridge tests**:
+     - `extractFaceSignature` extraction
+     - `extractEdgeSignature` extraction
+     - `generateTopologyForShape` generation
+     - `reconstructTopologyId` reconstruction
+     - `createEmptyTopologyState` and `buildTopologyState`
+     - Serialization and deserialization
+   - **ReferenceManager tests**:
+     - Singleton behavior and reset
+     - Reference registration
+     - Status updates (valid, broken, warning)
+     - Feature queries and filtering
+     - Reference repair
+     - Event listeners
+   - **CodeGeneration tests**:
+     - `ReferenceCodeGenerator` class
+     - Face and edge selector generation
+     - Semantic and geometric selectors
+     - Fillet, chamfer, extrusion code generation
+     - Index reference extraction
+     - Legacy code transformation
+     - Migration reports
+   - **Integration tests**:
+     - Worker → ReferenceManager flow
+     - ReferenceManager → CodeGeneration flow
+     - Full pipeline test
+
+#### Test Results:
+```
+Test Files  2 passed (2)
+    Tests  117 passed (117)
 ```
 
 ---

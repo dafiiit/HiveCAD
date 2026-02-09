@@ -230,6 +230,73 @@ export {
 } from './operations';
 
 // ============================================================================
+// Phase 4: Worker Integration
+// ============================================================================
+
+export {
+    // Types
+    type SerializedTopologyData,
+    type TopologyEnhancedMeshResult,
+    type ObjectTopologyState,
+
+    // Worker-side Functions
+    extractFaceSignature,
+    extractEdgeSignature,
+    generateTopologyForShape,
+
+    // Main-thread Functions
+    reconstructTopologyId,
+    reconstructTopologyData,
+    buildTopologyState,
+    createEmptyTopologyState,
+
+    // Serialization
+    serializeTopologyState,
+    deserializeTopologyState,
+} from './WorkerTopologyBridge';
+
+// ============================================================================
+// Phase 5: Reference Manager (UI Integration)
+// ============================================================================
+
+export {
+    // Types
+    type ReferenceStatus,
+    type ReferenceState,
+    type ReferenceStatusChangeEvent,
+    type ReferenceRepairEvent,
+    type ReferenceEvent,
+    type ReferenceManagerState,
+
+    // Functions
+    getReferenceManager,
+    resetReferenceManager,
+} from './ReferenceManager';
+
+// ============================================================================
+// Phase 6: Code Generation
+// ============================================================================
+
+export {
+    // Types
+    type ReferenceCodeOptions,
+    type SelectorFunctionType,
+
+    // Classes
+    ReferenceCodeGenerator,
+
+    // Factory Functions
+    createReferenceCodeGenerator,
+    generateFaceSelectionCode,
+    generateEdgeSelectionCode,
+
+    // Utilities
+    transformIndexToStableReference,
+    extractIndexReferences,
+    generateMigrationReport,
+} from './CodeGeneration';
+
+// ============================================================================
 // Legacy Types (Deprecated - for backward compatibility)
 // ============================================================================
 
@@ -275,4 +342,3 @@ export function parseLegacySelectionId(selectionId: string): LegacyTopologyRefer
         index: result.indexHint ?? 0,
     };
 }
-
