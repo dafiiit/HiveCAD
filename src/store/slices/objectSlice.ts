@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { initCAD, replicadToThreeGeometry, replicadToThreeEdges } from '../../lib/cad-kernel';
 // import * as replicad from 'replicad'; // Removed: execution is now in worker
 import { CodeManager } from '../../lib/code-manager';
+import { getDependencyGraph, mergeExecutionResults } from '../../lib/dependency-graph';
 import { toolRegistry } from '../../lib/tools';
 import { CADState, ObjectSlice, CADObject } from '../types';
 import * as THREE from 'three';
@@ -398,6 +399,20 @@ export const createObjectSlice: StateCreator<
         try {
             const cm = new CodeManager(state.code);
             const executableCode = cm.transformForExecution();
+
+            // DAG-based incremental execution
+            const depGraph = getDependencyGraph();
+            const analysis = depGraph.analyze(state.code);
+            const plan = depGraph.createExecutionPlan(state.code, analysis);
+
+            // Get cached results for unchanged features
+            const cachedResults = depGraph.getCached(plan.toCache);
+
+            // Log incremental execution stats
+            if (plan.toCache.length > 0) {
+                console.log(`[Incremental] Executing ${plan.toExecute.length} features, reusing ${plan.toCache.length} from cache`);
+            }
+
             const result = await replicadWorkerPool.execute(
                 { type: 'EXECUTE', code: executableCode },
                 (progressData) => {
@@ -413,9 +428,21 @@ export const createObjectSlice: StateCreator<
                 }
             );
             set({ meshingProgress: null });
-            const shapesArray = result.meshes;
+
+            // Merge new results with cached results
+            const executedResults = result.meshes;
+            const mergedResults = mergeExecutionResults(
+                cachedResults,
+                executedResults,
+                analysis.executionOrder
+            );
+
+            // Update cache with newly executed results
+            depGraph.updateCache(executedResults);
+
+            const shapesArray = mergedResults;
             // Record if this was a significant change (already handled by pushToHistory)
-            const newObjects: CADObject[] = shapesArray.map((item: { id: string; meshData?: any; edgeData?: any; vertexData?: any; faceMapping?: any; edgeMapping?: any }, index: number) => {
+            const newObjects: CADObject[] = shapesArray.map((item: { id: string; meshData?: any; edgeData?: any; vertexData?: any; faceMapping?: any; edgeMapping?: any; fromCache?: boolean }, index: number) => {
                 const astId = item.id;
                 const existing = state.objects.find(o => o.id === astId);
                 let geometry = undefined;
