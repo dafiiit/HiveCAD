@@ -59,6 +59,24 @@ const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
   );
 };
 
+// Configure raycaster thresholds for line/point selection
+const RaycasterSetup = () => {
+  const { raycaster } = useThree();
+
+  useEffect(() => {
+    // Set very generous thresholds for line and point selection
+    raycaster.params.Line.threshold = 0.5;  // World units - for edges
+    raycaster.params.Points.threshold = 0.8; // World units - for vertices
+
+    console.log('[Raycaster Setup] Configured thresholds:', {
+      Line: raycaster.params.Line.threshold,
+      Points: raycaster.params.Points.threshold
+    });
+  }, [raycaster]);
+
+  return null;
+};
+
 const SceneObjects = ({ clippingPlanes = [] }: { clippingPlanes?: THREE.Plane[] }) => {
   const objects = useCADStore((state) => state.objects);
 
@@ -265,6 +283,20 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
     // Bodies or other objects
     shouldBeVisible = shouldBeVisible && bodiesVisible;
   }
+
+  // Debug: Log geometry status once on mount
+  useEffect(() => {
+    console.log(`[Geometry Debug] Object ${object.id}:`, {
+      hasGeometry: !!object.geometry,
+      hasEdgeGeometry: !!object.edgeGeometry,
+      hasVertexGeometry: !!object.vertexGeometry,
+      hasFaceMapping: !!object.faceMapping,
+      hasEdgeMapping: !!object.edgeMapping,
+      edgeGeometryVertexCount: object.edgeGeometry?.attributes?.position?.count,
+      vertexGeometryVertexCount: object.vertexGeometry?.attributes?.position?.count,
+      edgeMappingLength: object.edgeMapping?.length
+    });
+  }, [object.id, object.geometry, object.edgeGeometry, object.vertexGeometry]);
 
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const IS_CLICK_THRESHOLD = 5;
@@ -938,6 +970,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
         }}
       >
         <ThumbnailCapturer />
+        <RaycasterSetup />
 
         {/* Background & Environment */}
         {envPreset && <Environment preset={envPreset as any} background={true} blur={0.5} />}
