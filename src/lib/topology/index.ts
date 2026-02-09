@@ -145,6 +145,91 @@ export {
 } from './ShapeAnalyzer';
 
 // ============================================================================
+// Sketch Topology Bridge
+// ============================================================================
+
+export {
+    // Types
+    type TaggedSketchPrimitive,
+    type SketchTopologyRegistry,
+    type SketchToFaceMapping,
+
+    // Primitive Tagging
+    tagPrimitive,
+    tagAllPrimitives,
+    hashPoint,
+    getPointStableId,
+
+    // Registry Management
+    createSketchRegistry,
+    getSketchRegistry,
+    registerPrimitive,
+    clearSketchRegistry,
+    clearAllSketchRegistries,
+
+    // Generator Links
+    createExtrusionGeneratorLinks,
+    createRevolutionGeneratorLinks,
+    createFilletGeneratorLinks,
+    createBooleanGeneratorLinks,
+    createExtrusionMapping,
+
+    // Serialization
+    serializeSketchRegistry,
+    deserializeSketchRegistry,
+    serializeAllRegistries,
+    deserializeAllRegistries,
+
+    // Tracker Integration
+    registerSketchWithTracker,
+} from './SketchTopologyBridge';
+
+// ============================================================================
+// Operation Analyzers
+// ============================================================================
+
+export {
+    // Extrusion
+    ExtrusionAnalyzer,
+    analyzeExtrusion,
+    registerExtrusionWithTracker,
+    type ExtrusionParams,
+    type ExtrusionAnalysisResult,
+
+    // Primitives
+    PrimitiveAnalyzer,
+    analyzePrimitive,
+    registerPrimitiveWithTracker,
+    type PrimitiveType,
+    type PrimitiveParams,
+    type PrimitiveFaceSemantics,
+    type PrimitiveAnalysisResult,
+
+    // Boolean
+    BooleanAnalyzer,
+    analyzeBoolean,
+    registerBooleanWithTracker,
+    captureFaceInfo,
+    type BooleanOperationType,
+    type BooleanParams,
+    type PreBooleanFaceInfo,
+    type BooleanFaceProvenance,
+    type BooleanAnalysisResult,
+
+    // Fillet
+    FilletAnalyzer,
+    analyzeFillet,
+    registerFilletWithTracker,
+    captureEdgeInfo,
+    captureFaceInfoForFillet,
+    type FilletOperationType,
+    type FilletParams,
+    type PreFilletEdgeInfo,
+    type PreFilletFaceInfo,
+    type FilletAnalysisResult,
+} from './operations';
+
+// ============================================================================
 // Legacy Types (Deprecated - for backward compatibility)
 // ============================================================================
 
