@@ -125,37 +125,21 @@ async function generateMesh(shapesArray: any[]) {
             console.error(`Worker: Failed to mesh shape ${shapeIndex}`, err);
         }
 
-        // ── Identify seam / smooth edges that should NOT be displayed ──
-        // Seam edges are topological artifacts on closed surfaces (cylinder, torus,
-        // sphere …).  We also suppress edges whose two adjacent faces are tangent-
-        // continuous, i.e. the dihedral angle is ~180° (smooth transition).
+        // ── Identify seam edges that should NOT be displayed ──
         //
-        // Strategy
-        //   1. Build a map  edgeHash → list-of-adjacent-face-geomTypes  using the
-        //      shape topology.
-        //   2. Mark an edge as "smooth / seam" when:
-        //        a) It is closed (periodic) AND has ≤1 distinct adjacent face, OR
-        //        b) ALL adjacent faces are smooth curved surfaces AND the edge is
-        //           closed / periodic (pure seam), OR
-        //        c) The dihedral angle between the two adjacent faces at the edge
-        //           midpoint is close to 180° (tangent-continuous).
-        //   3. Only pass the remaining "real" edges to meshEdges output.
-        //   4. Vertices (corners) are taken from the topological shape vertices and
-        //      kept only if they connect at least one non-smooth edge.
-
-        // Surface types considered "smooth" (curved, can produce seam edges)
-        const SMOOTH_SURFACE_TYPES = new Set([
-            'CYLINDRE', 'SPHERE', 'TORUS', 'CONE',
-            'BEZIER_SURFACE', 'BSPLINE_SURFACE',
-            'REVOLUTION_SURFACE', 'EXTRUSION_SURFACE',
-            'OFFSET_SURFACE', 'OTHER_SURFACE',
-        ]);
-
-        // Angle threshold: if the dihedral angle between two faces at an edge
-        // is within this many degrees of 180°, the junction is considered smooth.
-        const SMOOTH_ANGLE_DEG = 8; // degrees tolerance
-        const SMOOTH_ANGLE_COS = Math.cos((180 - SMOOTH_ANGLE_DEG) * Math.PI / 180);
-        // cos(172°) ≈ -0.990; normals nearly opposite → faces tangent-continuous
+        // A seam edge is a topological artifact on closed parametric surfaces
+        // (cylinder, torus, sphere, cone …).  It exists because the surface's
+        // UV parameterisation wraps around, and OpenCascade represents that
+        // wrap-around as an edge where the SAME face appears on both sides.
+        //
+        // Detection rule (works for any shape, no heuristics):
+        //   In a valid solid (closed manifold), every real edge borders exactly
+        //   2 distinct faces.  If our face→edge adjacency map finds only 1
+        //   distinct face for an edge, that edge is a seam — suppress it.
+        //
+        //   We do NOT use dihedral-angle heuristics: tangent-continuous junctions
+        //   between DIFFERENT faces (e.g. a flat side meeting a cylinder surface
+        //   at a tangent) are real edges and must be shown.
 
         // Set of edge hashCodes that should be hidden
         const suppressedEdgeHashes = new Set<number>();
@@ -165,7 +149,7 @@ async function generateMesh(shapesArray: any[]) {
                 const faces: any[] = Array.from(shape.faces);
                 const edges: any[] = Array.from(shape.edges);
 
-                // Build  edgeHash → [face, face, …]
+                // Build  edgeHash → [face, face, …]  (one entry per distinct face)
                 const edgeFaceMap = new Map<number, any[]>();
                 for (const face of faces) {
                     try {
@@ -183,46 +167,27 @@ async function generateMesh(shapesArray: any[]) {
                         const h = edge.hashCode;
                         const adjFaces = edgeFaceMap.get(h) || [];
 
-                        // --- Check 1: closed / periodic edge on smooth surfaces → seam ---
-                        const isClosed = edge.isClosed === true || edge.isPeriodic === true;
-                        if (isClosed) {
-                            const allSmooth = adjFaces.length > 0 && adjFaces.every((f: any) => {
-                                try { return SMOOTH_SURFACE_TYPES.has(f.geomType); } catch { return false; }
-                            });
-                            if (allSmooth) {
-                                suppressedEdgeHashes.add(h);
-                                continue;
-                            }
-                        }
-
-                        // --- Check 2: dihedral angle ~180° → tangent-continuous joint ---
-                        if (adjFaces.length === 2) {
+                        // Seam detection: edge with only 1 adjacent face.
+                        // In a valid solid every real edge has 2 distinct adjacent
+                        // faces.  1 means the same face wraps around on both sides
+                        // (seam edge) but our hash-based iteration counted it once.
+                        //
+                        // Safety: we exclude PLANE faces because a plane's UV space
+                        // never wraps — an edge with 1 adjacent PLANE face would be
+                        // a boundary edge on an open shell, not a seam.
+                        if (adjFaces.length === 1) {
                             try {
-                                // Sample the edge midpoint
-                                const midPt = edge.pointAt(0.5);
-                                const n1 = adjFaces[0].normalAt(midPt);
-                                const n2 = adjFaces[1].normalAt(midPt);
-                                // Dot product of normals
-                                const dot = n1.x * n2.x + n1.y * n2.y + n1.z * n2.z;
-                                // If normals are nearly parallel (dot ≈ +1) or anti-parallel
-                                // (dot ≈ -1), the faces are tangent-continuous at this edge.
-                                // For a smooth junction the normals point roughly the same
-                                // direction (dot ≈ +1) or opposite due to orientation
-                                // (dot ≈ -1).  Either way → smooth.
-                                if (Math.abs(dot) > Math.abs(SMOOTH_ANGLE_COS)) {
+                                const faceType = adjFaces[0].geomType;
+                                if (faceType !== 'PLANE') {
                                     suppressedEdgeHashes.add(h);
                                     continue;
                                 }
-                                // Clean up replicad Vector objects to avoid leaks
-                                try { midPt.delete?.(); n1.delete?.(); n2.delete?.(); } catch { }
-                            } catch (_) {
-                                // If we can't compute normals, keep the edge (safe default)
-                            }
+                            } catch (_) { /* keep edge on error */ }
                         }
                     } catch (_) { /* skip this edge on error */ }
                 }
 
-                console.log(`Worker: Edge analysis for ${astId}: ${edges.length} total edges, ${suppressedEdgeHashes.size} suppressed (seam/smooth)`);
+                console.log(`Worker: Edge analysis for ${astId}: ${edges.length} total edges, ${suppressedEdgeHashes.size} suppressed (seam)`);
             }
         } catch (err) {
             console.warn(`Worker: Edge analysis failed for ${astId}, falling back to all edges`, err);
@@ -308,8 +273,11 @@ async function generateMesh(shapesArray: any[]) {
                 for (const edge of edges) {
                     try {
                         if (suppressedEdgeHashes.has(edge.hashCode)) continue;
-                        // Also skip closed edges — they have no distinct endpoints
-                        if (edge.isClosed || edge.isPeriodic) continue;
+                        // Skip truly closed edges (full loops) — they have no
+                        // distinct start/end.  Do NOT skip isPeriodic edges:
+                        // arcs have isPeriodic=true (underlying curve is a circle)
+                        // but they DO have distinct start/end points.
+                        if (edge.isClosed) continue;
 
                         const sp = edge.startPoint;
                         const ep = edge.endPoint;
