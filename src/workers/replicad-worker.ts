@@ -158,7 +158,8 @@ async function generateMesh(shapesArray: any[]) {
                                 edgeId: edgeMapping.length // Use index as edge ID
                             });
                         }
-                        console.log(`Worker: Created ${edgeMapping.length} edge mappings from edgeGroups`);
+                        console.log(`Worker: Created ${edgeMapping.length} edge mappings from edgeGroups`,
+                            edgeMapping.slice(0, 3).map((m: any) => ({ start: m.start, count: m.count, edgeId: m.edgeId })));
                     } else {
                         // Fallback: treat all lines as one edge
                         edgeMapping.push({

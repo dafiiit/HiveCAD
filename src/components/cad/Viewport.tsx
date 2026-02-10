@@ -69,8 +69,8 @@ const RaycasterSetup = () => {
   const { raycaster } = useThree();
 
   useEffect(() => {
-    raycaster.params.Line.threshold = 0.15;   // World units - tight for edges
-    raycaster.params.Points.threshold = 0.25;  // World units - tight for vertices
+    raycaster.params.Line.threshold = 0.3;    // World units - for edges
+    raycaster.params.Points.threshold = 0.25;  // World units - for vertices
   }, [raycaster]);
 
   return null;
@@ -126,6 +126,7 @@ const FaceHighlighter = ({ object, faceIds, clippingPlanes = [], isHover = false
 
     if (indices.length === 0) return null;
     subset.setIndex(indices);
+    subset.computeBoundingSphere();
     return subset;
   }, [object, faceIds]);
 
@@ -159,17 +160,22 @@ const EdgeHighlighter = ({ object, edgeIds, clippingPlanes = [], isHover = false
     edgeIds.forEach(eid => {
       const mapping = object.edgeMapping?.find(m => m.edgeId === eid);
       if (mapping) {
-        // Edge mapping stores float offsets, not vertex indices
-        // Each float is one component (x, y, or z), so we need to iterate in steps of 1
+        // Edge mapping start/count are VERTEX indices (not float offsets).
+        // Each vertex has 3 floats (x, y, z), so multiply by 3 to get float positions.
         for (let i = 0; i < mapping.count; i++) {
-          const idx = mapping.start + i;
-          positions.push(posAttr.array[idx]);
+          const vertexIdx = mapping.start + i;
+          positions.push(
+            posAttr.array[vertexIdx * 3],
+            posAttr.array[vertexIdx * 3 + 1],
+            posAttr.array[vertexIdx * 3 + 2]
+          );
         }
       }
     });
 
     if (positions.length === 0) return null;
     subset.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    subset.computeBoundingSphere();
     return subset;
   }, [object, edgeIds]);
 
@@ -203,6 +209,7 @@ const VertexHighlighter = ({ object, vertexIds, isHover = false }: { object: CAD
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.computeBoundingSphere();
     return geo;
   }, [object.vertexGeometry, vertexIds]);
 
@@ -323,19 +330,7 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
     shouldBeVisible = shouldBeVisible && bodiesVisible;
   }
 
-  // Debug: Log geometry status once on mount
-  useEffect(() => {
-    console.log(`[Geometry Debug] Object ${object.id}:`, {
-      hasGeometry: !!object.geometry,
-      hasEdgeGeometry: !!object.edgeGeometry,
-      hasVertexGeometry: !!object.vertexGeometry,
-      hasFaceMapping: !!object.faceMapping,
-      hasEdgeMapping: !!object.edgeMapping,
-      edgeGeometryVertexCount: object.edgeGeometry?.attributes?.position?.count,
-      vertexGeometryVertexCount: object.vertexGeometry?.attributes?.position?.count,
-      edgeMappingLength: object.edgeMapping?.length
-    });
-  }, [object.id, object.geometry, object.edgeGeometry, object.vertexGeometry]);
+
 
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const IS_CLICK_THRESHOLD = 5;
@@ -367,10 +362,12 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
       }
       // Check for edge hit (LineSegments)
       else if (objType === 'LineSegments' && isOurEdge && object.edgeMapping) {
-        const segmentIndex = hit.faceIndex ?? hit.index;
-        if (segmentIndex !== undefined) {
-          const floatOffset = segmentIndex * 6;
-          const edge = object.edgeMapping.find(m => floatOffset >= m.start && floatOffset < m.start + m.count);
+        // Three.js LineSegments raycast returns hit.index as the VERTEX index
+        // of the first vertex in the hit segment (0, 2, 4, ...), NOT a segment index.
+        // Edge mapping start/count are vertex indices, so compare directly.
+        const vertexIndex = hit.index;
+        if (vertexIndex !== undefined) {
+          const edge = object.edgeMapping.find(m => vertexIndex >= m.start && vertexIndex < m.start + m.count);
           if (edge && (!bestEdge || dist < bestEdge.distance)) {
             bestEdge = { id: edge.edgeId, distance: dist };
           }
@@ -1008,8 +1005,8 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
         onPointerMissed={() => api.getState().clearSelection()}
         raycaster={{
           params: {
-            Line: { threshold: 0.15 },   // Tight threshold for edge selection
-            Points: { threshold: 0.25 },  // Tight threshold for vertex selection
+            Line: { threshold: 0.3 },    // For edge selection
+            Points: { threshold: 0.25 },  // For vertex selection
             Mesh: {},
             LOD: {},
             Sprite: {}
