@@ -7,9 +7,19 @@ import { useGlobalStore } from '@/store/useGlobalStore';
 import { toast } from "sonner";
 import SketchCanvas from "./SketchCanvas";
 import type { ArcballControls as ArcballControlsImpl } from "three-stdlib";
-import { toolRegistry } from "../../lib/tools";
-import { getCirclePointTexture } from "../../lib/selection/circlePointTexture";
 import { computeDoubleClickSelection } from "../../lib/selection/SelectionManager";
+
+// Extracted sub-components
+import { FaceHighlighter, EdgeHighlighter, VertexHighlighter, VertexBasePoints, SELECTION_COLORS } from "./viewport/SelectionHighlighters";
+import {
+  CADGrid,
+  RaycasterSetup,
+  ThumbnailCapturer,
+  PlaneSelector,
+  OperationPreview,
+  CameraController,
+  SceneController,
+} from "./viewport/SceneComponents";
 
 interface ViewportProps {
   isSketchMode: boolean;
@@ -18,63 +28,6 @@ interface ViewportProps {
 // Z-up to Y-up rotation: -90° around X axis
 // This allows Replicad Z-up geometry to display correctly while keeping ArcballControls stable
 const Z_UP_ROTATION: [number, number, number] = [-Math.PI / 2, 0, 0];
-
-// Grid helper component
-// Grid is defined in Z-up coordinates (XY is ground), rotation applied by parent ZUpContainer
-const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
-  const gridRef = useRef<any>(null);
-
-  React.useLayoutEffect(() => {
-    if (gridRef.current) {
-      gridRef.current.traverse((obj: any) => {
-        if (obj.isMesh && obj.material) {
-          obj.material.side = THREE.DoubleSide;
-          obj.material.polygonOffset = true;
-          obj.material.polygonOffsetFactor = 1;
-          obj.material.polygonOffsetUnits = 1;
-          obj.material.needsUpdate = true;
-        }
-      });
-    }
-  }, []);
-
-  if (isSketchMode) return null;
-  return (
-    <>
-      {/* Main grid - on XY plane (ground in Z-up) */}
-      <Grid
-        ref={gridRef}
-        args={[1000, 1000]}
-        cellSize={5}
-        cellThickness={0.5}
-        cellColor="#3a4a5a"
-        sectionSize={25}
-        sectionThickness={1}
-        sectionColor="#4a5a6a"
-        fadeDistance={4000}
-        fadeStrength={1}
-        infiniteGrid
-        position={[0, 0, -0.01]}
-        rotation={[Math.PI / 2, 0, 0]}
-      />
-    </>
-  );
-};
-
-// Configure raycaster thresholds for line/point selection
-// These are kept intentionally tight so that vertex/edge detection zones
-// don't swallow face selections. The proximity-aware priority in
-// findBestSelection handles the user intent disambiguation.
-const RaycasterSetup = () => {
-  const { raycaster } = useThree();
-
-  useEffect(() => {
-    raycaster.params.Line.threshold = 0.3;    // World units - for edges
-    raycaster.params.Points.threshold = 0.25;  // World units - for vertices
-  }, [raycaster]);
-
-  return null;
-};
 
 const SceneObjects = ({ clippingPlanes = [] }: { clippingPlanes?: THREE.Plane[] }) => {
   const objects = useCADStore((state) => state.objects);
@@ -88,177 +41,11 @@ const SceneObjects = ({ clippingPlanes = [] }: { clippingPlanes?: THREE.Plane[] 
   );
 };
 
-// Unified selection colors
-const SELECTION_COLORS = {
-  hover: '#5ba8f5',    // Light blue hover preview
-  selected: '#2979e6', // Stronger blue for marked/selected
-  hoverOpacity: 0.25,
-  selectedOpacity: 0.45,
-  edgeHover: '#5ba8f5',
-  edgeSelected: '#2979e6',
-  vertexHover: '#5ba8f5',
-  vertexSelected: '#2979e6',
-} as const;
-
-const FaceHighlighter = ({ object, faceIds, clippingPlanes = [], isHover = false }: { object: CADObject, faceIds: number[], clippingPlanes?: THREE.Plane[], isHover?: boolean }) => {
-  const geometry = React.useMemo(() => {
-    if (!object.geometry || !object.faceMapping) return null;
-
-    const subset = new THREE.BufferGeometry();
-    subset.setAttribute('position', object.geometry.getAttribute('position'));
-    if (object.geometry.attributes.normal) {
-      subset.setAttribute('normal', object.geometry.getAttribute('normal'));
-    }
-
-    const indices: number[] = [];
-    const indexAttr = object.geometry.index;
-
-    if (!indexAttr) return null;
-
-    faceIds.forEach(fid => {
-      const mapping = object.faceMapping?.find(m => m.faceId === fid);
-      if (mapping) {
-        for (let i = 0; i < mapping.count; i++) {
-          indices.push(indexAttr.getX(mapping.start + i));
-        }
-      }
-    });
-
-    if (indices.length === 0) return null;
-    subset.setIndex(indices);
-    subset.computeBoundingSphere();
-    return subset;
-  }, [object, faceIds]);
-
-  if (!geometry) return null;
-
-  const color = isHover ? SELECTION_COLORS.hover : SELECTION_COLORS.selected;
-  const opacity = isHover ? SELECTION_COLORS.hoverOpacity : SELECTION_COLORS.selectedOpacity;
-
-  return (
-    <mesh geometry={geometry}>
-      <meshBasicMaterial
-        color={color}
-        transparent
-        opacity={opacity}
-        depthTest={false}
-        side={THREE.DoubleSide}
-        clippingPlanes={clippingPlanes}
-      />
-    </mesh>
-  );
-};
-
-const EdgeHighlighter = ({ object, edgeIds, clippingPlanes = [], isHover = false }: { object: CADObject, edgeIds: number[], clippingPlanes?: THREE.Plane[], isHover?: boolean }) => {
-  const geometry = React.useMemo(() => {
-    if (!object.edgeGeometry || !object.edgeMapping) return null;
-
-    const subset = new THREE.BufferGeometry();
-    const posAttr = object.edgeGeometry.getAttribute('position');
-    const positions: number[] = [];
-
-    edgeIds.forEach(eid => {
-      const mapping = object.edgeMapping?.find(m => m.edgeId === eid);
-      if (mapping) {
-        // Edge mapping start/count are VERTEX indices (not float offsets).
-        // Each vertex has 3 floats (x, y, z), so multiply by 3 to get float positions.
-        for (let i = 0; i < mapping.count; i++) {
-          const vertexIdx = mapping.start + i;
-          positions.push(
-            posAttr.array[vertexIdx * 3],
-            posAttr.array[vertexIdx * 3 + 1],
-            posAttr.array[vertexIdx * 3 + 2]
-          );
-        }
-      }
-    });
-
-    if (positions.length === 0) return null;
-    subset.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    subset.computeBoundingSphere();
-    return subset;
-  }, [object, edgeIds]);
-
-  if (!geometry) return null;
-
-  const color = isHover ? SELECTION_COLORS.edgeHover : SELECTION_COLORS.edgeSelected;
-
-  return (
-    <lineSegments geometry={geometry} renderOrder={1}>
-      <lineBasicMaterial color={color} linewidth={3} depthTest={false} clippingPlanes={clippingPlanes} />
-    </lineSegments>
-  );
-};
-
-const VertexHighlighter = ({ object, vertexIds, isHover = false }: { object: CADObject, vertexIds: number[], isHover?: boolean }) => {
-  const circleTexture = React.useMemo(() => getCirclePointTexture(), []);
-
-  const geometry = React.useMemo(() => {
-    if (!object.vertexGeometry) return null;
-    const posAttr = object.vertexGeometry.getAttribute('position');
-    const positions: number[] = [];
-
-    vertexIds.forEach(vid => {
-      // Simple mapping: index in vertexGeometry corresponds to vertex ID
-      if (vid < posAttr.count) {
-        positions.push(posAttr.getX(vid), posAttr.getY(vid), posAttr.getZ(vid));
-      }
-    });
-
-    if (positions.length === 0) return null;
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geo.computeBoundingSphere();
-    return geo;
-  }, [object.vertexGeometry, vertexIds]);
-
-  if (!geometry) return null;
-
-  const color = isHover ? SELECTION_COLORS.vertexHover : SELECTION_COLORS.vertexSelected;
-  const size = isHover ? 14 : 12;
-
-  return (
-    <points geometry={geometry}>
-      <pointsMaterial
-        color={color}
-        size={size}
-        sizeAttenuation={false}
-        depthTest={false}
-        transparent
-        opacity={0.9}
-        map={circleTexture}
-        alphaTest={0.5}
-      />
-    </points>
-  );
-};
-
 // Hover state for highlighting
 interface HoverState {
   type: 'face' | 'edge' | 'vertex' | null;
   id: number | null;
 }
-
-/** Base vertex dots rendered as small circles */
-const VertexBasePoints = ({ geometry }: { geometry: THREE.BufferGeometry }) => {
-  const circleTexture = React.useMemo(() => getCirclePointTexture(), []);
-
-  return (
-    <points geometry={geometry} renderOrder={2}>
-      <pointsMaterial
-        color="#666666"
-        size={7}
-        sizeAttenuation={false}
-        transparent
-        opacity={0.7}
-        depthTest={false}
-        map={circleTexture}
-        alphaTest={0.5}
-      />
-    </points>
-  );
-};
 
 const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject, clippingPlanes?: THREE.Plane[] }) => {
   const { selectObject, clearSelection, selectedIds, isSketchMode, sketchPlane, sketchesVisible, bodiesVisible, originVisible } = useCADStore();
@@ -362,9 +149,6 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
       }
       // Check for edge hit (LineSegments)
       else if (objType === 'LineSegments' && isOurEdge && object.edgeMapping) {
-        // Three.js LineSegments raycast returns hit.index as the VERTEX index
-        // of the first vertex in the hit segment (0, 2, 4, ...), NOT a segment index.
-        // Edge mapping start/count are vertex indices, so compare directly.
         const vertexIndex = hit.index;
         if (vertexIndex !== undefined) {
           const edge = object.edgeMapping.find(m => vertexIndex >= m.start && vertexIndex < m.start + m.count);
@@ -383,13 +167,8 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
       }
     }
 
-    // Proximity-aware priority: only prefer vertex/edge if they are close
-    // in ray distance to the face hit. This prevents a vertex 50 units away
-    // from "stealing" a face click just because Points raycasting picked it up.
-    // The tolerance is relative: the vertex/edge must be within a small margin
-    // of the reference (face) distance.
+    // Proximity-aware priority
     const PROXIMITY_TOLERANCE = 1.5; // world units
-
     const referenceDistance = bestFace?.distance ?? Infinity;
 
     if (bestVertex && (bestVertex.distance <= referenceDistance + PROXIMITY_TOLERANCE)) {
@@ -441,15 +220,10 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
     lastClickIdRef.current = object.id;
 
     if (isDoubleClick) {
-      // Double-click: select entire body.
-      // Clear sub-feature selections for this object, toggle body selection,
-      // and preserve selections on other objects.
       const newSelection = computeDoubleClickSelection(selectedIds, object.id);
-      // Apply: clear everything, then re-add the computed selection
       clearSelection();
       newSelection.forEach(id => selectObject(id));
     } else {
-      // Single click: toggle the specific feature (additive marking).
       selectObject(selectionId);
     }
   };
@@ -458,7 +232,6 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
     if (!isSelectableType) return;
     e.stopPropagation();
 
-    // Filter intersections to only those that hit OUR object's geometries
     const allIntersections = e.intersections || [e];
     const ourIntersections = allIntersections.filter((hit: any) => {
       const hitGeometry = hit.object?.geometry;
@@ -468,7 +241,6 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
     });
 
     if (ourIntersections.length === 0) {
-      // Pointer is over our group but not hitting any of our actual geometries
       setHoverState({ type: null, id: null });
       return;
     }
@@ -590,367 +362,6 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
   );
 };
 
-
-// Camera controller - handles sketch mode camera orientation only
-// Camera positions are in Y-up (Three.js) space, content is rotated to Z-up
-const CameraController = ({ controlsRef }: { controlsRef: React.RefObject<ArcballControlsImpl | null> }) => {
-  const { camera } = useThree();
-  const { sketchPlane, isSketchMode, sketchOptions } = useCADStore();
-  const lastPlaneRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    // Only run when sketch mode + plane changes
-    if (!isSketchMode || !sketchPlane || sketchPlane === lastPlaneRef.current) return;
-    lastPlaneRef.current = sketchPlane;
-
-    if (!sketchOptions.lookAt) return;
-
-    const controls = controlsRef.current;
-    if (!controls) return;
-
-    // Position camera in Y-up space to view Z-up planes (content is rotated)
-    // After Z_UP_ROTATION: XY (Z-up ground) becomes XZ (Y-up ground)
-    const dist = 100;
-
-    // We need to update the camera position AND the target
-    // controls.reset() resets to default target (0,0,0) and default camera pos? No, to initial.
-    // We want to force a specific view.
-
-    if (sketchPlane === 'XY') {
-      // XY in Z-up is the ground plane -> look from above (Y+ in Y-up)
-      camera.position.set(0, dist, 0);
-      camera.up.set(0, 0, -1); // Rotate so "Top" is readable
-    } else if (sketchPlane === 'XZ') {
-      // XZ in Z-up is front plane -> after rotation becomes XY in Y-up -> look from Z+
-      camera.position.set(0, 0, dist);
-      camera.up.set(0, 1, 0);
-    } else if (sketchPlane === 'YZ') {
-      // YZ in Z-up is right plane -> look from X+
-      camera.position.set(dist, 0, 0);
-      camera.up.set(0, 1, 0);
-    }
-
-    // Ensure we are looking at the center
-    camera.lookAt(0, 0, 0);
-    controls.target.set(0, 0, 0);
-    controls.update();
-
-  }, [isSketchMode, sketchPlane, controlsRef, camera, sketchOptions.lookAt]);
-
-  // Reset tracking when exiting sketch mode
-  useEffect(() => {
-    if (!isSketchMode && lastPlaneRef.current) {
-      lastPlaneRef.current = null;
-    }
-  }, [isSketchMode]);
-
-  return null;
-};
-
-// Plane selector - planes are in Z-up coordinates, parent ZUpContainer applies rotation
-const PlaneSelector = () => {
-  const { sketchStep, setSketchPlane, isSketchMode, planeVisibility, originVisible } = useCADStore();
-  const [hoveredPlane, setHoveredPlane] = useState<string | null>(null);
-
-  // If origin is hidden, we don't show any planes unless we are in select-plane mode
-  const isSelectPlaneStep = isSketchMode && sketchStep === 'select-plane';
-  const isDrawingStep = isSketchMode && sketchStep === 'drawing';
-
-  if (!isSelectPlaneStep && !originVisible) return null;
-
-  const handlePlaneClick = (plane: 'XY' | 'XZ' | 'YZ') => {
-    setSketchPlane(plane);
-  };
-
-  // Visibility logic:
-  // 1. Show all planes if in select-plane step
-  // 2. Hide all planes if in drawing step (user request)
-  // 3. Otherwise show based on originVisible and individual planeVisibility
-  const getPlaneVisibility = (plane: 'XY' | 'XZ' | 'YZ') => {
-    if (isSelectPlaneStep) return true;
-    if (isDrawingStep) return false;
-    return originVisible && planeVisibility[plane];
-  };
-
-  return (
-    <group>
-      {/* XY Plane - ground in Z-up (Blue) */}
-      {getPlaneVisibility('XY') && (
-        <mesh
-          onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XY'); }}
-          onPointerOut={() => setHoveredPlane(null)}
-          onClick={(e) => { e.stopPropagation(); handlePlaneClick('XY'); }}
-          position={[20, 20, 0]}
-        >
-          <planeGeometry args={[40, 40]} />
-          <meshBasicMaterial
-            color="#5577ee"
-            transparent
-            opacity={hoveredPlane === 'XY' ? 0.5 : 0.2}
-            side={THREE.DoubleSide}
-            polygonOffset
-            polygonOffsetFactor={-1}
-            polygonOffsetUnits={-1}
-            depthWrite={false}
-          />
-        </mesh>
-      )}
-
-      {/* XZ Plane - front in Z-up (Red) */}
-      {getPlaneVisibility('XZ') && (
-        <mesh
-          rotation={[-Math.PI / 2, 0, 0]}
-          position={[20, 0, 20]}
-          onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('XZ'); }}
-          onPointerOut={() => setHoveredPlane(null)}
-          onClick={(e) => { e.stopPropagation(); handlePlaneClick('XZ'); }}
-        >
-          <planeGeometry args={[40, 40]} />
-          <meshBasicMaterial
-            color="#e05555"
-            transparent
-            opacity={hoveredPlane === 'XZ' ? 0.5 : 0.2}
-            side={THREE.DoubleSide}
-            polygonOffset
-            polygonOffsetFactor={-1}
-            polygonOffsetUnits={-1}
-            depthWrite={false}
-          />
-        </mesh>
-      )}
-
-      {/* YZ Plane - right in Z-up (Green) */}
-      {getPlaneVisibility('YZ') && (
-        <mesh
-          rotation={[0, Math.PI / 2, 0]}
-          position={[0, 20, 20]}
-          onPointerOver={(e) => { e.stopPropagation(); setHoveredPlane('YZ'); }}
-          onPointerOut={() => setHoveredPlane(null)}
-          onClick={(e) => { e.stopPropagation(); handlePlaneClick('YZ'); }}
-        >
-          <planeGeometry args={[40, 40]} />
-          <meshBasicMaterial
-            color="#55e055"
-            transparent
-            opacity={hoveredPlane === 'YZ' ? 0.5 : 0.2}
-            side={THREE.DoubleSide}
-            polygonOffset
-            polygonOffsetFactor={-1}
-            polygonOffsetUnits={-1}
-            depthWrite={false}
-          />
-        </mesh>
-      )}
-    </group>
-  );
-};
-
-// Operation Preview - delegates to tool-specific rendering
-const OperationPreview = () => {
-  const activeOperation = useCADStore((state) => state.activeOperation);
-  const selectedIds = useCADStore((state) => state.selectedIds);
-  const objects = useCADStore((state) => state.objects);
-  const updateOperationParams = useCADStore((state) => state.updateOperationParams);
-  const setCameraControlsDisabled = useCADStore((state) => state.setCameraControlsDisabled);
-
-  if (!activeOperation) return null;
-
-  const { type, params } = activeOperation;
-  const tool = toolRegistry.get(type);
-
-  // Delegate rendering to the tool itself
-  if (tool && tool.render3DPreview) {
-    return (
-      <group>
-        {tool.render3DPreview(params || {}, {
-          selectedIds: Array.from(selectedIds),
-          objects,
-          updateOperationParams,
-          setCameraControlsDisabled
-        })}
-      </group>
-    );
-  }
-
-  return null;
-};
-
-
-
-const ThumbnailCapturer = () => {
-  const { gl } = useThree();
-  const setThumbnailCapturer = useCADStore(state => state.setThumbnailCapturer);
-
-  useEffect(() => {
-    // Register the capturer function
-    setThumbnailCapturer(() => {
-      try {
-        return gl.domElement.toDataURL('image/jpeg', 0.5);
-      } catch (e) {
-        console.error("Failed to capture thumbnail", e);
-        return null;
-      }
-    });
-
-    // Cleanup
-    return () => setThumbnailCapturer(() => null);
-  }, [gl, setThumbnailCapturer]);
-
-  return null;
-};
-
-const SceneController = ({ controlsRef }: { controlsRef: React.RefObject<ArcballControlsImpl | null> }) => {
-  const { camera, scene } = useThree();
-  const { zoom, activeTool, currentView, projectionMode, fitToScreenSignal } = useCADStore();
-
-  // Handle Projection Mode / Hybrid Mode
-  useEffect(() => {
-    if (projectionMode !== 'perspective-with-ortho-faces') return;
-
-    const controls = controlsRef.current as any;
-    if (!controls) return;
-
-    const checkOrientation = () => {
-      if (projectionMode !== 'perspective-with-ortho-faces') return;
-
-      const dir = new THREE.Vector3();
-      camera.getWorldDirection(dir);
-
-      // Check if aligned with major axes
-      const threshold = 0.999; // Very close to aligned
-      const isAligned = (
-        Math.abs(dir.x) > threshold ||
-        Math.abs(dir.y) > threshold ||
-        Math.abs(dir.z) > threshold
-      );
-
-      // In hybrid mode, we just adjust the FOV of the perspective camera if it's perspective
-      // or we could technically swap but FOV trick is smoother
-      if (camera instanceof THREE.PerspectiveCamera) {
-        const targetFov = isAligned ? 5 : 45;
-        if (Math.abs(camera.fov - targetFov) > 0.1) {
-          camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.1);
-          camera.updateProjectionMatrix();
-        }
-      }
-    };
-
-    // Register listener for controls change
-    controls.addEventListener('change', checkOrientation);
-    return () => controls.removeEventListener('change', checkOrientation);
-  }, [projectionMode, camera, controlsRef]);
-
-  // Sync camera zoom with store
-  useEffect(() => {
-    const controls = controlsRef.current as any;
-    if (!controls) return;
-
-    const targetCamera = camera;
-    if (!targetCamera) return;
-
-    if (targetCamera instanceof THREE.PerspectiveCamera) {
-      const target = controls.target;
-      if (!target) return;
-      const distance = targetCamera.position.distanceTo(target);
-      // baseDistance corresponds to the distance at zoom=100. 
-      // Home position is [100, 100, -100], distance to [0,0,0] is sqrt(30000) ~= 173.2
-      const baseDistance = 173.205;
-
-      // FoV adjustment for hybrid mode means we need to compensate zoom
-      const fovFactor = projectionMode === 'perspective-with-ortho-faces' ? (targetCamera.fov / 45) : 1;
-      const desiredDistance = (baseDistance * (100 / zoom)) / fovFactor;
-
-      if (Math.abs(distance - desiredDistance) > 0.1) {
-        const direction = new THREE.Vector3().subVectors(targetCamera.position, target).normalize();
-        const newPos = target.clone().add(direction.multiplyScalar(desiredDistance));
-        targetCamera.position.copy(newPos);
-        controls.update();
-      }
-    } else if (targetCamera instanceof THREE.OrthographicCamera) {
-      if (Math.abs(targetCamera.zoom - (zoom / 5)) > 0.01) {
-        targetCamera.zoom = zoom / 5;
-        targetCamera.updateProjectionMatrix();
-      }
-    }
-  }, [zoom, camera, controlsRef, projectionMode]);
-
-  // Handle View Changes (Home)
-  useEffect(() => {
-    if (currentView === 'home') {
-      const controls = controlsRef.current as any;
-      if (!controls) return;
-
-      const targetCamera = camera;
-      if (!targetCamera) return;
-
-      // Reset to default isometric view
-      targetCamera.position.set(400, 400, -400);
-      controls.target.set(0, 0, 0);
-      targetCamera.up.set(0, 1, 0);
-
-      if (targetCamera instanceof THREE.PerspectiveCamera) {
-        targetCamera.fov = 45;
-        targetCamera.updateProjectionMatrix();
-      } else if (targetCamera instanceof THREE.OrthographicCamera) {
-        targetCamera.zoom = 5;
-        targetCamera.updateProjectionMatrix();
-      }
-
-      controls.update();
-    }
-  }, [currentView, camera, controlsRef]);
-
-  // Handle fitToScreen
-  useEffect(() => {
-    if (!fitToScreenSignal) return;
-
-    const controls = controlsRef.current as any;
-    if (!controls) return;
-
-    const targetCamera = camera;
-    if (!targetCamera) return;
-
-    // Use the scene from useThree
-    const box = new THREE.Box3().setFromObject(scene);
-    if (box.isEmpty()) return;
-
-    const sphere = new THREE.Sphere();
-    box.getBoundingSphere(sphere);
-
-    if (targetCamera instanceof THREE.PerspectiveCamera) {
-      const distance = sphere.radius / Math.tan(Math.PI * targetCamera.fov / 360);
-      targetCamera.position.set(sphere.center.x + distance, sphere.center.y + distance, sphere.center.z + distance);
-    } else {
-      const distance = sphere.radius * 2;
-      targetCamera.position.set(sphere.center.x + distance, sphere.center.y + distance, sphere.center.z + distance);
-    }
-
-    controls.target.copy(sphere.center);
-    controls.update();
-  }, [fitToScreenSignal, camera, scene, controlsRef]);
-
-  // Configure mouse buttons
-  useEffect(() => {
-    const controls = controlsRef.current as any;
-    if (!controls) return;
-
-    if (typeof controls.setMouseAction === 'function') {
-      try {
-        if (activeTool === 'pan') {
-          controls.setMouseAction('PAN', 0); // Left = Pan
-          controls.setMouseAction('ROTATE', 2); // Right = Rotate
-        } else {
-          controls.setMouseAction('ROTATE', 0); // Left = Rotate
-          controls.setMouseAction('PAN', 2); // Right = Pan
-        }
-      } catch (err) {
-        console.warn("Failed to configure ArcballControls:", err);
-      }
-    }
-  }, [activeTool, controlsRef]);
-
-  return null;
-};
 
 const Viewport = ({ isSketchMode }: ViewportProps) => {
   const controlsRef = useRef<ArcballControlsImpl>(null);
