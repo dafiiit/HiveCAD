@@ -347,22 +347,14 @@ export const createObjectSlice: StateCreator<
 
     selectObject: (id, multiSelect = false) => {
         const state = get();
-        let newSelected: Set<string>;
-
-        if (multiSelect) {
-            newSelected = new Set(state.selectedIds);
-            if (newSelected.has(id)) {
-                newSelected.delete(id);
-            } else {
-                newSelected.add(id);
-            }
+        // Additive selection: always toggle the clicked feature on/off.
+        // This allows marking multiple features (faces, edges, vertices)
+        // simultaneously. Background click uses clearSelection() instead.
+        const newSelected = new Set(state.selectedIds);
+        if (newSelected.has(id)) {
+            newSelected.delete(id);
         } else {
-            // Single select mode: toggle if already selected alone, or select this one only
-            if (state.selectedIds.has(id) && state.selectedIds.size === 1) {
-                newSelected = new Set();
-            } else {
-                newSelected = new Set([id]);
-            }
+            newSelected.add(id);
         }
 
         const updatedObjects = state.objects.map(obj => ({

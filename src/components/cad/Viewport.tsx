@@ -8,6 +8,8 @@ import { toast } from "sonner";
 import SketchCanvas from "./SketchCanvas";
 import type { ArcballControls as ArcballControlsImpl } from "three-stdlib";
 import { toolRegistry } from "../../lib/tools";
+import { getCirclePointTexture } from "../../lib/selection/circlePointTexture";
+import { computeDoubleClickSelection } from "../../lib/selection/SelectionManager";
 
 interface ViewportProps {
   isSketchMode: boolean;
@@ -60,18 +62,15 @@ const CADGrid = ({ isSketchMode }: { isSketchMode: boolean }) => {
 };
 
 // Configure raycaster thresholds for line/point selection
+// These are kept intentionally tight so that vertex/edge detection zones
+// don't swallow face selections. The proximity-aware priority in
+// findBestSelection handles the user intent disambiguation.
 const RaycasterSetup = () => {
   const { raycaster } = useThree();
 
   useEffect(() => {
-    // Set very generous thresholds for line and point selection
-    raycaster.params.Line.threshold = 0.5;  // World units - for edges
-    raycaster.params.Points.threshold = 0.8; // World units - for vertices
-
-    console.log('[Raycaster Setup] Configured thresholds:', {
-      Line: raycaster.params.Line.threshold,
-      Points: raycaster.params.Points.threshold
-    });
+    raycaster.params.Line.threshold = 0.15;   // World units - tight for edges
+    raycaster.params.Points.threshold = 0.25;  // World units - tight for vertices
   }, [raycaster]);
 
   return null;
@@ -88,6 +87,18 @@ const SceneObjects = ({ clippingPlanes = [] }: { clippingPlanes?: THREE.Plane[] 
     </group>
   );
 };
+
+// Unified selection colors
+const SELECTION_COLORS = {
+  hover: '#5ba8f5',    // Light blue hover preview
+  selected: '#2979e6', // Stronger blue for marked/selected
+  hoverOpacity: 0.25,
+  selectedOpacity: 0.45,
+  edgeHover: '#5ba8f5',
+  edgeSelected: '#2979e6',
+  vertexHover: '#5ba8f5',
+  vertexSelected: '#2979e6',
+} as const;
 
 const FaceHighlighter = ({ object, faceIds, clippingPlanes = [], isHover = false }: { object: CADObject, faceIds: number[], clippingPlanes?: THREE.Plane[], isHover?: boolean }) => {
   const geometry = React.useMemo(() => {
@@ -120,9 +131,8 @@ const FaceHighlighter = ({ object, faceIds, clippingPlanes = [], isHover = false
 
   if (!geometry) return null;
 
-  // Hover: cyan/blue, Selected: orange
-  const color = isHover ? '#00aaff' : '#ffaa00';
-  const opacity = isHover ? 0.3 : 0.5;
+  const color = isHover ? SELECTION_COLORS.hover : SELECTION_COLORS.selected;
+  const opacity = isHover ? SELECTION_COLORS.hoverOpacity : SELECTION_COLORS.selectedOpacity;
 
   return (
     <mesh geometry={geometry}>
@@ -130,7 +140,7 @@ const FaceHighlighter = ({ object, faceIds, clippingPlanes = [], isHover = false
         color={color}
         transparent
         opacity={opacity}
-        depthTest={false} // Overlay effect
+        depthTest={false}
         side={THREE.DoubleSide}
         clippingPlanes={clippingPlanes}
       />
@@ -165,8 +175,7 @@ const EdgeHighlighter = ({ object, edgeIds, clippingPlanes = [], isHover = false
 
   if (!geometry) return null;
 
-  // Hover: cyan, Selected: yellow
-  const color = isHover ? '#00ffff' : '#ffff00';
+  const color = isHover ? SELECTION_COLORS.edgeHover : SELECTION_COLORS.edgeSelected;
 
   return (
     <lineSegments geometry={geometry} renderOrder={1}>
@@ -176,6 +185,8 @@ const EdgeHighlighter = ({ object, edgeIds, clippingPlanes = [], isHover = false
 };
 
 const VertexHighlighter = ({ object, vertexIds, isHover = false }: { object: CADObject, vertexIds: number[], isHover?: boolean }) => {
+  const circleTexture = React.useMemo(() => getCirclePointTexture(), []);
+
   const geometry = React.useMemo(() => {
     if (!object.vertexGeometry) return null;
     const posAttr = object.vertexGeometry.getAttribute('position');
@@ -197,13 +208,21 @@ const VertexHighlighter = ({ object, vertexIds, isHover = false }: { object: CAD
 
   if (!geometry) return null;
 
-  // Hover: cyan, Selected: red
-  const color = isHover ? '#00ffff' : '#ff0000';
-  const size = isHover ? 12 : 10;
+  const color = isHover ? SELECTION_COLORS.vertexHover : SELECTION_COLORS.vertexSelected;
+  const size = isHover ? 14 : 12;
 
   return (
     <points geometry={geometry}>
-      <pointsMaterial color={color} size={size} sizeAttenuation={false} depthTest={false} transparent opacity={0.8} />
+      <pointsMaterial
+        color={color}
+        size={size}
+        sizeAttenuation={false}
+        depthTest={false}
+        transparent
+        opacity={0.9}
+        map={circleTexture}
+        alphaTest={0.5}
+      />
     </points>
   );
 };
@@ -214,8 +233,28 @@ interface HoverState {
   id: number | null;
 }
 
+/** Base vertex dots rendered as small circles */
+const VertexBasePoints = ({ geometry }: { geometry: THREE.BufferGeometry }) => {
+  const circleTexture = React.useMemo(() => getCirclePointTexture(), []);
+
+  return (
+    <points geometry={geometry} renderOrder={2}>
+      <pointsMaterial
+        color="#666666"
+        size={7}
+        sizeAttenuation={false}
+        transparent
+        opacity={0.7}
+        depthTest={false}
+        map={circleTexture}
+        alphaTest={0.5}
+      />
+    </points>
+  );
+};
+
 const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject, clippingPlanes?: THREE.Plane[] }) => {
-  const { selectObject, selectedIds, isSketchMode, sketchPlane, sketchesVisible, bodiesVisible, originVisible } = useCADStore();
+  const { selectObject, clearSelection, selectedIds, isSketchMode, sketchPlane, sketchesVisible, bodiesVisible, originVisible } = useCADStore();
   const isSketch = object.type === 'sketch';
   const isSelected = selectedIds.has(object.id);
   const isAxis = object.type === 'datumAxis';
@@ -301,8 +340,10 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const IS_CLICK_THRESHOLD = 5;
 
-  // Helper to analyze ALL intersections from a raycast event and find the best selection
-  // Priority order: vertex > edge > face (we prefer smaller/more specific features)
+  // Helper to analyze ALL intersections from a raycast event and find the best selection.
+  // Uses proximity-aware priority: vertex > edge > face, but only if the higher-priority
+  // hit is close in distance to the lower-priority hit. This ensures that clicking on
+  // the center of a face selects the face, not a distant vertex/edge.
   const findBestSelection = (intersections: any[]): { type: 'face' | 'edge' | 'vertex' | 'body', id: number | null, selectionId: string } => {
     let bestVertex: { id: number, distance: number } | null = null;
     let bestEdge: { id: number, distance: number } | null = null;
@@ -314,23 +355,20 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
       const dist = hit.distance;
 
       // Filter: only process intersections that belong to THIS CAD object
-      // Compare geometry references to identify our children
       const isOurMesh = hitGeometry && hitGeometry === object.geometry;
       const isOurEdge = hitGeometry && hitGeometry === object.edgeGeometry;
       const isOurVertex = hitGeometry && hitGeometry === object.vertexGeometry;
 
-      // Check for vertex hit (Points) - must be OUR vertex geometry
+      // Check for vertex hit (Points)
       if (objType === 'Points' && isOurVertex && hit.index !== undefined) {
         if (!bestVertex || dist < bestVertex.distance) {
           bestVertex = { id: hit.index, distance: dist };
         }
       }
-      // Check for edge hit (LineSegments) - must be OUR edge geometry
+      // Check for edge hit (LineSegments)
       else if (objType === 'LineSegments' && isOurEdge && object.edgeMapping) {
-        // faceIndex is the segment index for LineSegments
         const segmentIndex = hit.faceIndex ?? hit.index;
         if (segmentIndex !== undefined) {
-          // Each segment = 2 vertices * 3 floats = 6 floats
           const floatOffset = segmentIndex * 6;
           const edge = object.edgeMapping.find(m => floatOffset >= m.start && floatOffset < m.start + m.count);
           if (edge && (!bestEdge || dist < bestEdge.distance)) {
@@ -338,7 +376,7 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
           }
         }
       }
-      // Check for face hit (Mesh) - must be OUR mesh geometry
+      // Check for face hit (Mesh)
       else if (objType === 'Mesh' && isOurMesh && object.faceMapping && hit.faceIndex !== undefined) {
         const triangleStartIndex = hit.faceIndex * 3;
         const face = object.faceMapping.find(m => triangleStartIndex >= m.start && triangleStartIndex < m.start + m.count);
@@ -348,12 +386,20 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
       }
     }
 
-    // Return based on priority: vertex > edge > face
-    if (bestVertex) {
+    // Proximity-aware priority: only prefer vertex/edge if they are close
+    // in ray distance to the face hit. This prevents a vertex 50 units away
+    // from "stealing" a face click just because Points raycasting picked it up.
+    // The tolerance is relative: the vertex/edge must be within a small margin
+    // of the reference (face) distance.
+    const PROXIMITY_TOLERANCE = 1.5; // world units
+
+    const referenceDistance = bestFace?.distance ?? Infinity;
+
+    if (bestVertex && (bestVertex.distance <= referenceDistance + PROXIMITY_TOLERANCE)) {
       return { type: 'vertex', id: bestVertex.id, selectionId: `${object.id}:vertex-${bestVertex.id}` };
     }
 
-    if (bestEdge) {
+    if (bestEdge && (bestEdge.distance <= referenceDistance + PROXIMITY_TOLERANCE)) {
       return { type: 'edge', id: bestEdge.id, selectionId: `${object.id}:edge-${bestEdge.id}` };
     }
 
@@ -385,18 +431,8 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
     }
 
     // Use ALL intersections from the event to find best selection
-    const intersections = e.intersections || [e]; // Fallback to single event if no array
-    console.log(`[Selection Debug] Object: ${object.id}, Intersections:`, intersections.map((hit: any) => ({
-      type: hit.object?.type,
-      distance: hit.distance?.toFixed(3),
-      faceIndex: hit.faceIndex,
-      index: hit.index,
-      isOurMesh: hit.object?.geometry === object.geometry,
-      isOurEdge: hit.object?.geometry === object.edgeGeometry,
-      isOurVertex: hit.object?.geometry === object.vertexGeometry
-    })));
+    const intersections = e.intersections || [e];
     const { type, selectionId } = findBestSelection(intersections);
-    console.log(`[Selection Debug] Result: type=${type}, selectionId=${selectionId}`);
 
     // Double-click detection for body selection
     const now = Date.now();
@@ -407,17 +443,40 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
     lastClickTimeRef.current = now;
     lastClickIdRef.current = object.id;
 
-    const finalSelectionId = isDoubleClick ? object.id : selectionId;
-    const multiSelect = e.nativeEvent?.shiftKey || false;
-    selectObject(finalSelectionId, multiSelect);
+    if (isDoubleClick) {
+      // Double-click: select entire body.
+      // Clear sub-feature selections for this object, toggle body selection,
+      // and preserve selections on other objects.
+      const newSelection = computeDoubleClickSelection(selectedIds, object.id);
+      // Apply: clear everything, then re-add the computed selection
+      clearSelection();
+      newSelection.forEach(id => selectObject(id));
+    } else {
+      // Single click: toggle the specific feature (additive marking).
+      selectObject(selectionId);
+    }
   };
 
   const handlePointerMove = (e: any) => {
     if (!isSelectableType) return;
     e.stopPropagation();
 
-    const intersections = e.intersections || [e];
-    const { type, id } = findBestSelection(intersections);
+    // Filter intersections to only those that hit OUR object's geometries
+    const allIntersections = e.intersections || [e];
+    const ourIntersections = allIntersections.filter((hit: any) => {
+      const hitGeometry = hit.object?.geometry;
+      return hitGeometry === object.geometry ||
+        hitGeometry === object.edgeGeometry ||
+        hitGeometry === object.vertexGeometry;
+    });
+
+    if (ourIntersections.length === 0) {
+      // Pointer is over our group but not hitting any of our actual geometries
+      setHoverState({ type: null, id: null });
+      return;
+    }
+
+    const { type, id } = findBestSelection(allIntersections);
     setHoverState(type !== 'body' ? { type, id } : { type: null, id: null });
   };
 
@@ -428,9 +487,7 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
 
     const intersections = e.intersections || [e];
     const { type, id } = findBestSelection(intersections);
-    if (type !== 'body') {
-      setHoverState({ type, id });
-    }
+    setHoverState(type !== 'body' ? { type, id } : { type: null, id: null });
   };
 
   const handlePointerOut = () => {
@@ -518,17 +575,8 @@ const CADObjectRenderer = ({ object, clippingPlanes = [] }: { object: CADObject,
       {/* The vertices (corner points) */}
       {object.vertexGeometry && (
         <>
-          {/* Visible vertex dots */}
-          <points geometry={object.vertexGeometry} renderOrder={2}>
-            <pointsMaterial
-              color="#555555"
-              size={6}
-              sizeAttenuation={false}
-              transparent
-              opacity={0.8}
-              depthTest={false}
-            />
-          </points>
+          {/* Visible vertex dots - rendered as circles */}
+          <VertexBasePoints geometry={object.vertexGeometry} />
 
           {/* Hover highlight for vertices */}
           {hoveredVertices.length > 0 && (
@@ -953,7 +1001,6 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
     // Three.js gl.localClippingEnabled must be true.
   }, [sectionViewEnabled]);
 
-
   return (
     <div className="cad-viewport w-full h-full relative">
       <Canvas
@@ -961,8 +1008,8 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
         onPointerMissed={() => api.getState().clearSelection()}
         raycaster={{
           params: {
-            Line: { threshold: 5 },    // Increased for easier edge selection
-            Points: { threshold: 8 },   // Increased for easier vertex selection
+            Line: { threshold: 0.15 },   // Tight threshold for edge selection
+            Points: { threshold: 0.25 },  // Tight threshold for vertex selection
             Mesh: {},
             LOD: {},
             Sprite: {}
