@@ -2,33 +2,22 @@ import {
   FolderOpen,
   Undo2,
   Redo2,
-  RotateCcw,
   Settings,
-  HelpCircle,
-  User,
-  Bell,
-  Search,
+  Plus,
+  X,
   RefreshCw,
   AlertCircle,
-  Home,
-  Box,
-  Plus,
-  X
+  Search
 } from "lucide-react";
 import { useCADStore, useCADStoreApi } from "@/hooks/useCADStore";
+import { useUIStore } from "@/store/useUIStore";
 import { useGlobalStore } from "@/store/useGlobalStore";
 import { useTabManager } from "@/components/layout/TabContext";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CloudConnectionsDialog } from "@/components/ui/CloudConnectionsDialog";
 import { useEffect, useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { SettingsDialog } from "@/components/ui/SettingsDialog";
 import { Input } from "@/components/ui/input";
 import { FileManagerDialog } from "./FileManagerDialog";
 
@@ -63,6 +52,9 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
     setFileName,
     runCode
   } = useCADStore();
+
+  const { theme, setTheme } = useUIStore();
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Alias for backward compatibility if needed, though we should use syncToCloud
   const save = syncToCloud;
@@ -305,8 +297,8 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           </button>
         </div>
 
-        {/* Right section - User controls - Vertically Centered */}
-        <div className="flex items-center gap-1 h-full">
+        {/* Right section - Unified Settings - Vertically Centered */}
+        <div className="flex items-center gap-1 h-full pr-1">
           <button
             className={`p-1.5 hover:bg-secondary rounded transition-colors ${searchOpen ? 'bg-secondary text-foreground' : 'text-icon-default hover:text-icon-hover'}`}
             onClick={toggleSearch}
@@ -316,112 +308,21 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           </button>
 
           <button
-            className={`p-1.5 hover:bg-secondary rounded transition-colors relative ${notificationsOpen ? 'bg-secondary text-foreground' : 'text-icon-default hover:text-icon-hover'}`}
-            onClick={toggleNotifications}
-            title="Notifications"
-          >
-            <Bell className="w-4 h-4" />
-          </button>
-
-          <button
-            className={`p-1.5 hover:bg-secondary rounded transition-colors ${settingsOpen ? 'bg-secondary text-foreground' : 'text-icon-default hover:text-icon-hover'}`}
-            onClick={toggleSettings}
+            className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
+            onClick={() => setIsSettingsOpen(true)}
             title="Settings"
           >
             <Settings className="w-4 h-4" />
           </button>
 
-          <button
-            className={`p-1.5 hover:bg-secondary rounded transition-colors ${helpOpen ? 'bg-secondary text-foreground' : 'text-icon-default hover:text-icon-hover'}`}
-            onClick={toggleHelp}
-            title="Help"
-          >
-            <HelpCircle className="w-4 h-4" />
-          </button>
-
-          <div className="w-px h-4 bg-border mx-1" />
-
-          <button
-            className="w-7 h-7 rounded-full bg-primary flex items-center justify-center hover:opacity-90 transition-opacity"
-            onClick={() => toast("User profile")}
-          >
-            <User className="w-4 h-4 text-primary-foreground" />
-          </button>
+          <SettingsDialog
+            open={isSettingsOpen}
+            onOpenChange={setIsSettingsOpen}
+          />
         </div>
       </div>
 
 
-      {/* Settings Dialog */}
-      <Dialog open={settingsOpen} onOpenChange={toggleSettings}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Settings</DialogTitle>
-            <DialogDescription>
-              Configure your CAD workspace
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Grid Snap</span>
-              <input type="checkbox" className="toggle" defaultChecked />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Auto-save</span>
-              <input type="checkbox" className="toggle" defaultChecked />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Dark Mode</span>
-              <input type="checkbox" className="toggle" defaultChecked />
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Help Dialog */}
-      <Dialog open={helpOpen} onOpenChange={toggleHelp}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Keyboard Shortcuts</DialogTitle>
-            <DialogDescription>
-              Quick reference for common actions
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 py-4 text-sm">
-            <div className="flex justify-between font-medium text-primary mb-2"><span>Command Search</span><kbd className="px-2 py-1 bg-primary/20 text-primary rounded">Cmd+K</kbd></div>
-            <div className="flex justify-between"><span>Save</span><kbd className="px-2 py-1 bg-secondary rounded">Ctrl+S</kbd></div>
-            <div className="flex justify-between"><span>Undo</span><kbd className="px-2 py-1 bg-secondary rounded">Ctrl+Z</kbd></div>
-            <div className="flex justify-between"><span>Redo</span><kbd className="px-2 py-1 bg-secondary rounded">Ctrl+Y</kbd></div>
-            <div className="flex justify-between"><span>Delete</span><kbd className="px-2 py-1 bg-secondary rounded">Delete</kbd></div>
-            <div className="flex justify-between"><span>Duplicate</span><kbd className="px-2 py-1 bg-secondary rounded">Ctrl+D</kbd></div>
-            <div className="flex justify-between"><span>Select All</span><kbd className="px-2 py-1 bg-secondary rounded">Ctrl+A</kbd></div>
-            <div className="flex justify-between"><span>Orbit View</span><kbd className="px-2 py-1 bg-secondary rounded">Middle Mouse</kbd></div>
-            <div className="flex justify-between"><span>Pan View</span><kbd className="px-2 py-1 bg-secondary rounded">Shift+Middle Mouse</kbd></div>
-            <div className="flex justify-between"><span>Zoom</span><kbd className="px-2 py-1 bg-secondary rounded">Scroll Wheel</kbd></div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Notifications Dialog */}
-      <Dialog open={notificationsOpen} onOpenChange={toggleNotifications}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Notifications</DialogTitle>
-            <DialogDescription>
-              Recent activity and alerts
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 py-4">
-            <div className="p-3 bg-secondary rounded-lg">
-              <div className="text-sm font-medium">Welcome to CAD Editor</div>
-              <div className="text-xs text-muted-foreground">Start creating by clicking tools in the toolbar</div>
-            </div>
-            <div className="p-3 bg-secondary rounded-lg">
-              <div className="text-sm font-medium">Auto-save enabled</div>
-              <div className="text-xs text-muted-foreground">Your work will be saved automatically</div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </>
   );
 };

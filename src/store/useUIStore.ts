@@ -38,6 +38,7 @@ interface UIState {
     isEditingToolbar: boolean;
     folders: Record<string, ToolbarFolder>;
     isInitialized: boolean;
+    theme: 'dark' | 'light';
 
     // Actions
     addCustomToolbar: (name?: string) => string;
@@ -60,6 +61,7 @@ interface UIState {
     reorderToolsInFolder: (folderId: string, toolIds: string[]) => void;
     setEditingToolbar: (editing: boolean) => void;
     setActiveToolbar: (id: string | null) => void;
+    setTheme: (theme: 'dark' | 'light') => void;
 
     // Persistence
     loadSettings: () => Promise<void>;
@@ -73,6 +75,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     isEditingToolbar: false,
     folders: INITIAL_FOLDERS,
     isInitialized: false,
+    theme: 'dark',
 
     loadSettings: async () => {
         try {
@@ -84,7 +87,8 @@ export const useUIStore = create<UIState>((set, get) => ({
                         customToolbars: settings.customToolbars,
                         folders: settings.folders || INITIAL_FOLDERS,
                         activeToolbarId: settings.activeToolbarId || 'SOLID',
-                        isInitialized: true
+                        isInitialized: true,
+                        theme: settings.theme || 'dark'
                     });
                     console.log('[UIStore] Settings loaded from GitHub');
                 }
@@ -102,11 +106,12 @@ export const useUIStore = create<UIState>((set, get) => ({
             try {
                 const adapter = StorageManager.getInstance().currentAdapter;
                 if (adapter.saveUserSettings) {
-                    const { customToolbars, folders, activeToolbarId } = get();
+                    const { customToolbars, folders, activeToolbarId, theme } = get();
                     await adapter.saveUserSettings({
                         customToolbars,
                         folders,
-                        activeToolbarId
+                        activeToolbarId,
+                        theme
                     });
                     console.log('[UIStore] Settings saved to GitHub');
                 }
@@ -400,6 +405,11 @@ export const useUIStore = create<UIState>((set, get) => ({
     setActiveToolbar: (id) => {
         set({ activeToolbarId: id, isEditingToolbar: false });
         // Note: we don't immediately save here to avoid noise, or we do if we want it global
+        get().saveSettings();
+    },
+
+    setTheme: (theme) => {
+        set({ theme });
         get().saveSettings();
     }
 }));

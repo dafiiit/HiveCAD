@@ -11,22 +11,41 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Sonner />
-      <UpdateChecker />
-      <BrowserRouter>
-        <ErrorBoundary name="App Root">
-          <Routes>
-            <Route path="/" element={<AuthGateway><TabManager /></AuthGateway>} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </ErrorBoundary>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+import { useEffect } from "react";
+import { useUIStore } from "@/store/useUIStore";
+
+const App = () => {
+  const { theme, initialize } = useUIStore();
+
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.body.classList.add('light');
+    } else {
+      document.body.classList.remove('light');
+    }
+  }, [theme]);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Sonner />
+        <UpdateChecker />
+        <BrowserRouter>
+          <ErrorBoundary name="App Root">
+            <Routes>
+              <Route path="/" element={<AuthGateway><TabManager /></AuthGateway>} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </ErrorBoundary>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;

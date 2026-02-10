@@ -80,6 +80,74 @@
     --background: 210 25% 12%;
     --foreground: 210 20% 92%;
   }
+
+  .light {
+    /* Light Mode Overrides - Standard High Contrast Clean Theme */
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    /* Panel backgrounds - Pure whites with clean text */
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary - More standard "Action" Blue */
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+
+    /* Secondary - subtle gray for hover/selection items */
+    --secondary: 210 40% 95%;
+    --secondary-foreground: 222 47% 11%;
+
+    /* Muted */
+    --muted: 210 40% 94%;
+    --muted-foreground: 215.4 16.3% 42.9%;
+
+    /* Borders - more visible for structure */
+    --border: 214.3 31.8% 88%;
+    --input: 214.3 31.8% 88%;
+
+    /* CAD-specific tokens - Stronger contrast for toolbars */
+    --toolbar-bg: 210 40% 96%;
+    --toolbar-border: 214.3 31.8% 80%;
+    /* Slightly darker border for toolbars */
+    --panel-bg: 0 0% 100%;
+    --panel-header: 210 20% 90%;
+    /* Clearly different from panel content */
+
+    /* CRITICAL: Keep Viewport Dark as requested (Industrial Slate) */
+    --viewport-bg: 210 30% 16%;
+
+    --grid-line: 210 20% 25%;
+    /* Grid stays on dark viewport */
+    --grid-axis: 207 70% 50%;
+
+    --icon-default: 215.4 16.3% 40%;
+    --icon-hover: 222.2 47.4% 11.2%;
+
+    --tab-active: 221.2 83.2% 53.3%;
+    --timeline-bg: 210 40% 98%;
+
+    /* Viewcube - standard light mode industrial look */
+    --viewcube-front: 221.2 83.2% 53.3%;
+    --viewcube-top: 210 40% 94%;
+    --viewcube-right: 210 40% 90%;
+    --viewcube-text: 222 47% 11%;
+
+    /* Sidebar */
+    --sidebar-bg: 210 40% 96%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-muted: 215.4 16.3% 54.9%;
+    --sidebar-accent: 210 40% 90%;
+    --sidebar-border: 214.3 31.8% 88%;
+    --sidebar-primary: 221.2 83.2% 53.3%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 210 40% 96.1%;
+    --sidebar-accent-foreground: 222.2 47.4% 11.2%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+  }
 }
 
 @layer base {

@@ -21,6 +21,7 @@ import { ProjectHistoryView } from './ProjectHistoryView';
 import { GitBranch } from 'lucide-react';
 import { get as idbGet, set as idbSet } from 'idb-keyval';
 import { CacheManager } from '@/lib/storage/CacheManager';
+import { SettingsDialog } from '@/components/ui/SettingsDialog';
 
 type DashboardMode = 'workspace' | 'discover';
 
@@ -63,6 +64,7 @@ export function ProjectDashboard() {
     const [renameFolderInput, setRenameFolderInput] = useState("");
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<ProjectData | null>(null);
     const [deleteInput, setDeleteInput] = useState("");
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
     const refreshProjects = useCallback(async () => {
         // If we have a PAT, we should wait until the cloud connection is ready
@@ -738,7 +740,7 @@ export function ProjectDashboard() {
 
 
     return (
-        <div className="flex h-screen w-screen bg-[#1a1a1a] text-zinc-300 overflow-hidden font-sans flex-col">
+        <div className="flex h-screen w-screen bg-background text-foreground overflow-hidden font-sans flex-col">
             {/* Main Header */}
             <header className="h-16 border-b border-border/40 flex items-center justify-between px-6 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shrink-0 z-50">
                 <div className="flex items-center gap-3 w-64">
@@ -749,13 +751,13 @@ export function ProjectDashboard() {
                     <div className="bg-muted/50 p-1.5 rounded-full flex border border-border/50 backdrop-blur-sm">
                         <button
                             onClick={() => setDashboardMode('workspace')}
-                            className={`px-6 py-2 text-sm font-bold rounded-full transition-all duration-300 ${dashboardMode === 'workspace' ? 'bg-background text-foreground shadow-sm ring-1 ring-black/5' : 'text-muted-foreground hover:text-foreground hover:bg-background/50'}`}
+                            className={`px-6 py-2 text-sm font-bold rounded-full transition-all duration-300 ${dashboardMode === 'workspace' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                         >
                             MY WORKSPACE
                         </button>
                         <button
                             onClick={() => setDashboardMode('discover')}
-                            className={`px-6 py-2 text-sm font-bold rounded-full transition-all duration-300 ${dashboardMode === 'discover' ? 'bg-background text-foreground shadow-sm ring-1 ring-black/5' : 'text-muted-foreground hover:text-foreground hover:bg-background/50'}`}
+                            className={`px-6 py-2 text-sm font-bold rounded-full transition-all duration-300 ${dashboardMode === 'discover' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                         >
                             DISCOVER
                         </button>
@@ -763,74 +765,19 @@ export function ProjectDashboard() {
                 </div>
 
                 <div className="flex items-center gap-4 text-muted-foreground w-64 justify-end">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        asChild
-                        className="hidden xl:flex items-center gap-2 text-[10px] font-black tracking-widest text-muted-foreground hover:text-foreground hover:bg-secondary/50 uppercase rounded-full border border-transparent hover:border-border/50 transition-all"
-                    >
-                        <a href="https://hivecad.org" target="_blank" rel="noopener noreferrer">
-                            <Globe className="w-3.5 h-3.5" />
-                            hivecad.org
-                        </a>
-                    </Button>
-                    <Bell className="w-5 h-5 hover:text-foreground cursor-pointer transition-colors" />
-                    <HelpCircle className="w-5 h-5 hover:text-foreground cursor-pointer transition-colors" />
-                    <div className="flex items-center gap-3 pl-4 border-l border-border ml-2 relative">
-                        <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center text-sm font-semibold text-foreground ring-2 ring-background">
-                            {user?.email[0].toUpperCase()}
-                        </div>
-                        <span className="text-sm hidden sm:inline whitespace-nowrap font-medium text-foreground">{user?.email}</span>
+                    <div className="flex items-center gap-3 relative">
+                        <button
+                            onClick={() => setIsSettingsOpen(true)}
+                            className="p-2 hover:bg-secondary rounded-full transition-colors text-muted-foreground hover:text-foreground"
+                            title="Settings"
+                        >
+                            <Settings className="w-5 h-5" />
+                        </button>
 
-                        <div className="relative">
-                            <button
-                                onClick={() => setShowSettingsMenu(!showSettingsMenu)}
-                                className="p-2 hover:bg-secondary rounded-full transition-colors"
-                                title="Settings"
-                            >
-                                <Settings className="w-5 h-5" />
-                            </button>
-
-                            {showSettingsMenu && (
-                                <>
-                                    <div
-                                        className="fixed inset-0 z-40"
-                                        onClick={() => setShowSettingsMenu(false)}
-                                    />
-                                    <div className="absolute right-0 mt-3 w-60 bg-popover border border-border rounded-xl shadow-2xl z-50 py-2 animate-in slide-in-from-top-2 duration-150">
-                                        <button
-                                            onClick={() => {
-                                                setShowSettingsMenu(false);
-                                                setShowPATDialog(true);
-                                            }}
-                                            className="w-full text-left px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary flex items-center gap-3"
-                                        >
-                                            <Github className="w-4 h-4" /> GitHub Settings
-                                        </button>
-                                        <div className="h-px bg-border my-1.5" />
-                                        <button
-                                            onClick={() => {
-                                                setShowSettingsMenu(false);
-                                                logout();
-                                            }}
-                                            className="w-full text-left px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary flex items-center gap-3"
-                                        >
-                                            <LogOut className="w-4 h-4" /> Log Out
-                                        </button>
-                                        <div className="h-px bg-border my-1.5" />
-                                        <button
-                                            onClick={() => {
-                                                setShowSettingsMenu(false);
-                                                setShowResetConfirm(true);
-                                            }}
-                                            className="w-full text-left px-4 py-2.5 text-sm font-medium text-destructive hover:bg-destructive/10 flex items-center gap-3"
-                                        >
-                                            <RefreshCw className="w-4 h-4" /> Reset Repository
-                                        </button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
+                        <SettingsDialog
+                            open={isSettingsOpen}
+                            onOpenChange={setIsSettingsOpen}
+                        />
                     </div>
                 </div>
             </header>
@@ -1205,7 +1152,7 @@ export function ProjectDashboard() {
                                     }}
                                     autoFocus
                                     placeholder="e.g. Mechanical Parts"
-                                    className="w-full bg-input/50 border border-input rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/50"
+                                    className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/30"
                                 />
                             </div>
                             <div>
@@ -1258,8 +1205,8 @@ export function ProjectDashboard() {
 
             {showRenameDialog && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#2a2a2a] border border-zinc-800 rounded-xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
-                        <h4 className="text-xl font-bold text-white mb-4">Rename Project</h4>
+                    <div className="bg-popover border border-border rounded-xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <h4 className="text-xl font-bold text-foreground mb-4">Rename Project</h4>
                         <input
                             value={renameInput}
                             onChange={(e) => setRenameInput(e.target.value)}
@@ -1268,7 +1215,7 @@ export function ProjectDashboard() {
                                 if (e.key === 'Escape') setShowRenameDialog(null);
                             }}
                             autoFocus
-                            className="w-full bg-[#1a1a1a] border border-zinc-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-primary mb-6"
+                            className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary mb-6"
                         />
                         <div className="flex justify-end gap-3">
                             <Button variant="ghost" onClick={() => setShowRenameDialog(null)}>Cancel</Button>
@@ -1283,8 +1230,8 @@ export function ProjectDashboard() {
             {showTagDialog && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-popover border border-border rounded-xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
-                        <h4 className="text-xl font-bold text-white mb-1">Manage Tags</h4>
-                        <p className="text-zinc-500 text-xs mb-6 font-medium uppercase tracking-widest">For: {showTagDialog.name}</p>
+                        <h4 className="text-xl font-bold text-foreground mb-1">Manage Tags</h4>
+                        <p className="text-muted-foreground text-xs mb-6 font-medium uppercase tracking-widest">For: {showTagDialog.name}</p>
 
                         <div className="flex-1 overflow-y-auto space-y-6 pr-2 custom-scrollbar">
                             {/* Create New Tag Section */}
@@ -1297,7 +1244,7 @@ export function ProjectDashboard() {
                                             onChange={e => setTagNameInput(e.target.value)}
                                             onKeyDown={e => e.key === 'Enter' && handleCreateTag()}
                                             placeholder="Tag name..."
-                                            className="w-full bg-input/50 border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary outline-none"
+                                            className="w-full bg-input border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary outline-none placeholder:text-muted-foreground/50"
                                         />
                                     </div>
                                     <UnifiedColorPicker
@@ -1330,8 +1277,8 @@ export function ProjectDashboard() {
                                                         setShowTagDialog({ ...showTagDialog, tags: newTags });
                                                     }}
                                                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg border text-sm font-bold transition-all ${isSelected
-                                                        ? 'bg-zinc-800/50 border-primary text-white shadow-[0_0_15px_rgba(var(--primary),0.1)]'
-                                                        : 'bg-[#1a1a1a] border-zinc-800 text-zinc-500 hover:border-zinc-700'
+                                                        ? 'bg-primary/10 border-primary text-foreground shadow-[0_0_15px_rgba(var(--primary),0.1)]'
+                                                        : 'bg-muted/30 border-border text-muted-foreground hover:border-muted-foreground/50'
                                                         }`}
                                                 >
                                                     <div className="w-3 h-3 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: tag.color }} />
@@ -1498,7 +1445,7 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
             className={`group bg-card rounded-xl border border-border hover:border-primary/50 cursor-pointer transition-all hover:translate-y-[-4px] shadow-lg flex flex-col relative aspect-[4/3] h-auto ${showMenu ? 'z-50' : ''}`}
             onClick={onOpen}
         >
-            <div className="flex-1 bg-[#2d2d2d] flex items-center justify-center relative overflow-hidden rounded-t-xl">
+            <div className="flex-1 bg-muted flex items-center justify-center relative overflow-hidden rounded-t-xl">
                 {thumbnail ? (
                     <img
                         src={thumbnail}
@@ -1516,7 +1463,7 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
                         }}
                     />
                 ) : (
-                    <LayoutGrid className={cn("w-12 h-12 transition-opacity", isExample ? "text-zinc-700" : "text-primary/40")} />
+                    <LayoutGrid className={cn("w-12 h-12 transition-opacity", isExample ? "text-muted-foreground/30" : "text-primary/40")} />
                 )}
 
                 {/* Badges */}
@@ -1537,13 +1484,13 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
                 <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                         onClick={(e) => { e.stopPropagation(); onToggleStar(e, project.name); }}
-                        className={`p-1.5 rounded-md backdrop-blur-md transition-all ${isStarred ? 'bg-primary text-white' : 'bg-black/50 text-zinc-400'}`}
+                        className={`p-1.5 rounded-md backdrop-blur-md transition-all ${isStarred ? 'bg-primary text-white' : 'bg-muted/50 text-muted-foreground hover:bg-muted/80'}`}
                     >
                         <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-white' : ''}`} />
                     </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); onAction(); }}
-                        className={`p-1.5 rounded-md backdrop-blur-md transition-all ${showMenu ? 'bg-primary text-white' : 'bg-black/50 text-zinc-400'}`}
+                        className={`p-1.5 rounded-md backdrop-blur-md transition-all ${showMenu ? 'bg-primary text-white' : 'bg-muted/50 text-muted-foreground hover:bg-muted/80'}`}
                     >
                         <MoreVertical className="w-3.5 h-3.5" />
                     </button>
@@ -1570,43 +1517,43 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
 
             {/* Context Menu */}
             {showMenu && (
-                <div className="absolute top-9 right-2 w-52 bg-[#222] border border-zinc-800 rounded-lg shadow-2xl z-50 py-1.5 animate-in slide-in-from-top-2 duration-150">
-                    <button onClick={(e) => { e.stopPropagation(); onRename(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3">
+                <div className="absolute top-9 right-2 w-52 bg-popover border border-border rounded-lg shadow-2xl z-50 py-1.5 animate-in slide-in-from-top-2 duration-150">
+                    <button onClick={(e) => { e.stopPropagation(); onRename(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3">
                         <Info className="w-3.5 h-3.5" /> RENAME PROJECT
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); onManageTags(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3">
+                    <button onClick={(e) => { e.stopPropagation(); onManageTags(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3">
                         <Tag className="w-3.5 h-3.5 text-primary" /> MANAGE TAGS
                     </button>
                     {hasPAT && (
-                        <button onClick={(e) => { e.stopPropagation(); onViewHistory(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3">
+                        <button onClick={(e) => { e.stopPropagation(); onViewHistory(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3">
                             <GitBranch className="w-3.5 h-3.5 text-blue-400" /> HISTORY & BRANCHES
                         </button>
                     )}
 
                     {!isExample && folders && folders.length > 0 && (
                         <div className="relative group/folder">
-                            <button className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 justify-between">
+                            <button className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3 justify-between">
                                 <div className="flex items-center gap-3">
                                     <Folder className="w-3.5 h-3.5 text-orange-400" /> MOVE TO...
                                 </div>
-                                <div className="text-[9px] text-zinc-500">▶</div>
+                                <div className="text-[9px] text-muted-foreground/50">▶</div>
                             </button>
                             {/* Submenu */}
-                            <div className="absolute right-full top-0 mr-1 w-48 bg-[#222] border border-zinc-800 rounded-lg shadow-xl hidden group-hover/folder:block py-1">
+                            <div className="absolute right-full top-0 mr-1 w-48 bg-popover border border-border rounded-lg shadow-xl hidden group-hover/folder:block py-1">
                                 {folders.map((f: any) => (
                                     <button
                                         key={f.name}
                                         onClick={(e) => { e.stopPropagation(); onMoveToFolder(f.name); onAction(); }}
-                                        className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-2"
+                                        className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-2"
                                     >
                                         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: f.color }} />
                                         {f.name}
                                     </button>
                                 ))}
-                                <div className="h-px bg-zinc-800 my-1" />
+                                <div className="h-px bg-border my-1" />
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onMoveToFolder(undefined); onAction(); }}
-                                    className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-400 hover:bg-zinc-800 hover:text-white italic"
+                                    className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground/60 hover:bg-muted hover:text-foreground italic"
                                 >
                                     Remove from folder
                                 </button>
@@ -1614,8 +1561,8 @@ function ProjectCard({ project, onOpen, onToggleStar, isStarred, onAction, showM
                         </div>
                     )}
 
-                    <div className="h-px bg-zinc-800 my-1.5" />
-                    <button onClick={(e) => { e.stopPropagation(); onDelete(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 flex items-center gap-3">
+                    <div className="h-px bg-border my-1.5" />
+                    <button onClick={(e) => { e.stopPropagation(); onDelete(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-500/10 flex items-center gap-3">
                         <Trash2 className="w-3.5 h-3.5" /> DELETE PROJECT
                     </button>
                 </div>

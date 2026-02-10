@@ -1,0 +1,231 @@
+import React from 'react';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+    Settings as SettingsIcon,
+    User,
+    Github,
+    HelpCircle,
+    Bell,
+    RefreshCw,
+    LogOut,
+    Moon,
+    Sun,
+    Monitor,
+    Cloud,
+    Keyboard,
+    ShieldCheck
+} from 'lucide-react';
+import { useUIStore } from '@/store/useUIStore';
+import { useGlobalStore } from '@/store/useGlobalStore';
+import { useCADStore } from '@/hooks/useCADStore';
+import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
+
+interface SettingsDialogProps {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+}
+
+export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+    const { theme, setTheme } = useUIStore();
+    const { user, logout, setShowPATDialog } = useGlobalStore();
+    const { reset } = useCADStore();
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-[700px] h-[600px] p-0 overflow-hidden flex flex-col gap-0 rounded-3xl border-border/40 bg-background/95 backdrop-blur-xl">
+                <DialogHeader className="p-6 border-b border-border/10 shrink-0">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center">
+                            <SettingsIcon className="w-6 h-6 text-primary" />
+                        </div>
+                        <div>
+                            <DialogTitle className="text-xl font-bold tracking-tight">System Settings</DialogTitle>
+                            <DialogDescription className="text-muted-foreground/80">
+                                Manage your workspace, account, and preferences
+                            </DialogDescription>
+                        </div>
+                    </div>
+                </DialogHeader>
+
+                <Tabs defaultValue="general" className="flex-1 flex overflow-hidden">
+                    <TabsList className="w-56 h-auto flex flex-col items-stretch justify-start bg-muted/20 border-r border-border/10 p-3 space-y-1">
+                        <TabsTrigger
+                            value="general"
+                            className="justify-start gap-3 px-4 py-2.5 rounded-xl data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
+                        >
+                            <Monitor className="w-4 h-4" /> General
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="account"
+                            className="justify-start gap-3 px-4 py-2.5 rounded-xl data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
+                        >
+                            <User className="w-4 h-4" /> Account
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="notifications"
+                            className="justify-start gap-3 px-4 py-2.5 rounded-xl data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
+                        >
+                            <Bell className="w-4 h-4" /> Notifications
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="help"
+                            className="justify-start gap-3 px-4 py-2.5 rounded-xl data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
+                        >
+                            <HelpCircle className="w-4 h-4" /> Shortcuts & Help
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="system"
+                            className="justify-start gap-3 px-4 py-2.5 rounded-xl data-[state=active]:bg-background data-[state=active]:text-destructive data-[state=active]:shadow-sm transition-all mt-auto"
+                        >
+                            <RefreshCw className="w-4 h-4" /> System
+                        </TabsTrigger>
+                    </TabsList>
+
+                    <ScrollArea className="flex-1 p-6">
+                        <TabsContent value="general" className="m-0 space-y-6">
+                            <section className="space-y-4">
+                                <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                                    <Sun className="w-4 h-4" /> Appearance
+                                </h3>
+                                <div className="flex items-center justify-between p-4 rounded-2xl bg-muted/20 border border-border/10 hover:bg-muted/30 transition-colors">
+                                    <div className="space-y-0.5">
+                                        <div className="text-sm font-medium">Dark Mode</div>
+                                        <div className="text-xs text-muted-foreground">Switch between light and dark themes</div>
+                                    </div>
+                                    <button
+                                        className="p-1.5 rounded-full hover:bg-background transition-all"
+                                        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                                    >
+                                        {theme === 'dark' ? (
+                                            <Sun className="w-5 h-5 text-amber-500" />
+                                        ) : (
+                                            <Moon className="w-5 h-5 text-blue-400" />
+                                        )}
+                                    </button>
+                                </div>
+                            </section>
+
+                            <section className="space-y-4">
+                                <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                                    <RefreshCw className="w-4 h-4" /> Workspace
+                                </h3>
+                                <div className="flex items-center justify-between p-4 rounded-2xl bg-muted/20 border border-border/10">
+                                    <div className="space-y-0.5">
+                                        <div className="text-sm font-medium">Grid Snap</div>
+                                        <div className="text-xs text-muted-foreground">Snap objects to grid increments</div>
+                                    </div>
+                                    <Switch checked={true} />
+                                </div>
+                            </section>
+                        </TabsContent>
+
+                        <TabsContent value="account" className="m-0 space-y-6">
+                            <section className="space-y-4">
+                                <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                                    <ShieldCheck className="w-4 h-4" /> Profile Info
+                                </h3>
+                                <div className="p-4 rounded-2xl bg-muted/20 border border-border/10 space-y-3">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-xl font-bold text-primary-foreground">
+                                            {user?.email?.[0].toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <div className="font-semibold text-foreground">{user?.email}</div>
+                                            <div className="text-xs text-muted-foreground">Standard License</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section className="space-y-4">
+                                <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                                    <Github className="w-4 h-4" /> Cloud Storage
+                                </h3>
+                                <div className="p-4 rounded-2xl bg-muted/20 border border-border/10 flex items-center justify-between">
+                                    <div className="space-y-1">
+                                        <div className="text-sm font-medium flex items-center gap-2">
+                                            <Cloud className="w-4 h-4 text-blue-500" /> GitHub Backend
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">
+                                            {user?.pat ? "Connected and synced" : "Not configured"}
+                                        </div>
+                                    </div>
+                                    <Button variant="outline" size="sm" onClick={() => { onOpenChange(false); setShowPATDialog(true); }} className="rounded-xl">
+                                        Configure
+                                    </Button>
+                                </div>
+                                <Button variant="ghost" onClick={logout} className="w-full text-destructive hover:text-destructive hover:bg-destructive/10 rounded-xl gap-2">
+                                    <LogOut className="w-4 h-4" /> Log Out
+                                </Button>
+                            </section>
+                        </TabsContent>
+
+                        <TabsContent value="notifications" className="m-0 space-y-4">
+                            <h3 className="text-sm font-semibold text-muted-foreground">Recent Activity</h3>
+                            <div className="space-y-3">
+                                <div className="p-4 rounded-2xl bg-muted/10 border border-border/5 space-y-1">
+                                    <div className="text-sm font-medium">Welcome to CAD Editor</div>
+                                    <div className="text-xs text-muted-foreground">Start creating by clicking tools in the toolbar</div>
+                                </div>
+                                <div className="p-4 rounded-2xl bg-muted/10 border border-border/5 space-y-1">
+                                    <div className="text-sm font-medium">Auto-save enabled</div>
+                                    <div className="text-xs text-muted-foreground">Your work will be saved automatically</div>
+                                </div>
+                            </div>
+                        </TabsContent>
+
+                        <TabsContent value="help" className="m-0 space-y-6">
+                            <section className="space-y-4">
+                                <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                                    <Keyboard className="w-4 h-4" /> Keyboard Shortcuts
+                                </h3>
+                                <div className="grid gap-2 text-sm bg-muted/10 rounded-2xl border border-border/5 p-4">
+                                    <div className="flex justify-between items-center py-1"><span>Command Search</span><kbd className="px-1.5 py-0.5 bg-muted rounded border border-border/20 text-[10px]">Cmd+K</kbd></div>
+                                    <Separator className="opacity-10" />
+                                    <div className="flex justify-between items-center py-1"><span>Save</span><kbd className="px-1.5 py-0.5 bg-muted rounded border border-border/20 text-[10px]">Ctrl+S</kbd></div>
+                                    <Separator className="opacity-10" />
+                                    <div className="flex justify-between items-center py-1"><span>Undo</span><kbd className="px-1.5 py-0.5 bg-muted rounded border border-border/20 text-[10px]">Ctrl+Z</kbd></div>
+                                    <Separator className="opacity-10" />
+                                    <div className="flex justify-between items-center py-1"><span>Redo</span><kbd className="px-1.5 py-0.5 bg-muted rounded border border-border/20 text-[10px]">Ctrl+Y</kbd></div>
+                                </div>
+                            </section>
+                        </TabsContent>
+
+                        <TabsContent value="system" className="m-0 space-y-6">
+                            <section className="space-y-4">
+                                <h3 className="text-sm font-semibold text-destructive">Advanced Options</h3>
+                                <div className="p-5 rounded-2xl border border-destructive/20 bg-destructive/5 space-y-3">
+                                    <p className="text-xs text-muted-foreground">
+                                        Resetting the repository will clear all local data. This cannot be undone unless synced with GitHub.
+                                    </p>
+                                    <Button
+                                        variant="destructive"
+                                        className="w-full rounded-xl gap-2 h-11"
+                                        onClick={() => {
+                                            if (confirm("Are you sure you want to reset? All unsaved changes will be lost.")) {
+                                                reset();
+                                                onOpenChange(false);
+                                            }
+                                        }}
+                                    >
+                                        <RefreshCw className="w-4 h-4" /> Reset Repository
+                                    </Button>
+                                </div>
+                            </section>
+                        </TabsContent>
+                    </ScrollArea>
+                </Tabs>
+            </DialogContent>
+        </Dialog>
+    );
+}
