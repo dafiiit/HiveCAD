@@ -125,105 +125,216 @@ async function generateMesh(shapesArray: any[]) {
             console.error(`Worker: Failed to mesh shape ${shapeIndex}`, err);
         }
 
-        // Extract edges with mapping
-        try {
-            console.log(`Worker: Extracting edges for ${astId}`, {
-                hasEdges: !!shape?.edges,
-                edgesLength: shape?.edges?.length,
-                hasMeshEdges: typeof shape?.meshEdges === 'function',
-                shapeType: shape?.constructor?.name,
-            });
+        // ── Identify seam / smooth edges that should NOT be displayed ──
+        // Seam edges are topological artifacts on closed surfaces (cylinder, torus,
+        // sphere …).  We also suppress edges whose two adjacent faces are tangent-
+        // continuous, i.e. the dihedral angle is ~180° (smooth transition).
+        //
+        // Strategy
+        //   1. Build a map  edgeHash → list-of-adjacent-face-geomTypes  using the
+        //      shape topology.
+        //   2. Mark an edge as "smooth / seam" when:
+        //        a) It is closed (periodic) AND has ≤1 distinct adjacent face, OR
+        //        b) ALL adjacent faces are smooth curved surfaces AND the edge is
+        //           closed / periodic (pure seam), OR
+        //        c) The dihedral angle between the two adjacent faces at the edge
+        //           midpoint is close to 180° (tangent-continuous).
+        //   3. Only pass the remaining "real" edges to meshEdges output.
+        //   4. Vertices (corners) are taken from the topological shape vertices and
+        //      kept only if they connect at least one non-smooth edge.
 
-            // Use shape.meshEdges() to get all edge lines at once
+        // Surface types considered "smooth" (curved, can produce seam edges)
+        const SMOOTH_SURFACE_TYPES = new Set([
+            'CYLINDRE', 'SPHERE', 'TORUS', 'CONE',
+            'BEZIER_SURFACE', 'BSPLINE_SURFACE',
+            'REVOLUTION_SURFACE', 'EXTRUSION_SURFACE',
+            'OFFSET_SURFACE', 'OTHER_SURFACE',
+        ]);
+
+        // Angle threshold: if the dihedral angle between two faces at an edge
+        // is within this many degrees of 180°, the junction is considered smooth.
+        const SMOOTH_ANGLE_DEG = 8; // degrees tolerance
+        const SMOOTH_ANGLE_COS = Math.cos((180 - SMOOTH_ANGLE_DEG) * Math.PI / 180);
+        // cos(172°) ≈ -0.990; normals nearly opposite → faces tangent-continuous
+
+        // Set of edge hashCodes that should be hidden
+        const suppressedEdgeHashes = new Set<number>();
+
+        try {
+            if (shape && shape.edges && shape.faces) {
+                const faces: any[] = Array.from(shape.faces);
+                const edges: any[] = Array.from(shape.edges);
+
+                // Build  edgeHash → [face, face, …]
+                const edgeFaceMap = new Map<number, any[]>();
+                for (const face of faces) {
+                    try {
+                        const faceEdges: any[] = Array.from(face.edges);
+                        for (const fe of faceEdges) {
+                            const h = fe.hashCode;
+                            if (!edgeFaceMap.has(h)) edgeFaceMap.set(h, []);
+                            edgeFaceMap.get(h)!.push(face);
+                        }
+                    } catch (_) { /* some face types may not expose edges */ }
+                }
+
+                for (const edge of edges) {
+                    try {
+                        const h = edge.hashCode;
+                        const adjFaces = edgeFaceMap.get(h) || [];
+
+                        // --- Check 1: closed / periodic edge on smooth surfaces → seam ---
+                        const isClosed = edge.isClosed === true || edge.isPeriodic === true;
+                        if (isClosed) {
+                            const allSmooth = adjFaces.length > 0 && adjFaces.every((f: any) => {
+                                try { return SMOOTH_SURFACE_TYPES.has(f.geomType); } catch { return false; }
+                            });
+                            if (allSmooth) {
+                                suppressedEdgeHashes.add(h);
+                                continue;
+                            }
+                        }
+
+                        // --- Check 2: dihedral angle ~180° → tangent-continuous joint ---
+                        if (adjFaces.length === 2) {
+                            try {
+                                // Sample the edge midpoint
+                                const midPt = edge.pointAt(0.5);
+                                const n1 = adjFaces[0].normalAt(midPt);
+                                const n2 = adjFaces[1].normalAt(midPt);
+                                // Dot product of normals
+                                const dot = n1.x * n2.x + n1.y * n2.y + n1.z * n2.z;
+                                // If normals are nearly parallel (dot ≈ +1) or anti-parallel
+                                // (dot ≈ -1), the faces are tangent-continuous at this edge.
+                                // For a smooth junction the normals point roughly the same
+                                // direction (dot ≈ +1) or opposite due to orientation
+                                // (dot ≈ -1).  Either way → smooth.
+                                if (Math.abs(dot) > Math.abs(SMOOTH_ANGLE_COS)) {
+                                    suppressedEdgeHashes.add(h);
+                                    continue;
+                                }
+                                // Clean up replicad Vector objects to avoid leaks
+                                try { midPt.delete?.(); n1.delete?.(); n2.delete?.(); } catch { }
+                            } catch (_) {
+                                // If we can't compute normals, keep the edge (safe default)
+                            }
+                        }
+                    } catch (_) { /* skip this edge on error */ }
+                }
+
+                console.log(`Worker: Edge analysis for ${astId}: ${edges.length} total edges, ${suppressedEdgeHashes.size} suppressed (seam/smooth)`);
+            }
+        } catch (err) {
+            console.warn(`Worker: Edge analysis failed for ${astId}, falling back to all edges`, err);
+        }
+
+        // Extract edges with mapping, filtering out suppressed (seam/smooth) edges
+        try {
             if (shape && typeof shape.meshEdges === 'function') {
                 const edgeMeshResult = shape.meshEdges({ tolerance: 0.1, angularTolerance: 30.0 });
-                console.log(`Worker: meshEdges result:`, {
-                    hasLines: !!edgeMeshResult?.lines,
-                    linesLength: edgeMeshResult?.lines?.length,
-                    hasEdgeGroups: !!edgeMeshResult?.edgeGroups,
-                    edgeGroupsLength: edgeMeshResult?.edgeGroups?.length,
-                    resultKeys: edgeMeshResult ? Object.keys(edgeMeshResult) : 'null'
-                });
 
-                if (edgeMeshResult?.lines && edgeMeshResult.lines.length > 0) {
-                    edgeData = new Float32Array(edgeMeshResult.lines);
-                    console.log(`Worker: Created edgeData with ${edgeData.length} floats (${edgeData.length / 6} segments)`);
+                if (edgeMeshResult?.lines && edgeMeshResult.lines.length > 0 &&
+                    edgeMeshResult.edgeGroups && edgeMeshResult.edgeGroups.length > 0) {
 
-                    // Create edge mapping from edgeGroups if available
-                    if (edgeMeshResult.edgeGroups && edgeMeshResult.edgeGroups.length > 0) {
-                        for (const group of edgeMeshResult.edgeGroups) {
-                            edgeMapping.push({
-                                start: group.start,
-                                count: group.count,
-                                edgeId: edgeMapping.length // Use index as edge ID
-                            });
+                    // Filter: rebuild lines and edgeGroups, skipping suppressed edges
+                    const filteredLines: number[] = [];
+                    let newEdgeId = 0;
+
+                    for (const group of edgeMeshResult.edgeGroups) {
+                        // group.edgeId is the hashCode set by replicad's meshEdges
+                        if (suppressedEdgeHashes.has(group.edgeId)) {
+                            continue; // skip seam / smooth edge
                         }
-                        console.log(`Worker: Created ${edgeMapping.length} edge mappings from edgeGroups`,
-                            edgeMapping.slice(0, 3).map((m: any) => ({ start: m.start, count: m.count, edgeId: m.edgeId })));
-                    } else {
-                        // Fallback: treat all lines as one edge
-                        edgeMapping.push({
-                            start: 0,
-                            count: edgeData.length,
-                            edgeId: 0
-                        });
-                        console.log(`Worker: Created fallback edge mapping (all lines as one edge)`);
-                    }
-                } else {
-                    console.warn(`Worker: meshEdges returned no lines for ${astId}`);
-                }
-            } else {
-                console.warn(`Worker: shape.meshEdges not available for ${astId}`);
-            }
 
+                        const floatStart = group.start * 3;
+                        const floatCount = group.count * 3;
+                        const segStart = filteredLines.length / 3;
+
+                        for (let i = 0; i < floatCount; i++) {
+                            filteredLines.push(edgeMeshResult.lines[floatStart + i]);
+                        }
+
+                        edgeMapping.push({
+                            start: segStart,
+                            count: group.count,
+                            edgeId: newEdgeId++,
+                        });
+                    }
+
+                    if (filteredLines.length > 0) {
+                        edgeData = new Float32Array(filteredLines);
+                    }
+
+                    console.log(`Worker: Edges for ${astId}: ${edgeMeshResult.edgeGroups.length} total → ${edgeMapping.length} after filtering (${suppressedEdgeHashes.size} suppressed)`);
+
+                } else if (edgeMeshResult?.lines && edgeMeshResult.lines.length > 0) {
+                    // No edgeGroups available – can't filter, fall back to all edges
+                    edgeData = new Float32Array(edgeMeshResult.lines);
+                    edgeMapping.push({ start: 0, count: edgeData.length / 3, edgeId: 0 });
+                    console.log(`Worker: No edgeGroups for ${astId}, using all edges as fallback`);
+                }
+            }
         } catch (err) {
             console.error(`Worker: Failed to extract edges ${shapeIndex}`, err);
         }
 
-        // Extract vertices (corners) from edge line data
+        // ── Extract true topological vertices (corners) ──
+        // Only keep vertices that are endpoints of at least one *non-suppressed* edge.
+        // This avoids showing false corners on smooth curved surfaces.
         let vertexData = null;
         try {
-            console.log(`Worker: Extracting vertices from edge data for ${astId}`, {
-                hasEdgeData: !!edgeData,
-                edgeDataLength: edgeData?.length
-            });
+            if (shape && shape.edges) {
+                const edges: any[] = Array.from(shape.edges);
 
-            // Get unique vertices from edge line segments
-            if (edgeData && edgeData.length > 0) {
-                const vertexSet = new Map<string, { x: number, y: number, z: number }>();
+                // Collect endpoint positions of non-suppressed edges
+                const cornerCandidates = new Map<string, { x: number, y: number, z: number, count: number }>();
 
-                // Each line segment has 2 vertices (6 floats: x1,y1,z1, x2,y2,z2)
-                for (let i = 0; i < edgeData.length; i += 6) {
-                    // Start vertex of segment
-                    const x1 = edgeData[i];
-                    const y1 = edgeData[i + 1];
-                    const z1 = edgeData[i + 2];
-                    const key1 = `${x1.toFixed(6)},${y1.toFixed(6)},${z1.toFixed(6)}`;
-                    vertexSet.set(key1, { x: x1, y: y1, z: z1 });
+                const addCandidate = (pt: any) => {
+                    try {
+                        const x = typeof pt.x === 'number' ? pt.x : pt.X?.();
+                        const y = typeof pt.y === 'number' ? pt.y : pt.Y?.();
+                        const z = typeof pt.z === 'number' ? pt.z : pt.Z?.();
+                        if (x == null || y == null || z == null) return;
+                        const key = `${x.toFixed(5)},${y.toFixed(5)},${z.toFixed(5)}`;
+                        const existing = cornerCandidates.get(key);
+                        if (existing) {
+                            existing.count++;
+                        } else {
+                            cornerCandidates.set(key, { x, y, z, count: 1 });
+                        }
+                    } catch { }
+                };
 
-                    // End vertex of segment
-                    const x2 = edgeData[i + 3];
-                    const y2 = edgeData[i + 4];
-                    const z2 = edgeData[i + 5];
-                    const key2 = `${x2.toFixed(6)},${y2.toFixed(6)},${z2.toFixed(6)}`;
-                    vertexSet.set(key2, { x: x2, y: y2, z: z2 });
+                for (const edge of edges) {
+                    try {
+                        if (suppressedEdgeHashes.has(edge.hashCode)) continue;
+                        // Also skip closed edges — they have no distinct endpoints
+                        if (edge.isClosed || edge.isPeriodic) continue;
+
+                        const sp = edge.startPoint;
+                        const ep = edge.endPoint;
+                        addCandidate(sp);
+                        addCandidate(ep);
+                        try { sp.delete?.(); ep.delete?.(); } catch { }
+                    } catch { }
                 }
 
-                if (vertexSet.size > 0) {
-                    const positions = new Float32Array(vertexSet.size * 3);
-                    let idx = 0;
-                    for (const vertex of vertexSet.values()) {
-                        positions[idx++] = vertex.x;
-                        positions[idx++] = vertex.y;
-                        positions[idx++] = vertex.z;
+                // A true corner is a vertex that appears as an endpoint of
+                // ≥ 2 non-suppressed, non-closed edges (i.e. where edges actually meet).
+                // Single-appearance vertices happen at the end of dangling wires; we keep
+                // them too because they can be meaningful (wire endpoints, etc.).
+                if (cornerCandidates.size > 0) {
+                    const positions: number[] = [];
+                    for (const v of cornerCandidates.values()) {
+                        if (v.count >= 2) {
+                            positions.push(v.x, v.y, v.z);
+                        }
                     }
-                    vertexData = positions;
-                    console.log(`Worker: Created vertexData with ${vertexData.length} floats (${vertexData.length / 3} unique vertices from ${edgeData.length / 6} edge segments)`);
-                } else {
-                    console.warn(`Worker: No unique vertices found in edge data for ${astId}`);
+                    if (positions.length > 0) {
+                        vertexData = new Float32Array(positions);
+                    }
+                    console.log(`Worker: Vertices for ${astId}: ${cornerCandidates.size} candidates → ${positions.length / 3} true corners`);
                 }
-            } else {
-                console.warn(`Worker: No edge data available to extract vertices for ${astId}`);
             }
         } catch (err) {
             console.error(`Worker: Failed to extract vertices ${shapeIndex}`, err);
