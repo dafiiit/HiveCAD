@@ -1,2 +1,3 @@
 [build]
-rustc-wrapper = "sccache"
+# Use sccache if available for faster local builds, but don't fail if it's not installed
+rustc-wrapper-fallback = "sccache"
