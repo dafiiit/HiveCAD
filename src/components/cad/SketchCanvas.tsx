@@ -7,6 +7,7 @@ import { SnappingEngine, SnapResult } from "../../lib/snapping";
 import { toolRegistry } from "../../lib/tools";
 import SketchToolDialog from "./SketchToolDialog";
 import { DimensionBadge, createAnnotationContext } from "./SketchAnnotations";
+import { snapToGrid } from "../../lib/sketch/rendering";
 
 // Import tool types once at startup for efficiency
 const DIALOG_REQUIRED_TOOLS: ToolType[] = toolRegistry.getDialogTools().map(t => t.metadata.id as ToolType);
@@ -30,7 +31,9 @@ const SketchCanvas = () => {
         addSolverLineMacro, addSolverRectangleMacro, addSolverCircleMacro,
         // Snapping state and actions
         activeSnapPoint, snappingEnabled, snappingEngine,
-        setSnapPoint, setSnappingEngine
+        setSnapPoint, setSnappingEngine,
+        // New sketch features
+        chainMode, gridSnapSize, undoLastPrimitive,
     } = useCADStore();
 
     const [hoverPoint, setHoverPoint] = useState<[number, number] | null>(null);
@@ -77,6 +80,26 @@ const SketchCanvas = () => {
     useEffect(() => {
         console.log("Selection State Changed:", Array.from(selectedIds));
     }, [selectedIds]);
+
+    // Keyboard shortcuts for sketch mode
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Escape: cancel current drawing / exit chain
+            if (e.key === 'Escape') {
+                if (currentDrawingPrimitive) {
+                    updateCurrentDrawingPrimitive(null);
+                    e.preventDefault();
+                }
+            }
+            // Ctrl+Z / Cmd+Z: undo last primitive
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+                undoLastPrimitive();
+                e.preventDefault();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [currentDrawingPrimitive, updateCurrentDrawingPrimitive, undoLastPrimitive]);
 
     const annotationCtx = useMemo(() => sketchPlane ? createAnnotationContext(sketchPlane) : null, [sketchPlane]);
 
@@ -160,6 +183,11 @@ const SketchCanvas = () => {
                     finalP2d = [snap.x, snap.y];
                     currentSnapResult = snap;
                 }
+            }
+
+            // Grid snapping — applies when no entity snap was found
+            if (!currentSnapResult && gridSnapSize > 0) {
+                finalP2d = snapToGrid(finalP2d, gridSnapSize);
             }
 
             // Legacy: Apply locked constraints for rectangle
@@ -490,15 +518,26 @@ const SketchCanvas = () => {
             return;
         }
 
-        // Line types - complete on second click (two-point)
-        if (['line'].includes(type)) {
-            // Update the end point and finish the line
+        // Line types - complete on second click, then auto-chain
+        if (['line', 'constructionLine'].includes(type)) {
             const finalPoints = [currentDrawingPrimitive.points[0], p2d];
             addSketchPrimitive({
                 ...currentDrawingPrimitive,
                 points: finalPoints
             });
-            updateCurrentDrawingPrimitive(null);
+
+            // Chain mode: auto-start a new line from the endpoint
+            if (chainMode) {
+                const toolDef = toolRegistry.get('line');
+                if (toolDef?.createInitialPrimitive) {
+                    const newPrimitive = toolDef.createInitialPrimitive(p2d) as SketchPrimitive;
+                    updateCurrentDrawingPrimitive(newPrimitive);
+                } else {
+                    updateCurrentDrawingPrimitive(null);
+                }
+            } else {
+                updateCurrentDrawingPrimitive(null);
+            }
             return;
         }
 
@@ -510,6 +549,34 @@ const SketchCanvas = () => {
                     points: [...currentDrawingPrimitive.points, p2d]
                 });
             } else {
+                addSketchPrimitive(currentDrawingPrimitive);
+                // Chain from arc endpoint
+                if (chainMode) {
+                    const endpoint = currentDrawingPrimitive.points[1]; // end point of arc
+                    const toolDef = toolRegistry.get(activeTool as string);
+                    if (toolDef?.createInitialPrimitive) {
+                        const newPrimitive = toolDef.createInitialPrimitive(endpoint) as SketchPrimitive;
+                        updateCurrentDrawingPrimitive(newPrimitive);
+                    } else {
+                        updateCurrentDrawingPrimitive(null);
+                    }
+                } else {
+                    updateCurrentDrawingPrimitive(null);
+                }
+            }
+            return;
+        }
+
+        // Center-point arc (3 clicks: center, start of arc, end of arc)
+        if (type === 'centerPointArc') {
+            if (currentDrawingPrimitive.points.length === 2) {
+                // Second click → defines the start point of the arc (= radius)
+                updateCurrentDrawingPrimitive({
+                    ...currentDrawingPrimitive,
+                    points: [...currentDrawingPrimitive.points, p2d],
+                });
+            } else if (currentDrawingPrimitive.points.length === 3) {
+                // Third click → defines the sweep end → finalize
                 addSketchPrimitive(currentDrawingPrimitive);
                 updateCurrentDrawingPrimitive(null);
             }
@@ -538,12 +605,17 @@ const SketchCanvas = () => {
         setPendingStartPoint(null);
     };
 
-    // Double-click to finish multi-point tools
+    // Double-click to finish multi-point tools or break chain
     const handleDoubleClick = () => {
-        if (currentDrawingPrimitive && MULTI_POINT_TOOLS.includes(currentDrawingPrimitive.type as ToolType)) {
-            if (currentDrawingPrimitive.points.length > 2) {
-                const finalPoints = currentDrawingPrimitive.points.slice(0, -1); // Remove last hover point
-                addSketchPrimitive({ ...currentDrawingPrimitive, points: finalPoints });
+        if (currentDrawingPrimitive) {
+            if (MULTI_POINT_TOOLS.includes(currentDrawingPrimitive.type as ToolType)) {
+                if (currentDrawingPrimitive.points.length > 2) {
+                    const finalPoints = currentDrawingPrimitive.points.slice(0, -1);
+                    addSketchPrimitive({ ...currentDrawingPrimitive, points: finalPoints });
+                    updateCurrentDrawingPrimitive(null);
+                }
+            } else {
+                // For line chains: double-click finishes the chain
                 updateCurrentDrawingPrimitive(null);
             }
         }
@@ -692,10 +764,10 @@ const SketchCanvas = () => {
             <Grid
                 ref={gridRef}
                 args={[200, 200]}
-                cellSize={5}
+                cellSize={gridSnapSize > 0 ? gridSnapSize : 1}
                 cellThickness={0.5}
                 cellColor="#4a6080"
-                sectionSize={25}
+                sectionSize={gridSnapSize > 0 ? gridSnapSize * 10 : 10}
                 sectionThickness={1}
                 sectionColor="#5a7090"
                 fadeDistance={200}

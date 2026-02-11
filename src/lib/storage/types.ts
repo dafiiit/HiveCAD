@@ -42,6 +42,8 @@ export type ProjectVisibility = 'public' | 'private';
 export interface ProjectSnapshot {
     code: string;
     objects: SerializedCADObject[];
+    /** Persistent sketch data for re-editing and version tracking */
+    sketches?: import('../sketch/types').SerializedSketch[];
 }
 
 /**

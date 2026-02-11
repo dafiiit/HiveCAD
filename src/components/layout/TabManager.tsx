@@ -76,6 +76,11 @@ export const TabManager = () => {
                     store.setState({ objects: cleanObjects });
                 }
 
+                // Restore persistent sketches
+                if (project.snapshot.sketches?.length) {
+                    store.getState().loadSketches(project.snapshot.sketches);
+                }
+
                 // Always trigger runCode after loading if we have code
                 if (store.getState().code) {
                     store.getState().runCode();

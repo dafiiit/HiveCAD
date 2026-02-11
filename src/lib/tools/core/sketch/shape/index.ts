@@ -152,9 +152,51 @@ export const roundedRectangleTool: Tool = {
         to3D: (x: number, y: number) => THREE.Vector3,
         isGhost: boolean = false
     ) {
-        // todo:refine Render rounded-corner previews instead of reusing rectangle visuals.
-        // Same as rectangle for now, rounded corners are complex to preview
-        return rectangleTool.renderPreview?.(primitive, to3D, isGhost) ?? null;
+        const color = isGhost ? "#00ffff" : "#ffff00";
+        if (primitive.points.length < 2) return null;
+
+        const [p1, p2] = primitive.points;
+        const minX = Math.min(p1[0], p2[0]);
+        const maxX = Math.max(p1[0], p2[0]);
+        const minY = Math.min(p1[1], p2[1]);
+        const maxY = Math.max(p1[1], p2[1]);
+
+        const w = maxX - minX;
+        const h = maxY - minY;
+        const r = Math.min(primitive.properties?.radius || 3, w / 2, h / 2);
+
+        if (r < 0.01) {
+            return rectangleTool.renderPreview?.(primitive, to3D, isGhost) ?? null;
+        }
+
+        const arcSegments = 8;
+        const pts: [number, number][] = [];
+
+        // Bottom-right corner
+        for (let i = 0; i <= arcSegments; i++) {
+            const a = -Math.PI / 2 + (Math.PI / 2) * (i / arcSegments);
+            pts.push([maxX - r + r * Math.cos(a), minY + r + r * Math.sin(a)]);
+        }
+        // Top-right corner
+        for (let i = 0; i <= arcSegments; i++) {
+            const a = 0 + (Math.PI / 2) * (i / arcSegments);
+            pts.push([maxX - r + r * Math.cos(a), maxY - r + r * Math.sin(a)]);
+        }
+        // Top-left corner
+        for (let i = 0; i <= arcSegments; i++) {
+            const a = Math.PI / 2 + (Math.PI / 2) * (i / arcSegments);
+            pts.push([minX + r + r * Math.cos(a), maxY - r + r * Math.sin(a)]);
+        }
+        // Bottom-left corner
+        for (let i = 0; i <= arcSegments; i++) {
+            const a = Math.PI + (Math.PI / 2) * (i / arcSegments);
+            pts.push([minX + r + r * Math.cos(a), minY + r + r * Math.sin(a)]);
+        }
+        // Close
+        pts.push(pts[0]);
+
+        const displayPoints = pts.map(p => to3D(p[0], p[1]));
+        return renderLineLoop(primitive.id, displayPoints, color);
     }
 };
 
@@ -356,5 +398,99 @@ export const textTool: Tool = {
             points: [startPoint],
             properties: { text: properties?.text || 'Text', fontSize: properties?.fontSize || 16, ...properties }
         };
+    }
+};
+
+export const ellipseTool: Tool = {
+    metadata: {
+        id: 'ellipse',
+        label: 'Ellipse',
+        icon: 'Circle',
+        category: 'sketch',
+        group: 'Shape',
+        description: 'Draw an ellipse by center and corner'
+    },
+    uiProperties: [],
+    getPlanarGeometry(primitive: SketchPrimitiveData): any[] {
+        if (primitive.points.length < 2) return [];
+        const center = primitive.points[0];
+        const edge = primitive.points[1];
+        const rx = Math.abs(edge[0] - center[0]) || 1;
+        const ry = Math.abs(edge[1] - center[1]) || 1;
+        const segments = 32;
+        const result: any[] = [];
+        for (let i = 0; i < segments; i++) {
+            const a1 = (i / segments) * Math.PI * 2;
+            const a2 = ((i + 1) / segments) * Math.PI * 2;
+            result.push(new LineSegment(
+                { x: center[0] + rx * Math.cos(a1), y: center[1] + ry * Math.sin(a1) },
+                { x: center[0] + rx * Math.cos(a2), y: center[1] + ry * Math.sin(a2) },
+            ));
+        }
+        return result;
+    },
+    createShape(codeManager: CodeManager, primitive: SketchPrimitiveData, plane: string): string {
+        const [center, edge] = primitive.points;
+        const rx = Math.abs(edge[0] - center[0]) || 1;
+        const ry = Math.abs(edge[1] - center[1]) || 1;
+        const sketchName = codeManager.addFeature('drawEllipse', null, [rx, ry]);
+        if (center[0] !== 0 || center[1] !== 0) {
+            codeManager.addOperation(sketchName, 'translate', [center[0], center[1]]);
+        }
+        codeManager.addOperation(sketchName, 'sketchOnPlane', [plane]);
+        return sketchName;
+    },
+    processPoints(points: [number, number][], properties?: Record<string, any>): SketchPrimitiveData {
+        return { id: generateToolId(), type: 'ellipse', points, properties };
+    },
+    createInitialPrimitive(startPoint: [number, number], properties?: Record<string, any>): SketchPrimitive {
+        return {
+            id: generateToolId(),
+            type: 'ellipse',
+            points: [startPoint, startPoint],
+            properties: properties || {}
+        };
+    },
+    renderPreview(
+        primitive: SketchPrimitive,
+        to3D: (x: number, y: number) => THREE.Vector3,
+        isGhost: boolean = false
+    ) {
+        const color = isGhost ? "#00ffff" : "#ffff00";
+        if (primitive.points.length < 2) return null;
+
+        const center = primitive.points[0];
+        const edge = primitive.points[1];
+        const rx = Math.abs(edge[0] - center[0]) || 0.01;
+        const ry = Math.abs(edge[1] - center[1]) || 0.01;
+
+        const segments = 64;
+        const pts: THREE.Vector3[] = [];
+        for (let i = 0; i <= segments; i++) {
+            const theta = (i / segments) * Math.PI * 2;
+            pts.push(to3D(
+                center[0] + rx * Math.cos(theta),
+                center[1] + ry * Math.sin(theta)
+            ));
+        }
+
+        return renderLineLoop(primitive.id, pts, color);
+    },
+    renderAnnotation(
+        primitive: SketchPrimitive,
+        to3D: (x: number, y: number) => THREE.Vector3
+    ) {
+        if (primitive.points.length < 2) return null;
+        const center = primitive.points[0];
+        const edge = primitive.points[1];
+        const rx = Math.abs(edge[0] - center[0]);
+        const ry = Math.abs(edge[1] - center[1]);
+        const pos3D = to3D(center[0], center[1]);
+        return React.createElement('group', { position: pos3D },
+            React.createElement('mesh', null,
+                React.createElement('sphereGeometry', { args: [0.15, 16, 16] }),
+                React.createElement('meshBasicMaterial', { color: '#ff00ff', depthTest: false })
+            )
+        );
     }
 };

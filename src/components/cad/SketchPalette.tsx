@@ -6,7 +6,10 @@ import {
   Minus,
   Pencil,
   ArrowUpRight,
-  PencilRuler
+  PencilRuler,
+  Undo2,
+  Link,
+  Grid3X3
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useCADStore } from "@/hooks/useCADStore";
@@ -49,7 +52,13 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
     setSketchPlane,
     sketchStep,
     sketchOptions,
-    setSketchOption
+    setSketchOption,
+    chainMode,
+    setChainMode,
+    gridSnapSize,
+    setGridSnapSize,
+    undoLastPrimitive,
+    activeSketchPrimitives,
   } = useCADStore();
 
   const [optionsExpanded, setOptionsExpanded] = useState(true);
@@ -92,7 +101,7 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
   };
 
   const handleLineType = (type: 'normal' | 'construction') => {
-    setActiveTool(type === 'normal' ? 'line' : 'line');
+    setActiveTool(type === 'normal' ? 'line' : 'constructionLine');
     toast(`Line type: ${type}`);
   };
 
@@ -249,7 +258,7 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
                     <Pencil className="w-3 h-3" />
                   </button>
                   <button
-                    className="p-1 hover:bg-secondary rounded"
+                    className={`p-1 rounded transition-colors ${activeTool === 'constructionLine' ? 'bg-blue-500/30 text-blue-400' : 'hover:bg-secondary'}`}
                     onClick={() => handleLineType('construction')}
                     title="Construction line"
                   >
@@ -264,10 +273,35 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
                 onChange={updateOption("lookAt")}
               />
               <OptionRow
+                label="Chain Mode"
+                checked={chainMode}
+                onChange={(checked) => setChainMode(checked)}
+                icon={<Link className="w-3 h-3" />}
+              />
+              <OptionRow
                 label="Sketch Grid"
                 checked={options.sketchGrid}
                 onChange={updateOption("sketchGrid")}
+                icon={<Grid3X3 className="w-3 h-3" />}
               />
+
+              {/* Grid Snap Size */}
+              <div className="px-3 py-1 flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Grid Size</span>
+                <select
+                  value={gridSnapSize}
+                  onChange={(e) => setGridSnapSize(Number(e.target.value))}
+                  className="ml-auto bg-secondary border border-border rounded text-xs px-1 py-0.5"
+                >
+                  <option value={0}>Off</option>
+                  <option value={0.5}>0.5mm</option>
+                  <option value={1}>1mm</option>
+                  <option value={2}>2mm</option>
+                  <option value={5}>5mm</option>
+                  <option value={10}>10mm</option>
+                </select>
+              </div>
+
               <OptionRow
                 label="Snap"
                 checked={options.snap}
@@ -315,6 +349,40 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
               />
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Bottom Actions */}
+      <div className="shrink-0 border-t border-border px-3 py-2 space-y-2">
+        {/* Entity count + Undo */}
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>{activeSketchPrimitives.length} entit{activeSketchPrimitives.length === 1 ? 'y' : 'ies'}</span>
+          <button
+            onClick={() => { undoLastPrimitive(); }}
+            disabled={activeSketchPrimitives.length === 0}
+            className="flex items-center gap-1 px-2 py-1 rounded hover:bg-secondary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="Undo last (Ctrl+Z)"
+          >
+            <Undo2 className="w-3 h-3" />
+            <span>Undo</span>
+          </button>
+        </div>
+
+        {/* Finish / Cancel */}
+        <div className="flex gap-2">
+          <button
+            onClick={handleFinishSketch}
+            disabled={activeSketchPrimitives.length === 0}
+            className="flex-1 py-1.5 text-xs font-medium rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Finish Sketch
+          </button>
+          <button
+            onClick={exitSketchMode}
+            className="px-3 py-1.5 text-xs rounded border border-border hover:bg-secondary transition-colors"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>

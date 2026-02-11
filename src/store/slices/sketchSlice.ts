@@ -2,6 +2,77 @@ import { StateCreator } from 'zustand';
 import { toast } from 'sonner';
 import { processSketch } from '../../lib/sketch-processor';
 import { CADState, SketchSlice } from '../types';
+import {
+    createSketchObject,
+    generateEntityId,
+    serializeSketch,
+    deserializeSketch,
+    generateSketchCode,
+    type SketchObject,
+    type SketchEntity,
+    type SerializedSketch,
+} from '../../lib/sketch';
+
+/**
+ * Convert a legacy SketchPrimitive to the new SketchEntity format.
+ */
+function primitiveToEntity(prim: any): SketchEntity {
+    const props = prim.properties ?? {};
+
+    // Derive controlPoints from tool-specific property names so the code
+    // generator / renderer can always find them in a single canonical place.
+    let controlPoints = props.controlPoints as Array<[number, number]> | undefined;
+
+    if (!controlPoints) {
+        const start = prim.points?.[0] as [number, number] | undefined;
+        const end   = prim.points?.[1] as [number, number] | undefined;
+
+        if (prim.type === 'quadraticBezier' && start && end) {
+            // quadraticBezier stores ctrlX/ctrlY as offsets from start
+            const cx = props.ctrlX ?? 0;
+            const cy = props.ctrlY ?? 0;
+            controlPoints = [[start[0] + cx, start[1] + cy]];
+        } else if (prim.type === 'bezier' && prim.points?.[2]) {
+            // bezier tool uses 3 points: start, end, controlPoint
+            controlPoints = [prim.points[2] as [number, number]];
+        } else if (prim.type === 'cubicBezier' && start && end) {
+            // cubicBezier stores ctrlStartX/Y and ctrlEndX/Y as offsets
+            const cs: [number, number] = [
+                start[0] + (props.ctrlStartX ?? 0),
+                start[1] + (props.ctrlStartY ?? 0),
+            ];
+            const ce: [number, number] = [
+                end[0] + (props.ctrlEndX ?? 0),
+                end[1] + (props.ctrlEndY ?? 0),
+            ];
+            controlPoints = [cs, ce];
+        }
+    }
+
+    const isConstruction = prim.type === 'constructionLine' || prim.type === 'constructionCircle';
+
+    return {
+        id: prim.id ?? generateEntityId(),
+        type: prim.type === 'threePointsArc' ? 'arc' : prim.type,
+        points: prim.points,
+        construction: isConstruction,
+        properties: {
+            sides: props.sides,
+            sagitta: props.sagitta,
+            radius: props.radius,
+            cornerRadius: props.radius, // roundedRectangle
+            text: props.text,
+            fontSize: props.fontSize,
+            fontFamily: props.fontFamily,
+            startTangent: props.startTangent,
+            endTangent: props.endTangent,
+            startFactor: props.startFactor,
+            endFactor: props.endFactor,
+            controlPoints,
+            solverId: props.solverId,
+        }
+    };
+}
 
 export const createSketchSlice: StateCreator<
     CADState,
@@ -17,6 +88,12 @@ export const createSketchSlice: StateCreator<
     lockedValues: {},
     sketchPoints: [],
 
+    // New persistent sketch state
+    sketches: new Map(),
+    activeSketchId: null,
+    chainMode: true,        // Auto-chain lines by default (like Fusion 360)
+    gridSnapSize: 1,         // 1mm grid snap by default
+
     setSketchPlane: (plane) => set({ sketchPlane: plane, sketchStep: 'drawing' }),
     addSketchPoint: (point) => set(state => ({ sketchPoints: [...state.sketchPoints, point] })),
 
@@ -27,10 +104,37 @@ export const createSketchSlice: StateCreator<
     updateCurrentDrawingPrimitive: (primitive) => set({ currentDrawingPrimitive: primitive }),
     clearSketch: () => set({ sketchPoints: [], activeSketchPrimitives: [], currentDrawingPrimitive: null }),
 
-    enterSketchMode: () => {
+    enterSketchMode: (sketchId?: string) => {
         const state = get();
-        // Ensure solver is initialized when entering sketch mode
         state.initializeSolver();
+
+        if (sketchId) {
+            // Re-editing an existing sketch
+            const existingSketch = state.sketches.get(sketchId);
+            if (existingSketch) {
+                // Convert entities back to primitives for the drawing canvas
+                const primitives = existingSketch.entities.map(entity => ({
+                    id: entity.id,
+                    type: entity.type === 'arc' ? 'threePointsArc' : entity.type,
+                    points: entity.points,
+                    properties: { ...entity.properties },
+                }));
+
+                set({
+                    isSketchMode: true,
+                    sketchStep: 'drawing',
+                    sketchPlane: existingSketch.plane,
+                    activeTab: 'SKETCH',
+                    activeTool: 'line',
+                    activeSketchPrimitives: primitives as any[],
+                    currentDrawingPrimitive: null,
+                    sketchPoints: [],
+                    activeSketchId: sketchId,
+                    isSaved: false,
+                });
+                return;
+            }
+        }
 
         set({
             isSketchMode: true,
@@ -41,6 +145,7 @@ export const createSketchSlice: StateCreator<
             activeSketchPrimitives: [],
             currentDrawingPrimitive: null,
             sketchPoints: [],
+            activeSketchId: null,
             isSaved: false,
         });
     },
@@ -53,49 +158,64 @@ export const createSketchSlice: StateCreator<
             currentDrawingPrimitive: null,
             sketchPlane: null,
             activeTab: 'SOLID',
-            activeTool: 'select'
+            activeTool: 'select',
+            activeSketchId: null,
         });
     },
 
     finishSketch: () => {
         const state = get();
-        const { activeSketchPrimitives, sketchEntities, solverInstance, sketchPlane, code } = state;
+        const { activeSketchPrimitives, sketchEntities, solverInstance, sketchPlane, code, activeSketchId } = state;
 
-        const result = processSketch({
-            activeSketchPrimitives,
-            sketchEntities,
-            solverInstance,
-            sketchPlane,
-            code
-        });
+        if (activeSketchPrimitives.length === 0) {
+            // Nothing to save — just exit
+            set({
+                isSketchMode: false,
+                sketchPoints: [],
+                activeSketchPrimitives: [],
+                currentDrawingPrimitive: null,
+                sketchPlane: null,
+                activeTab: 'SOLID',
+                activeTool: 'select',
+                lockedValues: {},
+                activeSketchId: null,
+            });
+            return;
+        }
+
+        // Convert primitives to persistent SketchEntity objects
+        const entities: SketchEntity[] = activeSketchPrimitives.map(primitiveToEntity);
+
+        // Create or update the persistent SketchObject
+        const sketchObj: SketchObject = activeSketchId && state.sketches.has(activeSketchId)
+            ? {
+                ...state.sketches.get(activeSketchId)!,
+                entities,
+                updatedAt: Date.now(),
+                isEditing: false,
+            }
+            : createSketchObject(sketchPlane ?? 'XY', undefined);
+
+        if (!activeSketchId) {
+            sketchObj.entities = entities;
+            sketchObj.isEditing = false;
+        }
+
+        // Generate code from the persistent sketch
+        const result = generateSketchCode(sketchObj, code);
 
         if (result.error) {
             toast.error(result.error);
             return;
         }
 
-        if (!result.sketchName) {
-            // No sketch created (maybe just open wire or empty)
-            // processSketch handles "wires" now, so if names are null it means empty.
-            // Wait, processSketch returns name even for wires.
-            // If syncedPrimitives.length === 0, it returns null.
+        sketchObj.featureId = result.featureId;
 
-            if (activeSketchPrimitives.length === 0) {
-                set({
-                    isSketchMode: false,
-                    sketchPoints: [],
-                    activeSketchPrimitives: [],
-                    currentDrawingPrimitive: null,
-                    sketchPlane: null,
-                    activeTab: 'SOLID',
-                    activeTool: 'select',
-                    lockedValues: {}
-                });
-                return;
-            }
-        }
+        // Save the sketch to the persistent map
+        const newSketches = new Map(state.sketches);
+        newSketches.set(sketchObj.id, sketchObj);
 
-        // Success - Code was updated in result.code
+        // Success
         set({
             code: result.code,
             isSketchMode: false,
@@ -105,10 +225,60 @@ export const createSketchSlice: StateCreator<
             sketchPlane: null,
             activeTab: 'SOLID',
             activeTool: 'select',
-            lockedValues: {}
+            lockedValues: {},
+            activeSketchId: null,
+            sketches: newSketches,
         });
 
         get().runCode();
+        get().pushToHistory('sketch', sketchObj.name);
+    },
+
+    undoLastPrimitive: () => {
+        set(state => {
+            if (state.currentDrawingPrimitive) {
+                // Cancel current drawing first
+                return { currentDrawingPrimitive: null };
+            }
+            if (state.activeSketchPrimitives.length === 0) return {};
+            return {
+                activeSketchPrimitives: state.activeSketchPrimitives.slice(0, -1),
+            };
+        });
+    },
+
+    setChainMode: (enabled) => set({ chainMode: enabled }),
+    setGridSnapSize: (size) => set({ gridSnapSize: Math.max(0, size) }),
+
+    editSketch: (sketchId: string) => {
+        const state = get();
+        const sketch = state.sketches.get(sketchId);
+        if (!sketch) {
+            toast.error(`Sketch "${sketchId}" not found`);
+            return;
+        }
+        // Re-enter sketch mode with the existing sketch
+        state.enterSketchMode(sketchId);
+    },
+
+    deleteSketch: (sketchId: string) => {
+        const state = get();
+        const newSketches = new Map(state.sketches);
+        newSketches.delete(sketchId);
+        set({ sketches: newSketches });
+    },
+
+    getSerializedSketches: () => {
+        const state = get();
+        return Array.from(state.sketches.values()).map(serializeSketch);
+    },
+
+    loadSketches: (serialized: SerializedSketch[]) => {
+        const newSketches = new Map<string, SketchObject>();
+        for (const s of serialized) {
+            newSketches.set(s.id, deserializeSketch(s));
+        }
+        set({ sketches: newSketches });
     },
 
     setSketchInputLock: (key, value) => {

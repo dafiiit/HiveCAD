@@ -36,6 +36,7 @@ function buildProjectData(state: CADState): ProjectData {
         snapshot: {
             code: state.code,
             objects: serializeObjects(state.objects),
+            sketches: state.getSerializedSketches(),
         },
         namespaces: {},
     };
@@ -323,6 +324,10 @@ export const createVersioningSlice: StateCreator<
                             }],
                             historyIndex: 0,
                         });
+                        // Restore persistent sketches
+                        if (data.snapshot.sketches?.length) {
+                            get().loadSketches(data.snapshot.sketches);
+                        }
                         get().runCode();
                     }
                 });

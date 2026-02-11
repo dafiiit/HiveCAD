@@ -9,6 +9,7 @@ import { CommitInfo as VCSCommit, SerializedCADObject } from '../lib/storage/typ
 import { ConstraintSolver, EntityId, SketchEntity, SketchConstraint, ConstraintType, SolveResult } from '../lib/solver';
 import { SnapPoint, SnappingEngine } from '../lib/snapping';
 import { AssemblyState, AssemblyComponent, AssemblyMate, ComponentId, MateId, MateType } from '../lib/assembly/types';
+import type { SketchObject, SerializedSketch } from '../lib/sketch';
 
 export type ToolType =
     | 'select' | 'pan' | 'orbit'
@@ -320,6 +321,15 @@ export interface SketchSlice {
     lockedValues: Record<string, number | null>;
     sketchPoints: [number, number][];
 
+    /** All persistent sketches, keyed by sketch ID */
+    sketches: Map<string, SketchObject>;
+    /** The ID of the sketch currently being edited (or null) */
+    activeSketchId: string | null;
+    /** Chain mode: auto-start next line from last endpoint */
+    chainMode: boolean;
+    /** Grid snap size (0 = disabled) */
+    gridSnapSize: number;
+
     addSketchPoint: (point: [number, number]) => void;
     setSketchPlane: (plane: 'XY' | 'XZ' | 'YZ') => void;
     addSketchPrimitive: (primitive: SketchPrimitive) => void;
@@ -329,7 +339,14 @@ export interface SketchSlice {
     setSketchInputLock: (key: string, value: number | null) => void;
     clearSketchInputLocks: () => void;
     clearSketch: () => void;
-    enterSketchMode: () => void;
+    enterSketchMode: (sketchId?: string) => void;
+    undoLastPrimitive: () => void;
+    setChainMode: (enabled: boolean) => void;
+    setGridSnapSize: (size: number) => void;
+    editSketch: (sketchId: string) => void;
+    deleteSketch: (sketchId: string) => void;
+    getSerializedSketches: () => SerializedSketch[];
+    loadSketches: (sketches: SerializedSketch[]) => void;
 }
 
 export interface SnappingSlice {

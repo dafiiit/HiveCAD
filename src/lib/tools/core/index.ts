@@ -17,7 +17,8 @@ import {
     lineTool,
     threePointsArcTool,
     smoothSplineTool, bezierTool, quadraticBezierTool, cubicBezierTool,
-    rectangleTool, roundedRectangleTool, circleTool, polygonTool, textTool
+    rectangleTool, roundedRectangleTool, circleTool, polygonTool, textTool, ellipseTool,
+    constructionLineTool, constructionCircleTool, centerPointArcTool,
 } from './sketch';
 
 // Re-export all categories
@@ -53,5 +54,7 @@ export const allCoreTools = [
     lineTool,
     threePointsArcTool,
     smoothSplineTool, bezierTool, quadraticBezierTool, cubicBezierTool,
-    rectangleTool, roundedRectangleTool, circleTool, polygonTool, textTool
+    rectangleTool, roundedRectangleTool, circleTool, polygonTool, textTool, ellipseTool,
+    // Construction & specialty arcs
+    constructionLineTool, constructionCircleTool, centerPointArcTool,
 ];

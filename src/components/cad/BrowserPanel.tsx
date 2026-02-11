@@ -13,7 +13,8 @@ import {
   Pencil,
   FolderClosed,
   FolderOpen,
-  Trash2
+  Trash2,
+  Edit3
 } from "lucide-react";
 import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
@@ -122,7 +123,10 @@ const BrowserPanel = () => {
     bodiesVisible,
     setBodiesVisibility,
     planeVisibility,
-    setPlaneVisibility
+    setPlaneVisibility,
+    sketches,
+    editSketch,
+    deleteSketch: deleteSketchPersistent,
   } = useCADStore();
 
   const planeLabels: Record<string, string> = {
@@ -305,7 +309,7 @@ const BrowserPanel = () => {
 
           <TreeItem
             icon={expandedItems.has("sketches") ? <FolderOpen className="w-3.5 h-3.5" /> : <FolderClosed className="w-3.5 h-3.5" />}
-            label={`Sketches (${objects.filter(o => o.type === 'sketch').length})`}
+            label={`Sketches (${Math.max(objects.filter(o => o.type === 'sketch').length, sketches.size)})`}
             level={1}
             isExpanded={expandedItems.has("sketches")}
             isVisible={sketchesVisible}
@@ -313,7 +317,47 @@ const BrowserPanel = () => {
             onToggleExpand={() => toggleExpand("sketches")}
             onToggleVisibility={() => toggleVisibility("sketches")}
           >
-            {objects.filter(o => o.type === 'sketch').map(obj => (
+            {/* Persistent sketches (editable) */}
+            {Array.from(sketches.values()).map(sketch => {
+              const matchingObj = objects.find(o => o.type === 'sketch' && o.id === sketch.featureId);
+              return (
+                <div key={sketch.id} className="group relative">
+                  <TreeItem
+                    icon={<Pencil className="w-3.5 h-3.5" />}
+                    label={sketch.name}
+                    level={2}
+                    isVisible={matchingObj ? matchingObj.visible : true}
+                    isSelected={matchingObj ? selectedIds.has(matchingObj.id) : false}
+                    onClick={() => {
+                      if (matchingObj) handleObjectClick(matchingObj.id);
+                      else toast(`${sketch.name} — ${sketch.entities.length} entities`);
+                    }}
+                    onToggleVisibility={matchingObj ? () => toggleVisibility(matchingObj.id) : undefined}
+                    onDelete={() => {
+                      deleteSketchPersistent(sketch.id);
+                      if (matchingObj) deleteObject(matchingObj.id);
+                      toast(`Deleted: ${sketch.name}`);
+                    }}
+                  />
+                  {/* Edit button overlay */}
+                  {!isSketchMode && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        editSketch(sketch.id);
+                        toast.success(`Editing: ${sketch.name}`);
+                      }}
+                      className="absolute right-8 top-1/2 -translate-y-1/2 p-0.5 opacity-0 group-hover:opacity-100 hover:text-primary transition-all"
+                      title="Edit sketch"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            {/* Orphan sketch objects (no persistent data) */}
+            {objects.filter(o => o.type === 'sketch' && !Array.from(sketches.values()).some(s => s.featureId === o.id)).map(obj => (
               <TreeItem
                 key={obj.id}
                 icon={<Pencil className="w-3.5 h-3.5" />}
