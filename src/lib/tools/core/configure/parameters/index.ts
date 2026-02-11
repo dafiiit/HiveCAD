@@ -5,7 +5,7 @@ export const parametersTool: Tool = {
         id: 'parameters',
         label: 'Parameters',
         icon: 'Settings2',
-        category: 'modify', // Using modify since 'configure' might not be in ToolCategory
+        category: 'configure',
         description: 'Edit feature parameters',
         shortcut: 'P'
     },

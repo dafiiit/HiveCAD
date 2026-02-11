@@ -5,7 +5,7 @@ export const measureTool: Tool = {
         id: 'measure',
         label: 'Measure',
         icon: 'Ruler',
-        category: 'navigation',
+        category: 'inspect',
         description: 'Measure distances and dimensions',
         shortcut: 'Ctrl+M'
     },

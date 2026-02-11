@@ -5,7 +5,7 @@ export const patternTool: Tool = {
         id: 'pattern',
         label: 'Pattern',
         icon: 'Grid3X3',
-        category: 'modify', // Using modify since 'configure' might not be in ToolCategory
+        category: 'configure',
         description: 'Create linear or circular patterns',
         shortcut: 'Ctrl+P'
     },

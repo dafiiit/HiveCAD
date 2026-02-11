@@ -7,7 +7,7 @@ export const scaleTool: Tool = {
         icon: 'Scale',
         category: 'modify',
         description: 'Scale selected objects',
-        shortcut: 'S'
+        shortcut: 'Shift+S'
     },
     uiProperties: [
         { key: 'factor', label: 'Scale Factor', type: 'number', default: 1, min: 0.01, max: 100, step: 0.1 },

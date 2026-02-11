@@ -49,8 +49,11 @@ export interface ArcEntity extends BaseEntity {
     endAngle?: number;
 }
 
-/** Union of all entity types */
-export type SketchEntity = PointEntity | LineEntity | CircleEntity | ArcEntity;
+/** Union of all solver entity types */
+export type SolverEntity = PointEntity | LineEntity | CircleEntity | ArcEntity;
+
+/** @deprecated Use SolverEntity instead — renamed to avoid collision with sketch module's SketchEntity */
+export type SketchEntity = SolverEntity;
 
 // ==================== Constraint Types ====================
 
@@ -69,7 +72,8 @@ export type ConstraintType =
     | 'angle'           // Angle between two lines
     | 'pointOnLine'     // Point lies on a line
     | 'pointOnCircle'   // Point lies on a circle/arc
-    | 'radius';         // Radius of circle/arc
+    | 'radius'          // Radius of circle/arc
+    | 'fixed';          // Entity position is locked
 
 /** A geometric constraint between entities */
 export interface SketchConstraint {

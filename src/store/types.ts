@@ -6,34 +6,16 @@ export interface User {
     pat?: string | null;
 }
 import { CommitInfo as VCSCommit, SerializedCADObject } from '../lib/storage/types';
-import { ConstraintSolver, EntityId, SketchEntity, SketchConstraint, ConstraintType, SolveResult } from '../lib/solver';
+import { ConstraintSolver, EntityId, SolverEntity, SketchConstraint, ConstraintType, SolveResult } from '../lib/solver';
 import { SnapPoint, SnappingEngine } from '../lib/snapping';
 import { AssemblyState, AssemblyComponent, AssemblyMate, ComponentId, MateId, MateType } from '../lib/assembly/types';
-import type { SketchObject, SerializedSketch } from '../lib/sketch';
+import type { SketchObject, SerializedSketch, SketchEntityType, SketchEntityProperties } from '../lib/sketch';
 
-export type ToolType =
-    | 'select' | 'pan' | 'orbit'
-    | 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil'
-    | 'sketch'
-    // Line tools
-    | 'line'
-    // Arc tools
-    | 'threePointsArc'
-    // Legacy arc/spline
-    | 'arc' | 'spline'
-    // Spline tools
-    | 'bezier' | 'quadraticBezier' | 'cubicBezier' | 'smoothSpline'
-    // Shape wrappers (Drawing helpers)
-    | 'rectangle' | 'circle' | 'polygon' | 'roundedRectangle' | 'text'
-    // Plane operations
-    | 'plane' | 'pivot' | 'translatePlane' | 'makePlane'
-    // Modifications
-    | 'move' | 'rotate' | 'scale' | 'copy'
-    | 'trim' | 'join' | 'cut' | 'intersect'
-    | 'measure' | 'dimension' | 'constrain'
-    | 'axis' | 'point' | 'sketchPoint' | 'offset'
-    // Allow extension-defined tool IDs without losing string inference.
-    | (string & {});
+/**
+ * Tool identifier — any string registered in the ToolRegistry.
+ * Validated at runtime via toolRegistry.has(id).
+ */
+export type ToolType = string;
 
 export type ViewType = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 'home' | 'isometric';
 
@@ -41,10 +23,10 @@ export interface CADObject {
     id: string;
     name: string;
     /** 
-     * Object type - can be built-in types or extension-defined types (string).
-     * Extensions can create new object types by using their extension ID as the type.
+     * Object type — the tool ID that created this object.
+     * Validated at runtime via the ToolRegistry.
      */
-    type: 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil' | 'sketch' | 'extrusion' | 'revolve' | 'plane' | 'datumAxis' | string;
+    type: string;
     position: [number, number, number];
     rotation: [number, number, number];
     scale: [number, number, number];
@@ -90,54 +72,9 @@ export interface VersionCommit extends VCSCommit {
 
 export interface SketchPrimitive {
     id: string;
-    type: 'line'
-    | 'threePointsArc'
-    | 'bezier' | 'quadraticBezier' | 'cubicBezier' | 'smoothSpline'
-    | 'rectangle' | 'circle' | 'polygon' | 'roundedRectangle' | 'text'
-    | 'arc' | 'spline'; // Keep legacy if needed
-    points: [number, number][]; // Standardized points
-    properties?: {
-        // Polygon
-        sides?: number;
-        // Arc/Ellipse - sagitta
-        sagitta?: number;
-        // Circle radius
-        radius?: number;
-        // Polar line
-        angle?: number;
-        distance?: number;
-        // Line deltas
-        dx?: number;
-        dy?: number;
-        // Ellipse
-        xRadius?: number;
-        yRadius?: number;
-        rotation?: number;
-        longWay?: boolean;
-        counterClockwise?: boolean;
-        // Text
-        text?: string;
-        fontSize?: number;
-        fontFamily?: string;
-        // Spline tangents
-        startTangent?: number;
-        endTangent?: number;
-        startFactor?: number;
-        endFactor?: number;
-        // Bezier control points
-        ctrlX?: number;
-        ctrlY?: number;
-        ctrlStartX?: number;
-        ctrlStartY?: number;
-        ctrlEndX?: number;
-        ctrlEndY?: number;
-        // General control points array
-        controlPoints?: [number, number][];
-        // Corner modification
-        cornerType?: 'fillet' | 'chamfer';
-        // Solver integration
-        solverId?: string;
-    };
+    type: SketchEntityType;
+    points: [number, number][];
+    properties?: SketchEntityProperties;
 }
 
 export interface ObjectSlice {
@@ -294,7 +231,7 @@ export interface VersioningSlice {
 
 export interface SolverSlice {
     solverInstance: ConstraintSolver | null;
-    sketchEntities: Map<EntityId, SketchEntity>;
+    sketchEntities: Map<EntityId, SolverEntity>;
     sketchConstraints: SketchConstraint[];
     draggingEntityId: EntityId | null;
 

@@ -1,6 +1,5 @@
 import { StateCreator } from 'zustand';
 import { toast } from 'sonner';
-import { processSketch } from '../../lib/sketch-processor';
 import { CADState, SketchSlice } from '../types';
 import {
     createSketchObject,

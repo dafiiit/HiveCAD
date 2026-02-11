@@ -5,7 +5,7 @@ export const analyzeTool: Tool = {
         id: 'analyze',
         label: 'Analyze',
         icon: 'Search',
-        category: 'navigation',
+        category: 'inspect',
         description: 'Analyze geometry properties',
         shortcut: 'Ctrl+I'
     },

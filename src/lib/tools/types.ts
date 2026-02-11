@@ -22,7 +22,9 @@ export type ToolCategory =
     | 'modify'      // Move, Rotate, Scale, etc.
     | 'navigation'  // Select, Pan, Orbit
     | 'boolean'     // Join, Cut, Intersect
-    | 'construct';  // Plane, Axis, Point
+    | 'construct'   // Plane, Axis, Point
+    | 'configure'   // Parameters, Pattern
+    | 'inspect';    // Measure, Analyze
 
 // Tool metadata for UI rendering
 export interface ToolMetadata {
@@ -173,6 +175,18 @@ export interface Tool {
         startPoint: [number, number],
         properties?: Record<string, any>
     ): SketchPrimitive;
+
+    /**
+     * Continue a multi-step primitive (e.g., center-point arc needs 3 clicks).
+     * Called after the initial two-point primitive is created.
+     * @param primitive - The current primitive state
+     * @param point - The new 2D point clicked
+     * @returns Updated primitive if more steps needed, or null if done
+     */
+    continuePrimitive?(
+        primitive: SketchPrimitive,
+        point: [number, number]
+    ): SketchPrimitive | null;
 
     /**
      * Get planar geometry for graph analysis (for sketch tools)

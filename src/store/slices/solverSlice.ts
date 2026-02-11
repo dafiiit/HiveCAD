@@ -1,6 +1,6 @@
 import { StateCreator } from 'zustand';
 import { toast } from 'sonner';
-import { ConstraintSolver, EntityId, SketchEntity, ConstraintType } from '../../lib/solver';
+import { ConstraintSolver, EntityId, SolverEntity, ConstraintType } from '../../lib/solver';
 import { CADState, SolverSlice } from '../types';
 
 export const createSolverSlice: StateCreator<
@@ -85,7 +85,7 @@ export const createSolverSlice: StateCreator<
         const result = solverInstance.solve();
 
         if (result.success) {
-            const entities = new Map<EntityId, SketchEntity>();
+            const entities = new Map<EntityId, SolverEntity>();
             solverInstance.getAllEntities().forEach(entity => {
                 entities.set(entity.id, entity);
             });

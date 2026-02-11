@@ -14,12 +14,14 @@
 
 export type SketchEntityType =
     | 'line'
-    | 'arc'
+    | 'arc'            // legacy alias for threePointsArc
+    | 'threePointsArc'
     | 'circle'
     | 'rectangle'
     | 'roundedRectangle'
     | 'polygon'
     | 'smoothSpline'
+    | 'spline'         // legacy alias for smoothSpline
     | 'bezier'
     | 'quadraticBezier'
     | 'cubicBezier'
@@ -80,22 +82,42 @@ export interface SketchEntityProperties {
     lockedAngle?: number;
     lockedWidth?: number;
     lockedHeight?: number;
+    // Polar line
+    angle?: number;
+    distance?: number;
+    // Line deltas
+    dx?: number;
+    dy?: number;
+    // Ellipse
+    xRadius?: number;
+    yRadius?: number;
+    rotation?: number;
+    longWay?: boolean;
+    counterClockwise?: boolean;
+    // Bezier individual control points
+    ctrlX?: number;
+    ctrlY?: number;
+    ctrlStartX?: number;
+    ctrlStartY?: number;
+    ctrlEndX?: number;
+    ctrlEndY?: number;
+    // Corner modification
+    cornerType?: 'fillet' | 'chamfer';
 }
 
 // ──────────────────────────────────────────────────────────────
-// Sketch Constraint (for future parametric solver)
+// Sketch Constraint
+// Uses ConstraintType from the solver module for consistency.
 // ──────────────────────────────────────────────────────────────
 
-export type ConstraintKind =
-    | 'coincident' | 'horizontal' | 'vertical'
-    | 'parallel' | 'perpendicular' | 'tangent'
-    | 'equal' | 'midpoint'
-    | 'distance' | 'angle' | 'radius'
-    | 'fixed' | 'symmetric';
+import type { ConstraintType } from '../solver/types';
+
+/** @deprecated Use ConstraintType from solver module */
+export type ConstraintKind = ConstraintType;
 
 export interface SketchConstraint {
     id: string;
-    type: ConstraintKind;
+    type: ConstraintType;
     entityIds: string[];
     value?: number;
 }

@@ -223,3 +223,6 @@ function sanitizeAngles(start: number, end: number, ccw: boolean) {
     }
     return { startAngle: s, endAngle: e, clockwise };
 }
+
+// Re-export centerPointArcTool (moved from construction/ to its correct group)
+export { centerPointArcTool } from './center-point-arc';
