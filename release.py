@@ -112,21 +112,21 @@ def ask_version_increment() -> Optional[str]:
         'major', 'minor', 'patch', or None (no increment)
     """
     print("\n" + Colors.BOLD + "What would you like to increment?" + Colors.RESET)
-    print(f"  {Colors.CYAN}1{Colors.RESET}) Major version (first number)")
-    print(f"  {Colors.CYAN}2{Colors.RESET}) Minor version (second number)")
-    print(f"  {Colors.CYAN}3{Colors.RESET}) Patch version (third number)")
     print(f"  {Colors.CYAN}0{Colors.RESET}) None (keep current version)")
+    print(f"  {Colors.CYAN}1{Colors.RESET}) Patch version (third number)")
+    print(f"  {Colors.CYAN}2{Colors.RESET}) Minor version (second number)")
+    print(f"  {Colors.CYAN}3{Colors.RESET}) Major version (first number)")
 
     while True:
         choice = input(f"\n{Colors.BOLD}Enter your choice (0-3):{Colors.RESET} ").strip()
-        if choice == "1":
-            return "major"
+        if choice == "0":
+            return None
+        elif choice == "1":
+            return "patch"
         elif choice == "2":
             return "minor"
         elif choice == "3":
-            return "patch"
-        elif choice == "0":
-            return None
+            return "major"
         else:
             print_error("Invalid choice. Please enter 0-3.")
 
@@ -147,8 +147,37 @@ def check_git_status() -> bool:
     if output:
         print_warning("Git working directory is not clean:")
         print(output)
-        return confirm_action("Continue anyway?")
+        
+        if confirm_action("Would you like to commit these changes?"):
+            return commit_pending_changes()
+        
+        return confirm_action("Continue without committing?")
     
+    return True
+
+
+def commit_pending_changes() -> bool:
+    """Commit all pending changes with a custom message."""
+    print("\n" + Colors.BOLD + "Enter commit message:" + Colors.RESET)
+    commit_message = input(f"{Colors.BOLD}Message:{Colors.RESET} ").strip()
+    
+    if not commit_message:
+        print_warning("Empty commit message, skipping commit")
+        return False
+    
+    # Stage all changes
+    success, _ = run_command(["git", "add", "-A"])
+    if not success:
+        print_error("Failed to stage changes")
+        return False
+    
+    # Commit
+    success, _ = run_command(["git", "commit", "-m", commit_message])
+    if not success:
+        print_error("Failed to commit changes")
+        return False
+    
+    print_success(f"Changes committed with message: {commit_message}")
     return True
 
 
