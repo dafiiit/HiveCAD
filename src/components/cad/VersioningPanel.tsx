@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useCADStore } from '@/hooks/useCADStore';
 import {
     GitBranch,
@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { formatDistanceToNow } from 'date-fns';
 import { VCSGraph } from './VCSGraph';
+import type { Commit } from '@/lib/vcs/types';
 
 const VersioningPanel: React.FC = () => {
     const {
@@ -59,9 +60,27 @@ const VersioningPanel: React.FC = () => {
         setIsCreatingBranch(false);
     };
 
+    // Map CommitInfo[] → Commit[] for VCSGraph
+    const graphCommits: Commit[] = useMemo(() => {
+        return fullVersions.map(c => {
+            let branchName = 'main';
+            if (c.refNames) {
+                const ref = c.refNames.find(r => r.includes('heads/')) || c.refNames[0];
+                if (ref) branchName = ref.replace('heads/', '').replace('origin/', '');
+            }
+            return {
+                id: c.hash,
+                parentId: c.parents?.length ? c.parents[0] : null,
+                message: c.message,
+                author: c.author.name,
+                timestamp: new Date(c.author.date).getTime(),
+                branchName,
+            };
+        });
+    }, [fullVersions]);
+
     return (
         <div className="flex flex-col h-full bg-background border-l border-border w-full">
-            {/* Header */}
             <div className="p-4 border-b border-border space-y-2">
                 <div className="flex items-center justify-between">
                     <h2 className="text-sm font-semibold flex items-center gap-2">
@@ -90,7 +109,6 @@ const VersioningPanel: React.FC = () => {
 
             <ScrollArea className="flex-1">
                 <div className="p-4 space-y-6">
-                    {/* Working Tree (Transient History) */}
                     <section>
                         <h3 className="text-[10px] font-bold uppercase text-muted-foreground mb-3 flex items-center gap-2">
                             <Zap className="w-3 h-3 text-yellow-500" />
@@ -119,7 +137,6 @@ const VersioningPanel: React.FC = () => {
 
                     <Separator />
 
-                    {/* Persistent History (Commits) */}
                     <section>
                         <div className="flex items-center justify-between mb-3">
                             <h3 className="text-[10px] font-bold uppercase text-muted-foreground flex items-center gap-2">
@@ -152,14 +169,14 @@ const VersioningPanel: React.FC = () => {
                         )}
 
                         <div className="mt-2 min-h-[300px]">
-                            {fullVersions.length === 0 ? (
+                            {graphCommits.length === 0 ? (
                                 <div className="text-[10px] text-muted-foreground italic flex flex-col items-center justify-center h-32 gap-2">
                                     <GitCommit className="w-8 h-8 opacity-10" />
                                     No persistent commits yet.
                                 </div>
                             ) : (
                                 <VCSGraph
-                                    commits={fullVersions}
+                                    commits={graphCommits}
                                     currentCommitId={currentVersionId || undefined}
                                     onCheckout={checkoutVersion}
                                     compact={true}
@@ -170,7 +187,6 @@ const VersioningPanel: React.FC = () => {
                 </div>
             </ScrollArea>
 
-            {/* Footer / Branch Switcher */}
             <div className="p-4 border-t border-border bg-muted/20">
                 <div className="text-[10px] font-bold uppercase text-muted-foreground mb-2">Branches</div>
                 <div className="flex flex-wrap gap-1">

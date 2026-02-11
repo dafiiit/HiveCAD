@@ -1,4 +1,3 @@
-
 import { SupportedStorage } from '@supabase/supabase-js';
 import { BaseDirectory, exists, mkdir, readTextFile, writeTextFile, remove } from '@tauri-apps/plugin-fs';
 

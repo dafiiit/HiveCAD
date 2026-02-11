@@ -23,7 +23,7 @@ import {
 import { useCADStore } from "@/hooks/useCADStore";
 import { useGlobalStore } from "@/store/useGlobalStore";
 import { toast } from "sonner";
-import { ProjectData } from "@/lib/storage/types";
+import { ProjectMeta } from "@/lib/storage/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,7 +50,7 @@ export const FileManagerDialog = ({ open, onOpenChange }: FileManagerDialogProps
     const { user } = useGlobalStore();
 
     const [searchQuery, setSearchQuery] = React.useState('');
-    const [localProjects, setLocalProjects] = React.useState<ProjectData[]>([]);
+    const [localProjects, setLocalProjects] = React.useState<ProjectMeta[]>([]);
     const [communityProjects, setCommunityProjects] = React.useState<any[]>([]);
     const [isLoading, setIsLoading] = React.useState(false);
 
@@ -65,9 +65,9 @@ export const FileManagerDialog = ({ open, onOpenChange }: FileManagerDialogProps
         setIsLoading(true);
         try {
             const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const adapter = StorageManager.getInstance().currentAdapter;
-            if (adapter && adapter.listProjects) {
-                const projects = await adapter.listProjects();
+            const mgr = StorageManager.getInstance();
+            if (mgr.isInitialized) {
+                const projects = await mgr.quickStore.listProjects();
                 // Sort by last modified (newest first)
                 projects.sort((a, b) => b.lastModified - a.lastModified);
                 setLocalProjects(projects);
@@ -84,24 +84,15 @@ export const FileManagerDialog = ({ open, onOpenChange }: FileManagerDialogProps
         const timer = setTimeout(async () => {
             try {
                 const { StorageManager } = await import('@/lib/storage/StorageManager');
-                const adapter = StorageManager.getInstance().currentAdapter;
+                const meta = StorageManager.getInstance().supabaseMeta;
 
-                if (adapter && adapter.searchCommunityProjects) {
-                    // Pass empty string or specific flag to get popular/trending
-                    // Assuming searchCommunityProjects handles empty query by returning popular items
-                    // or we might need a dedicated method if the API requires it. 
-                    // For now, attempting with empty string if the adapter supports it, 
-                    // otherwise keeping the >= 2 char check for actual search.
-
+                if (meta) {
                     if (searchQuery.length === 0) {
-                        const results = await adapter.searchCommunityProjects('');
+                        const results = await meta.searchPublicProjects('');
                         setCommunityProjects(results);
                     } else if (searchQuery.length >= 2) {
-                        const results = await adapter.searchCommunityProjects(searchQuery);
+                        const results = await meta.searchPublicProjects(searchQuery);
                         setCommunityProjects(results);
-                    } else {
-                        // Keep current results if typing 1 char (or clear if strict)
-                        // setCommunityProjects([]); 
                     }
                 }
             } catch (error) {
@@ -113,8 +104,8 @@ export const FileManagerDialog = ({ open, onOpenChange }: FileManagerDialogProps
     }, [searchQuery]);
 
     const filteredLocal = localProjects.filter(p =>
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.id.toLowerCase().includes(searchQuery.toLowerCase())
+        (p.name ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p.id ?? '').toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const handleImport = () => {
@@ -222,13 +213,9 @@ export const FileManagerDialog = ({ open, onOpenChange }: FileManagerDialogProps
                                         <div
                                             key={project.id}
                                             className="group relative bg-muted/20 border border-border/40 rounded-2xl p-4 hover:bg-muted/30 hover:border-primary/30 transition-all duration-300 cursor-pointer overflow-hidden shadow-sm"
-                                            onClick={async () => {
-                                                const { StorageManager } = await import('@/lib/storage/StorageManager');
-                                                const adapter = StorageManager.getInstance().currentAdapter;
-                                                if (adapter) {
-                                                    toast.success(`Opening ${project.name}`);
-                                                    onOpenChange(false);
-                                                }
+                                            onClick={() => {
+                                                toast.success(`Opening ${project.name}`);
+                                                onOpenChange(false);
                                             }}
                                         >
                                             <div className="flex items-start gap-4">
@@ -243,7 +230,7 @@ export const FileManagerDialog = ({ open, onOpenChange }: FileManagerDialogProps
                                                     <div className="text-sm font-bold truncate mb-0.5 group-hover:text-primary transition-colors">{project.name}</div>
                                                     <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 font-medium">
                                                         <History className="w-3 h-3 opacity-60" />
-                                                        {new Date(project.lastModified).toLocaleDateString()}
+                                                        {project.lastModified ? new Date(project.lastModified).toLocaleDateString() : 'Unknown'}
                                                     </div>
                                                 </div>
                                                 <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">

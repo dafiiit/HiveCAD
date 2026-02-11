@@ -5,12 +5,12 @@ import { ThumbsUp, ThumbsDown, Download } from "lucide-react";
 import * as Icons from "lucide-react";
 import { LucideProps } from "lucide-react";
 import { toast } from "sonner";
-import { Extension } from "@/lib/storage/types";
+import { ExtensionEntry } from "@/lib/storage/types";
 import { useGlobalStore } from "@/store/useGlobalStore";
 import { StorageManager } from "@/lib/storage/StorageManager";
 
 interface ExtensionCardProps {
-    extension: Extension;
+    extension: ExtensionEntry;
     onRefresh?: () => void;
 }
 
@@ -23,7 +23,7 @@ export const ExtensionCard: React.FC<ExtensionCardProps> = ({ extension, onRefre
     // Use manifest data if available
     const name = extension.manifest?.name || 'Unknown';
     const description = extension.manifest?.description || '';
-    const author = extension.author;
+    const author = extension.authorEmail;
     const icon = extension.manifest?.icon || 'Package';
     const version = extension.manifest?.version || '1.0.0';
     const isOwnExtension = user?.email === author;
@@ -36,10 +36,10 @@ export const ExtensionCard: React.FC<ExtensionCardProps> = ({ extension, onRefre
 
         setIsTogglingStatus(true);
         try {
-            const adapter = StorageManager.getInstance().currentAdapter;
-            if (adapter.updateExtensionStatus) {
+            const meta = StorageManager.getInstance().supabaseMeta;
+            if (meta) {
                 const newStatus = extension.status === 'development' ? 'published' : 'development';
-                await adapter.updateExtensionStatus(extension.id, newStatus);
+                await meta.setExtensionStatus(extension.id, newStatus);
                 toast.success(`Extension ${newStatus === 'published' ? 'published' : 'moved to development'}`);
                 // Refresh the list
                 if (onRefresh) {
@@ -56,9 +56,9 @@ export const ExtensionCard: React.FC<ExtensionCardProps> = ({ extension, onRefre
     const handleVote = async (voteType: 'like' | 'dislike') => {
         setIsVoting(true);
         try {
-            const adapter = StorageManager.getInstance().currentAdapter;
-            if (adapter.voteExtension) {
-                await adapter.voteExtension(extension.id, voteType);
+            const meta = StorageManager.getInstance().supabaseMeta;
+            if (meta && user?.id) {
+                await meta.voteExtension(extension.id, user.id, voteType);
 
                 // Update local stats optimistically
                 setLocalStats(prev => ({
@@ -78,9 +78,9 @@ export const ExtensionCard: React.FC<ExtensionCardProps> = ({ extension, onRefre
 
     const handleInstall = async () => {
         try {
-            const adapter = StorageManager.getInstance().currentAdapter;
-            if (adapter.incrementExtensionDownloads) {
-                await adapter.incrementExtensionDownloads(extension.id);
+            const meta = StorageManager.getInstance().supabaseMeta;
+            if (meta) {
+                await meta.incrementDownloads(extension.id);
 
                 // Update local stats optimistically
                 setLocalStats(prev => ({

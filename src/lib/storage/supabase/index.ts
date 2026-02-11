@@ -1,0 +1,1 @@
+export { SupabaseMetaService } from './SupabaseMetaService';

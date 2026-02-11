@@ -43,7 +43,7 @@ import {
 import { useCADStore, ToolType } from "@/hooks/useCADStore";
 import { toast } from "sonner";
 import { StorageManager } from "@/lib/storage/StorageManager";
-import { Extension } from "@/lib/storage/types";
+import { ExtensionEntry } from "@/lib/storage/types";
 import { toolRegistry } from "@/lib/tools";
 import * as LucideIcons from "lucide-react";
 
@@ -64,15 +64,15 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
         enterSketchMode
     } = useCADStore();
     const [searchQuery, setSearchQuery] = useState("");
-    const [extensions, setExtensions] = useState<Extension[]>([]);
+    const [extensions, setExtensions] = useState<ExtensionEntry[]>([]);
 
     useEffect(() => {
         if (searchOpen) {
             const fetchExtensions = async () => {
                 try {
-                    const adapter = StorageManager.getInstance().currentAdapter;
-                    if (adapter.searchCommunityExtensions) {
-                        const results = await adapter.searchCommunityExtensions("");
+                    const meta = StorageManager.getInstance().supabaseMeta;
+                    if (meta) {
+                        const results = await meta.searchExtensions("");
                         setExtensions(results.slice(0, 5)); // Just top 5 for palette
                     }
                 } catch (error) {
@@ -121,7 +121,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
         });
     };
 
-    const handleExtensionSelect = async (extension: Extension) => {
+    const handleExtensionSelect = async (extension: ExtensionEntry) => {
         setSearchOpen(false);
 
         if (!extension.manifest) {
@@ -143,9 +143,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
 
         if (!tool || !hasExecutable) {
             try {
-                const adapter = StorageManager.getInstance().currentAdapter;
-                if (adapter.incrementExtensionDownloads) {
-                    await adapter.incrementExtensionDownloads(extension.id);
+                const meta = StorageManager.getInstance().supabaseMeta;
+                if (meta) {
+                    await meta.incrementDownloads(extension.id);
                 }
             } catch (error) {
                 console.warn("Failed to track extension download:", error);
@@ -229,9 +229,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
         {
             group: "Extensions",
             items: extensions.map(ext => {
-                const LucideIcon = (LucideIcons[ext.icon as keyof typeof LucideIcons] as React.FC<any>) || LucideIcons.Package;
+                const iconName = ext.manifest?.icon || 'Package';
+                const LucideIcon = (LucideIcons[iconName as keyof typeof LucideIcons] as React.FC<any>) || LucideIcons.Package;
                 return {
-                    label: ext.name,
+                    label: ext.manifest?.name || ext.id,
                     icon: <LucideIcon className="mr-2 h-4 w-4" />,
                     isExtension: true,
                     action: () => {

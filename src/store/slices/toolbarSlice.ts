@@ -59,6 +59,12 @@ export const createToolbarSlice: StateCreator<
             if (id) {
                 (get() as any).setActiveTab(id);
             }
-        }
+        },
+
+        // Extension store UI state
+        extensionStoreOpen: false,
+        extensionStoreQuery: '',
+        setExtensionStoreOpen: (open) => set({ extensionStoreOpen: open }),
+        setExtensionStoreQuery: (query) => set({ extensionStoreQuery: query }),
     };
 };

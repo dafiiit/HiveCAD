@@ -10,7 +10,7 @@ import { LucideProps } from "lucide-react";
 import { IconPicker } from "../ui/IconPicker";
 import { useGlobalStore } from "@/store/useGlobalStore";
 import { StorageManager } from "@/lib/storage/StorageManager";
-import { Extension } from "@/lib/storage/types";
+import { ExtensionEntry } from "@/lib/storage/types";
 
 interface CreateExtensionFormProps {
     onCancel: () => void;
@@ -47,16 +47,26 @@ export const CreateExtensionForm: React.FC<CreateExtensionFormProps> = ({ onCanc
 
         setLoading(true);
         try {
-            const adapter = StorageManager.getInstance().currentAdapter;
-            if (adapter.submitExtension) {
-                const githubUrl = await adapter.submitExtension({
+            const remote = StorageManager.getInstance().remoteStore;
+            if (remote) {
+                const githubUrl = await remote.submitExtension({
                     id,
-                    name,
-                    description,
-                    icon: iconName,
-                    author: user?.email || "Anonymous",
-                    version: "1.0.0",
-                } as any);
+                    manifest: {
+                        id,
+                        name,
+                        description,
+                        icon: iconName,
+                        author: user?.email || "Anonymous",
+                        version: "1.0.0",
+                    },
+                    stats: { downloads: 0, likes: 0, dislikes: 0 },
+                    status: 'development',
+                    remoteProvider: 'github',
+                    remoteOwner: '',
+                    remoteRepo: '',
+                    authorId: user?.id || '',
+                    authorEmail: user?.email || 'Anonymous',
+                });
 
                 toast.success("Community Tool Created!", {
                     description: `Your extension "${name}" has been created on GitHub. Redirecting...`,
@@ -72,7 +82,7 @@ export const CreateExtensionForm: React.FC<CreateExtensionFormProps> = ({ onCanc
                 }
             } else {
                 toast.error("Error", {
-                    description: "Storage adapter does not support extension submission.",
+                    description: "Remote store not connected. Please sign in first.",
                 });
             }
         } catch (error) {

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCADStore } from '@/hooks/useCADStore';
-import { CleanupUtility } from '@/lib/storage/CleanupUtility';
 import { useGlobalStore } from '@/store/useGlobalStore';
 import { useTabManager } from '@/components/layout/TabContext';
 import { Button } from '../ui/button';
@@ -11,22 +10,19 @@ import {
     MoreVertical, Grid, List as ListIcon, Folder, ChevronDown,
     Bell, HelpCircle, UserCircle, LayoutGrid, Info, Star, Settings, LogOut, RefreshCw, AlertTriangle, Github
 } from 'lucide-react';
-import { EXAMPLES } from '@/lib/data/examples';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { ProjectData } from '@/lib/storage/types';
-import { deleteProjectPermanently } from '@/lib/storage/projectUtils';
+import type { ProjectMeta, ProjectData, TagEntry, FolderEntry } from '@/lib/storage/types';
+import { createBlankProject, uuid, DEFAULT_CODE } from '@/lib/storage/projectUtils';
+import { StorageManager } from '@/lib/storage/StorageManager';
 import { LoadingScreen } from '../ui/LoadingScreen';
 import { ProjectHistoryView } from './ProjectHistoryView';
 import { GitBranch } from 'lucide-react';
-import { get as idbGet, set as idbSet } from 'idb-keyval';
-import { CacheManager } from '@/lib/storage/CacheManager';
 import { SettingsDialog } from '@/components/ui/SettingsDialog';
 import { ProjectCard } from './ProjectCard';
+import { EXAMPLES } from '@/lib/data/examples';
 
 type DashboardMode = 'workspace' | 'discover';
-
-// No placeholders needed anymore as we have real projects
 
 export function ProjectDashboard() {
     const { openProjectInNewTab } = useTabManager();
@@ -39,16 +35,16 @@ export function ProjectDashboard() {
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [dashboardMode, setDashboardMode] = useState<DashboardMode>('workspace');
     const [activeNav, setActiveNav] = useState('Last Opened');
-    const [folders, setFolders] = useState<{ name: string, color: string }[]>([]);
+    const [folders, setFolders] = useState<FolderEntry[]>([]);
     const [starredProjects, setStarredProjects] = useState<string[]>([]);
-    const [userProjects, setUserProjects] = useState<ProjectData[]>([]);
+    const [userProjects, setUserProjects] = useState<ProjectMeta[]>([]);
     const [loading, setLoading] = useState(false);
-    const [tags, setTags] = useState<{ name: string, color: string }[]>([]);
+    const [tags, setTags] = useState<TagEntry[]>([]);
     const [activeTags, setActiveTags] = useState<string[]>([]);
     const [contextMenuProject, setContextMenuProject] = useState<string | null>(null);
-    const [showRenameDialog, setShowRenameDialog] = useState<ProjectData | null>(null);
+    const [showRenameDialog, setShowRenameDialog] = useState<ProjectMeta | null>(null);
     const [renameInput, setRenameInput] = useState("");
-    const [showTagDialog, setShowTagDialog] = useState<ProjectData | null>(null);
+    const [showTagDialog, setShowTagDialog] = useState<ProjectMeta | null>(null);
     const [tagNameInput, setTagNameInput] = useState("");
     const [tagColorInput, setTagColorInput] = useState("#fbbf24");
     const [showFolderDialog, setShowFolderDialog] = useState(false);
@@ -57,18 +53,23 @@ export function ProjectDashboard() {
     const [showSettingsMenu, setShowSettingsMenu] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
-    const [discoverProjects, setDiscoverProjects] = useState<any[]>([]);
+    const [discoverProjects, setDiscoverProjects] = useState<ProjectMeta[]>([]);
     const [showHistoryDialog, setShowHistoryDialog] = useState<string | null>(null);
     const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
     const [contextMenuFolder, setContextMenuFolder] = useState<string | null>(null);
-    const [renameFolderDialog, setRenameFolderDialog] = useState<{ name: string, color: string } | null>(null);
+    const [renameFolderDialog, setRenameFolderDialog] = useState<FolderEntry | null>(null);
     const [renameFolderInput, setRenameFolderInput] = useState("");
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState<ProjectData | null>(null);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState<ProjectMeta | null>(null);
     const [deleteInput, setDeleteInput] = useState("");
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
+    // ─── Helpers ──────────────────────────────────────────────────────────
+
+    const mgr = StorageManager.getInstance();
+
+    // ─── Refresh Projects ─────────────────────────────────────────────────
+
     const refreshProjects = useCallback(async () => {
-        // If we have a PAT, we should wait until the cloud connection is ready
         if (user?.pat && !isStorageConnected) {
             console.log('[ProjectDashboard] Waiting for cloud connection...');
             return;
@@ -77,76 +78,34 @@ export function ProjectDashboard() {
         if (dashboardMode === 'workspace') {
             setLoading(true);
             try {
-                const { StorageManager } = await import('@/lib/storage/StorageManager');
-                const adapter = StorageManager.getInstance().currentAdapter;
+                // List all projects from QuickStore
+                const metas = await mgr.quickStore.listProjects();
+                setUserProjects(metas.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0)));
 
-                // 1. Fetch Remote Projects
-                let remoteProjects: ProjectData[] = [];
-                if (adapter.listProjects) {
+                // Load tags & folders from Supabase
+                const userId = user?.id;
+                if (userId && mgr.supabaseMeta) {
                     try {
-                        remoteProjects = await adapter.listProjects();
+                        const [fetchedTags, fetchedFolders] = await Promise.all([
+                            mgr.supabaseMeta.getUserTags(userId),
+                            mgr.supabaseMeta.getUserFolders(userId),
+                        ]);
+                        setTags(fetchedTags);
+                        setFolders(fetchedFolders);
                     } catch (e) {
-                        console.warn('Failed to fetch remote projects', e);
+                        console.warn('Failed to fetch tags/folders', e);
                     }
-                }
-
-                // 2. Fetch Local Projects (Offline/Unsynced)
-                const { keys, getMany } = await import('idb-keyval');
-                const allKeys = await keys();
-                const projectKeys = allKeys.filter(k => typeof k === 'string' && k.startsWith('project:'));
-                const localProjects = (await getMany(projectKeys)) as ProjectData[];
-
-                // 3. Merge Strategies
-                const projectMap = new Map<string, ProjectData>();
-
-                // Add remote first
-                remoteProjects.forEach(p => projectMap.set(p.id, p));
-
-                // Add local (overwrite if newer or new)
-                localProjects.forEach(p => {
-                    if (!p || typeof p !== 'object' || !p.id || !p.name) return;
-
-                    const existing = projectMap.get(p.id);
-                    if (!existing) {
-                        // It's a local-only project (newly created)
-                        projectMap.set(p.id, p);
-                    } else {
-                        // Conflict: Check timestamps
-                        // Usually local is newer if we are working on it
-                        if ((p.lastModified || 0) > (existing.lastModified || 0)) {
-                            projectMap.set(p.id, p);
-                        }
-                    }
-                });
-
-                // Filter out soft-deleted projects if not in trash view (Dashboard doesn't have trash view filter yet, assumes list returns active)
-                // Actually adapter.listProjects might return all, so we filter here to be safe, 
-                // but usually deleted projects are handled by `files` being null or `deletedAt`.
-                const mergedProjects = Array.from(projectMap.values())
-                    .sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
-
-                setUserProjects(mergedProjects);
-
-                if (adapter.listTags) {
-                    const fetchedTags = await adapter.listTags();
-                    setTags(fetchedTags);
-                }
-                if (adapter.listFolders) {
-                    const fetchedFolders = await adapter.listFolders();
-                    setFolders(fetchedFolders);
                 }
             } catch (error) {
-                console.error("Failed to fetch projects or tags:", error);
+                console.error("Failed to fetch projects:", error);
             } finally {
                 setLoading(false);
             }
         } else if (dashboardMode === 'discover') {
             setLoading(true);
             try {
-                const { StorageManager } = await import('@/lib/storage/StorageManager');
-                const adapter = StorageManager.getInstance().currentAdapter;
-                if (adapter.searchCommunityProjects) {
-                    const projects = await adapter.searchCommunityProjects(searchQuery);
+                if (mgr.supabaseMeta) {
+                    const projects = await mgr.supabaseMeta.searchPublicProjects(searchQuery);
                     setDiscoverProjects(projects);
                 }
             } catch (error) {
@@ -156,75 +115,119 @@ export function ProjectDashboard() {
                 setLoading(false);
             }
         }
-    }, [user?.pat, dashboardMode, isStorageConnected, searchQuery]);
+    }, [user?.pat, user?.id, dashboardMode, isStorageConnected, searchQuery]);
 
     useEffect(() => {
         refreshProjects();
-        // Prune cache heavily
-        CacheManager.pruneCache();
     }, [refreshProjects]);
 
-    useEffect(() => {
-        const migrationDone = localStorage.getItem('hivecad_migration_v1_done');
+    // ─── Create Project ───────────────────────────────────────────────────
 
-        if (!migrationDone) {
-            console.log('Running one-time migration...');
-            CleanupUtility.forceCleanup().then(() => {
-                localStorage.setItem('hivecad_migration_v1_done', 'true');
-                console.log('Migration complete');
-            });
-        } else {
-            // Normal background cleanup
-            // This will now trigger on mount AND when storage connects
-            CleanupUtility.runBackgroundCleanup();
+    const handleCreateProject = async () => {
+        const existingNames = userProjects.map(p => p.name);
+        let name = 'Unnamed';
+        let counter = 1;
+        while (existingNames.includes(name)) {
+            counter++;
+            name = `Unnamed ${counter}`;
         }
-    }, [isStorageConnected]);
 
-    const handleCreateProject = () => {
-        createProject();
+        const projectId = uuid();
+        console.log(`[ProjectDashboard] Creating project with ID: ${projectId}`);
+
+        const newProject = createBlankProject({
+            id: projectId,
+            name,
+            ownerId: user?.id || 'anon',
+            ownerEmail: user?.email || '',
+        });
+
+        // Save to QuickStore
+        try {
+            await mgr.quickStore.saveProject(newProject);
+        } catch (e) {
+            console.error("Failed to save new project", e);
+        }
+
+        // Set default thumbnail
+        const DEFAULT_THUMBNAIL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        try {
+            const currentThumbnails = JSON.parse(localStorage.getItem('hivecad_thumbnails') || '{}');
+            currentThumbnails[name] = DEFAULT_THUMBNAIL;
+            localStorage.setItem('hivecad_thumbnails', JSON.stringify(currentThumbnails));
+        } catch (e) {
+            console.warn("Failed to set default thumbnail", e);
+        }
+
+        openProjectInNewTab(newProject);
+        toast.success(`Started new project: ${name}`);
+        refreshProjects();
     };
 
-    const [exampleOpenedAt, setExampleOpenedAt] = useState<Record<string, number>>(() => {
+    // ─── Open Project ─────────────────────────────────────────────────────
+
+    const handleOpenProject = async (meta: ProjectMeta) => {
+        setLoadingMessage(`Loading ${meta.name}...`);
         try {
-            return JSON.parse(localStorage.getItem('hivecad_example_opens') || '{}');
-        } catch {
-            return {};
-        }
-    });
+            let data: ProjectData | null = null;
 
-    const handleForkProject = async (project: any) => {
-        setLoadingMessage(`Forking ${project.name}...`);
-        try {
-            const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const manager = StorageManager.getInstance();
-            const adapter = manager.currentAdapter;
+            // Try loading from QuickStore first
+            data = await mgr.quickStore.loadProject(meta.id);
 
-            // 1. Load external data
-            const externalData = await manager.openExternalProject(project.owner, project.repo, project.id);
-            if (!externalData) throw new Error("Failed to load source project");
-
-            // 2. Prepare new project ID (to avoid conflicts)
-            const newId = `${project.id}-fork-${Date.now().toString().slice(-4)}`;
-
-            // 3. Save to user's own repo
-            const forkData = {
-                ...externalData,
-                id: newId,
-                name: `${externalData.name} (Fork)`,
-                ownerId: user.email,
-                lastModified: Date.now(),
-            };
-
-            await adapter.save(newId, forkData);
-
-            // 4. Also copy thumbnail if exists
-            if (project.thumbnail) {
-                // todo:refine Fetch and re-save the thumbnail so forked projects have their own cached image.
-                // We'd ideally fetch the image and re-save it, but for now we'll just let the new index entry use the old URL or wait for next save
-                // Actually, save() already triggers the Supabase index update.
+            // Fallback: pull from remote
+            if (!data && mgr.isRemoteConnected) {
+                data = await mgr.remoteStore!.pullProject(meta.id);
+                // Cache locally
+                if (data) await mgr.quickStore.saveProject(data);
             }
 
-            toast.success(`Forked "${project.name}" to your workspace!`);
+            if (data) {
+                openProjectInNewTab(data);
+                toast.success(`Opened project: ${data.meta.name}`);
+                refreshProjects();
+            } else {
+                toast.error("Project data not found");
+            }
+        } catch (error) {
+            console.error("Failed to open project:", error);
+            toast.error("Failed to open project");
+        } finally {
+            setLoadingMessage(null);
+        }
+    };
+
+    // ─── Fork Project (Discover) ──────────────────────────────────────────
+
+    const handleForkProject = async (meta: ProjectMeta) => {
+        setLoadingMessage(`Forking ${meta.name}...`);
+        try {
+            // Pull the full project from remote
+            let sourceData: ProjectData | null = null;
+            if (mgr.isRemoteConnected) {
+                sourceData = await mgr.remoteStore!.pullProject(meta.id);
+            }
+            if (!sourceData) throw new Error("Failed to load source project");
+
+            const forkId = uuid();
+            const forkedProject: ProjectData = {
+                meta: {
+                    ...sourceData.meta,
+                    id: forkId,
+                    name: `${sourceData.meta.name} (Fork)`,
+                    ownerId: user?.id || 'anon',
+                    ownerEmail: user?.email || '',
+                    lastModified: Date.now(),
+                    createdAt: Date.now(),
+                    visibility: 'private',
+                    lockedBy: null,
+                },
+                snapshot: { ...sourceData.snapshot },
+                namespaces: { ...sourceData.namespaces },
+            };
+
+            await mgr.quickStore.saveProject(forkedProject);
+
+            toast.success(`Forked "${meta.name}" to your workspace!`);
             setDashboardMode('workspace');
             refreshProjects();
         } catch (error) {
@@ -235,79 +238,47 @@ export function ProjectDashboard() {
         }
     };
 
-    const handleOpenProject = async (project: any, versionSha?: string) => {
-        setLoadingMessage(`Loading ${project.name}${versionSha ? ' (Version)...' : '...'}`);
+    // ─── Open Example ─────────────────────────────────────────────────────
+
+    const [exampleOpenedAt, setExampleOpenedAt] = useState<Record<string, number>>(() => {
         try {
-            const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const manager = StorageManager.getInstance();
-            const adapter = manager.currentAdapter;
-
-            let data: ProjectData | null = null;
-
-            if (project.owner && project.repo) {
-                // External project from Discover
-                data = await manager.openExternalProject(project.owner, project.repo, project.id);
-            } else {
-                // Own project
-                // Mark as opened - Fire and Forget (Optimistic)
-                if (!versionSha) {
-                    adapter.updateMetadata(project.id, { lastOpenedAt: Date.now() })
-                        .catch(e => console.warn("[ProjectDashboard] Failed to update lastOpenedAt", e));
-                }
-
-                // Check local storage first
-                let localData: ProjectData | undefined;
-                try {
-                    // We check both ID-based and Name-based keys for backward compatibility
-                    localData = await idbGet(`project:${project.id}`);
-                    if (!localData && project.name) {
-                        localData = await idbGet(`project:${project.name}`);
-                    }
-                } catch (e) {
-                    console.warn("Failed to check local storage", e);
-                }
-
-                // If loading main version (not history) and we have local data
-                if (!versionSha && localData) {
-                    console.log("Loading from local cache (skipping remote fetch).");
-                    data = localData;
-
-                    // Safety: Trigger background sync to ensure local changes are pushed
-                    // We must wait until the tab is opened and store initialized, 
-                    // or we can do it via a flag. 
-                    // Since openProjectInNewTab initializes memory, we can rely on `useBackgroundSync` 
-                    // picking up `hasUnpushedChanges`.
-                    // But `localData` from IDB doesn't necessarily have `hasUnpushedChanges` set to true in the object itself (it's a store flag).
-                    // So we might need to set that flag when opening.
-                } else {
-                    data = await adapter.load(project.id, undefined, undefined, versionSha);
-
-                    // Read-Through Caching: Save to local immediatelly
-                    if (data && !versionSha) {
-                        try {
-                            // Ensure we cache with the stable ID-based key
-                            console.log(`[ProjectDashboard] Caching project ${project.id} locally`);
-                            await idbSet(`project:${project.id}`, data);
-                        } catch (e) {
-                            console.warn("Failed to update local cache", e);
-                        }
-                    }
-                }
-            }
-
-            if (data) {
-                // Open in new tab via context
-                openProjectInNewTab(data);
-                toast.success(`Opened project: ${data.name || project.name}${versionSha ? ' (Read Only)' : ''}`);
-                if (!versionSha) refreshProjects();
-            }
-        } catch (error) {
-            console.error("Failed to open project:", error);
-            toast.error("Failed to open project");
-        } finally {
-            setLoadingMessage(null);
+            return JSON.parse(localStorage.getItem('hivecad_example_opens') || '{}');
+        } catch {
+            return {};
         }
+    });
+
+    const handleOpenExample = (example: typeof EXAMPLES[0]) => {
+        const newOpens = { ...exampleOpenedAt, [example.id]: Date.now() };
+        setExampleOpenedAt(newOpens);
+        localStorage.setItem('hivecad_example_opens', JSON.stringify(newOpens));
+
+        const projectData: ProjectData = {
+            meta: {
+                id: example.id,
+                name: example.name,
+                ownerId: 'Example Project',
+                ownerEmail: '',
+                description: '',
+                visibility: 'public' as const,
+                tags: [],
+                folder: '',
+                thumbnail: example.thumbnail || '',
+                lastModified: Date.parse(example.modified),
+                createdAt: Date.parse(example.modified),
+                remoteProvider: '',
+                remoteLocator: '',
+                lockedBy: null,
+            },
+            snapshot: { code: example.code, objects: [] },
+            namespaces: {},
+        };
+
+        openProjectInNewTab(projectData);
+        toast.success(`Opened ${example.name}`);
     };
+
+    // ─── Delete Project ───────────────────────────────────────────────────
 
     const handleDeleteProject = async (projectId: string) => {
         const project = userProjects.find(p => p.id === projectId);
@@ -323,59 +294,39 @@ export function ProjectDashboard() {
         const projectId = showDeleteConfirm.id;
         const projectName = showDeleteConfirm.name;
 
-        // 1. Optimistic UI Update & Persistence
-        const deletedProject = {
-            ...showDeleteConfirm,
-            deletedAt: Date.now(),
-            tags: [...(showDeleteConfirm.tags || []), 'Trash']
-        };
-
-        setUserProjects(prev => prev.map(p => p.id === projectId ? deletedProject : p));
+        setUserProjects(prev => prev.filter(p => p.id !== projectId));
         setShowDeleteConfirm(null);
-        toast.success(`Moving "${projectName}" to Trash...`);
+        toast.success(`Deleting "${projectName}"...`);
 
-        // Persist to local storage immediately to prevent flicker during background sync
         try {
-            const { set: idbSet } = await import('idb-keyval');
-            await idbSet(`project:${projectId}`, deletedProject);
-        } catch (e) {
-            console.warn('[ProjectDashboard] Failed to persist optimistic delete state', e);
-        }
-
-        // 2. Background Deletion
-        (async () => {
-            try {
-                await deleteProjectPermanently(projectId, projectName, removeThumbnail);
-                console.log(`[ProjectDashboard] Background deletion finished for ${projectId}`);
-                await refreshProjects();
-            } catch (error) {
-                console.error("Background delete failed:", error);
-                toast.error(`Failed to permanently delete "${projectName}"`);
+            await mgr.quickStore.deleteProject(projectId);
+            if (mgr.isRemoteConnected) {
+                await mgr.remoteStore!.deleteProject(projectId);
             }
-        })();
+            await mgr.supabaseMeta?.deleteProjectMeta(projectId);
+            removeThumbnail(projectName);
+            console.log(`[ProjectDashboard] Deleted ${projectId}`);
+            await refreshProjects();
+        } catch (error) {
+            console.error("Delete failed:", error);
+            toast.error(`Failed to delete "${projectName}"`);
+            await refreshProjects();
+        }
     };
+
+    // ─── Rename Project ───────────────────────────────────────────────────
 
     const handleRenameProject = async (projectId: string, newName: string) => {
         if (!newName.trim()) return;
         setLoadingMessage(`Renaming to ${newName}...`);
         try {
-            const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const adapter = StorageManager.getInstance().currentAdapter;
-
-            try {
-                await adapter.rename(projectId, newName.trim());
-            } catch (cloudError) {
-                console.warn("[ProjectDashboard] Cloud rename failed, trying local update", cloudError);
-                // Fallback: update local IndexedDB meta if it exists
-                const localData: any = await idbGet(`project:${projectId}`);
-                if (localData) {
-                    const updated = { ...localData, name: newName.trim(), lastModified: Date.now() };
-                    await idbSet(`project:${projectId}`, updated);
-                } else {
-                    throw cloudError; // Re-throw if no local either
-                }
+            const data = await mgr.quickStore.loadProject(projectId);
+            if (data) {
+                data.meta.name = newName.trim();
+                data.meta.lastModified = Date.now();
+                await mgr.quickStore.saveProject(data);
+                await mgr.supabaseMeta?.upsertProjectMeta(data.meta);
             }
-
             toast.success("Project renamed successfully");
             setShowRenameDialog(null);
             setRenameInput("");
@@ -388,39 +339,37 @@ export function ProjectDashboard() {
         }
     };
 
-    const handleUpdateTags = async (projectId: string, tags: string[]) => {
-        // Optimistic update
-        setUserProjects(prev => prev.map(p =>
-            p.id === projectId ? { ...p, tags } : p
-        ));
+    // ─── Tags ─────────────────────────────────────────────────────────────
 
+    const handleUpdateTags = async (projectId: string, newTags: string[]) => {
+        setUserProjects(prev => prev.map(p =>
+            p.id === projectId ? { ...p, tags: newTags } : p
+        ));
         try {
-            const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const adapter = StorageManager.getInstance().currentAdapter;
-            await adapter.updateMetadata(projectId, { tags });
+            const data = await mgr.quickStore.loadProject(projectId);
+            if (data) {
+                data.meta.tags = newTags;
+                await mgr.quickStore.saveProject(data);
+                await mgr.supabaseMeta?.upsertProjectMeta(data.meta);
+            }
             toast.success("Tags updated");
-            // No need to refreshProjects immediately as we updated it optimistically
-            // But we can do it in background to sync
-            refreshProjects();
         } catch (error) {
             toast.error("Failed to update tags");
-            // Revert update if failed
             refreshProjects();
         }
     };
 
     const handleCreateTag = async () => {
         if (!tagNameInput.trim()) return;
-        const newTags = [...tags, { name: tagNameInput.trim(), color: tagColorInput }];
+        const newTags: TagEntry[] = [...tags, { name: tagNameInput.trim(), color: tagColorInput }];
         try {
-            const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const adapter = StorageManager.getInstance().currentAdapter;
-            if (adapter.saveTags) {
-                await adapter.saveTags(newTags);
-                setTags(newTags);
-                setTagNameInput("");
-                toast.success(`Tag "${tagNameInput}" created`);
+            const userId = user?.id;
+            if (userId && mgr.supabaseMeta) {
+                await mgr.supabaseMeta.saveUserTags(userId, newTags);
             }
+            setTags(newTags);
+            setTagNameInput("");
+            toast.success(`Tag "${tagNameInput}" created`);
         } catch (error) {
             toast.error("Failed to create tag");
         }
@@ -430,26 +379,28 @@ export function ProjectDashboard() {
         setLoadingMessage(`Deleting tag ${tagName}...`);
         const newTags = tags.filter(t => t.name !== tagName);
         try {
-            const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const adapter = StorageManager.getInstance().currentAdapter;
-            if (adapter.saveTags) {
-                await adapter.saveTags(newTags);
-                setTags(newTags);
-
-                // Update all projects to remove this tag
-                const projectsToUpdate = userProjects.filter(p => p.tags?.includes(tagName));
-                for (const project of projectsToUpdate) {
-                    const updatedTags = project.tags?.filter(t => t !== tagName) || [];
-                    await adapter.updateMetadata(project.id, { tags: updatedTags });
-                }
-
-                if (activeTags.includes(tagName)) {
-                    setActiveTags(prev => prev.filter(t => t !== tagName));
-                }
-
-                toast.success(`Tag "${tagName}" deleted`);
-                await refreshProjects();
+            const userId = user?.id;
+            if (userId && mgr.supabaseMeta) {
+                await mgr.supabaseMeta.saveUserTags(userId, newTags);
             }
+            setTags(newTags);
+
+            // Remove tag from all projects that have it
+            const projectsToUpdate = userProjects.filter(p => p.tags?.includes(tagName));
+            for (const meta of projectsToUpdate) {
+                const data = await mgr.quickStore.loadProject(meta.id);
+                if (data) {
+                    data.meta.tags = data.meta.tags.filter(t => t !== tagName);
+                    await mgr.quickStore.saveProject(data);
+                }
+            }
+
+            if (activeTags.includes(tagName)) {
+                setActiveTags(prev => prev.filter(t => t !== tagName));
+            }
+
+            toast.success(`Tag "${tagName}" deleted`);
+            await refreshProjects();
         } catch (error) {
             toast.error("Failed to delete tag");
         } finally {
@@ -457,109 +408,7 @@ export function ProjectDashboard() {
         }
     };
 
-    const createProject = async () => {
-        const existingNames = Object.keys(projectThumbnails);
-        let name = 'Unnamed';
-        let counter = 1;
-
-        while (existingNames.includes(name)) {
-            counter++;
-            name = `Unnamed ${counter}`;
-        }
-
-        // ✓ Generate stable projectId FIRST
-        const projectId = Math.random().toString(36).substr(2, 9);
-        console.log(`[ProjectDashboard] Creating project with ID: ${projectId}`);
-
-        const newProjectData: ProjectData = {
-            id: projectId,
-            name: name,
-            lastModified: Date.now(),
-            cad: {
-                code: 'const main = () => { return; };',
-                objects: []
-            },
-            version: '1.0.0',
-            ownerId: user?.id || 'anon',
-            namespaces: {}
-        };
-
-        // ✓ Cache with projectId
-        try {
-            await idbSet(`project:${projectId}`, newProjectData);
-            console.log(`[ProjectDashboard] Cached project ${projectId}`);
-        } catch (e) {
-            console.error("Failed to cache new project", e);
-        }
-
-        // Set default thumbnail to prevent broken images before first save
-        // todo:refine This is a simple 1x1 transparent pixel; consider a branded placeholder.
-        const DEFAULT_THUMBNAIL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
-
-        // We'll rely on openProjectInNewTab's internal logic, but we can also pre-seed the local storage
-        try {
-            const currentThumbnails = JSON.parse(localStorage.getItem('hivecad_thumbnails') || '{}');
-            currentThumbnails[name] = DEFAULT_THUMBNAIL;
-            localStorage.setItem('hivecad_thumbnails', JSON.stringify(currentThumbnails));
-        } catch (e) {
-            console.warn("Failed to set default thumbnail", e);
-        }
-
-        openProjectInNewTab(newProjectData);
-        toast.success(`Started new project: ${name}`);
-
-        // Refresh to show in list immediately (from local cache)
-        refreshProjects();
-    };
-
-    const handleResetRepository = async () => {
-        setLoadingMessage("Purging Repository...");
-        try {
-            const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const adapter = StorageManager.getInstance().currentAdapter;
-
-            // todo:refine Disable or hide reset actions when the adapter lacks reset support.
-            if (adapter.resetRepository) {
-                // 1. Clear GitHub Repository
-                await adapter.resetRepository();
-
-                // 2. Clear Local State (Store)
-                closeProject(); // Resets fileName, objects, code, etc.
-
-                // 3. Clear LocalStorage
-                localStorage.removeItem('hivecad_thumbnails');
-                localStorage.removeItem('hivecad_example_opens');
-                localStorage.removeItem('hivecad_thumbnails_cache');
-
-                // 3b. Clear IndexedDB (Project Cache)
-                try {
-                    const { clear } = await import('idb-keyval');
-                    await clear();
-                    console.log('[ProjectDashboard] IndexedDB cleared.');
-                } catch (e) {
-                    console.error("Failed to clear IndexedDB:", e);
-                }
-
-                // 4. Reset Component State
-                setStarredProjects([]);
-                setFolders([]);
-                setExampleOpenedAt({});
-
-                toast.success("Repository and local data reset successfully.");
-
-                // 5. Refresh from empty remote
-                await refreshProjects();
-                setShowResetConfirm(false);
-            } else {
-                toast.error("Reset functionality not supported by this storage adapter.");
-            }
-        } catch (error) {
-            console.error("Reset failed:", error);
-            toast.error("Failed to reset repository.");
-        } finally {
-            setLoadingMessage(null);
-        }
-    };
+    // ─── Folders ──────────────────────────────────────────────────────────
 
     const handleAddFolder = () => {
         setFolderNameInput("");
@@ -569,21 +418,15 @@ export function ProjectDashboard() {
 
     const handleCreateFolder = async () => {
         if (!folderNameInput.trim()) return;
-        const newFolders = [...folders, { name: folderNameInput.trim(), color: folderColorInput }];
-
+        const newFolders: FolderEntry[] = [...folders, { name: folderNameInput.trim(), color: folderColorInput }];
         try {
-            const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const adapter = StorageManager.getInstance().currentAdapter;
-            if (adapter.saveFolders) {
-                await adapter.saveFolders(newFolders);
-                setFolders(newFolders);
-                toast.success(`Folder "${folderNameInput}" created`);
-                setShowFolderDialog(false);
-            } else {
-                // Fallback for non-persistent adapters (memory only)
-                setFolders(newFolders);
-                setShowFolderDialog(false);
+            const userId = user?.id;
+            if (userId && mgr.supabaseMeta) {
+                await mgr.supabaseMeta.saveUserFolders(userId, newFolders);
             }
+            setFolders(newFolders);
+            toast.success(`Folder "${folderNameInput}" created`);
+            setShowFolderDialog(false);
         } catch (error) {
             toast.error("Failed to save folder");
         }
@@ -594,27 +437,26 @@ export function ProjectDashboard() {
         const oldName = renameFolderDialog.name;
         const newName = renameFolderInput.trim();
 
-        // 1. Update folder list
         const newFolders = folders.map(f => f.name === oldName ? { ...f, name: newName } : f);
 
         setLoadingMessage(`Renaming folder...`);
         try {
-            const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const adapter = StorageManager.getInstance().currentAdapter;
-
-            // Save new folders list
-            if (adapter.saveFolders) {
-                await adapter.saveFolders(newFolders);
-                setFolders(newFolders);
+            const userId = user?.id;
+            if (userId && mgr.supabaseMeta) {
+                await mgr.supabaseMeta.saveUserFolders(userId, newFolders);
             }
+            setFolders(newFolders);
 
-            // 2. Update all projects in this folder
+            // Update all projects in this folder
             const projectsInFolder = userProjects.filter(p => p.folder === oldName);
-            for (const project of projectsInFolder) {
-                await adapter.updateMetadata(project.id, { folder: newName });
+            for (const meta of projectsInFolder) {
+                const data = await mgr.quickStore.loadProject(meta.id);
+                if (data) {
+                    data.meta.folder = newName;
+                    await mgr.quickStore.saveProject(data);
+                }
             }
 
-            // Update UI state
             if (selectedFolder === oldName) setSelectedFolder(newName);
             toast.success("Folder renamed");
             setRenameFolderDialog(null);
@@ -632,30 +474,21 @@ export function ProjectDashboard() {
 
         setLoadingMessage(`Deleting folder...`);
         try {
-            const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const adapter = StorageManager.getInstance().currentAdapter;
-
-            // 1. Remove from list
             const newFolders = folders.filter(f => f.name !== folderName);
-            if (adapter.saveFolders) {
-                await adapter.saveFolders(newFolders);
-                setFolders(newFolders);
+            const userId = user?.id;
+            if (userId && mgr.supabaseMeta) {
+                await mgr.supabaseMeta.saveUserFolders(userId, newFolders);
             }
+            setFolders(newFolders);
 
-            // 2. Unassign projects
+            // Unassign projects
             const projectsInFolder = userProjects.filter(p => p.folder === folderName);
-            for (const project of projectsInFolder) {
-                // Remove folder property? Pass null or empty string?
-                // Our updateMetadata is partial, so we might need to explicit set it to undefined or null.
-                // Typescript types say string | undefined. 
-                // We'll assume sending undefined/empty string to updateMetadata logic handles it, 
-                // but usually undefined in JSON.stringify is omitted. 
-                // We might need to send a specific "null" value if the backend supports it, or just re-save the whole project without the folder property.
-                // For GitHubAdapter, 'save' overwrites. So 'updateMetadata' merges. 
-                // Logic in updateMetadata: const updatedData = { ...data, ...updates, lastModified: Date.now() };
-                // If updates has folder: undefined, it might keys overlap.
-                // Let's coerce to any to allow delete.
-                await adapter.updateMetadata(project.id, { folder: undefined } as any);
+            for (const meta of projectsInFolder) {
+                const data = await mgr.quickStore.loadProject(meta.id);
+                if (data) {
+                    data.meta.folder = '';
+                    await mgr.quickStore.saveProject(data);
+                }
             }
 
             if (selectedFolder === folderName) setSelectedFolder(null);
@@ -671,54 +504,60 @@ export function ProjectDashboard() {
     const handleFolderColorChange = async (folderName: string, newColor: string) => {
         const newFolders = folders.map(f => f.name === folderName ? { ...f, color: newColor } : f);
         try {
-            const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const adapter = StorageManager.getInstance().currentAdapter;
-            if (adapter.saveFolders) {
-                await adapter.saveFolders(newFolders);
-                setFolders(newFolders);
+            const userId = user?.id;
+            if (userId && mgr.supabaseMeta) {
+                await mgr.supabaseMeta.saveUserFolders(userId, newFolders);
             }
+            setFolders(newFolders);
         } catch (error) {
             toast.error("Failed to update folder color");
         }
     };
 
-    // Helper to move project to folder
     const handleMoveProjectToFolder = async (projectId: string, folderName: string | undefined) => {
         try {
-            const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const adapter = StorageManager.getInstance().currentAdapter;
-            // Force cast to any to ensure we can pass undefined to clear the field if needed, 
-            // though updateMetadata handles partials so it should be fine.
-            await adapter.updateMetadata(projectId, { folder: folderName });
-            if (folderName) {
-                toast.success(`Moved to ${folderName}`);
-            } else {
-                toast.success(`Removed from folder`);
+            const data = await mgr.quickStore.loadProject(projectId);
+            if (data) {
+                data.meta.folder = folderName || '';
+                await mgr.quickStore.saveProject(data);
+                await mgr.supabaseMeta?.upsertProjectMeta(data.meta);
             }
+            toast.success(folderName ? `Moved to ${folderName}` : `Removed from folder`);
             refreshProjects();
         } catch (error) {
             toast.error("Failed to move project");
         }
     };
 
-    const handleOpenExample = (example: typeof EXAMPLES[0]) => {
-        const newOpens = { ...exampleOpenedAt, [example.id]: Date.now() };
-        setExampleOpenedAt(newOpens);
-        localStorage.setItem('hivecad_example_opens', JSON.stringify(newOpens));
+    // ─── Reset Repository ─────────────────────────────────────────────────
 
-        const projectData: ProjectData = {
-            id: example.id,
-            name: example.name,
-            ownerId: 'Example Project',
-            files: { code: example.code },
-            version: '1.0.0',
-            lastModified: Date.parse(example.modified),
-            thumbnail: example.thumbnail
-        };
+    const handleResetRepository = async () => {
+        setLoadingMessage("Purging Repository...");
+        try {
+            await mgr.resetAll();
 
-        openProjectInNewTab(projectData);
-        toast.success(`Opened ${example.name}`);
+            closeProject();
+
+            localStorage.removeItem('hivecad_thumbnails');
+            localStorage.removeItem('hivecad_example_opens');
+            localStorage.removeItem('hivecad_thumbnails_cache');
+
+            setStarredProjects([]);
+            setFolders([]);
+            setExampleOpenedAt({});
+
+            toast.success("Repository and local data reset successfully.");
+            await refreshProjects();
+            setShowResetConfirm(false);
+        } catch (error) {
+            console.error("Reset failed:", error);
+            toast.error("Failed to reset repository.");
+        } finally {
+            setLoadingMessage(null);
+        }
     };
+
+    // ─── Star ─────────────────────────────────────────────────────────────
 
     const handleToggleStar = (e: React.MouseEvent, projectName: string) => {
         e.stopPropagation();
@@ -730,6 +569,8 @@ export function ProjectDashboard() {
         toast.success(starredProjects.includes(projectName) ? `Removed from Starred` : `Added to Starred`);
     };
 
+    // ─── Navigation ───────────────────────────────────────────────────────
+
     const navItems = [
         { icon: Clock, label: 'Last Opened' },
         { icon: User, label: 'Created by me' },
@@ -739,6 +580,7 @@ export function ProjectDashboard() {
         { icon: Trash2, label: 'Trash' },
     ];
 
+    // ─── Render ───────────────────────────────────────────────────────────
 
     return (
         <div className="flex h-screen w-screen bg-background text-foreground overflow-hidden font-sans flex-col">
@@ -869,7 +711,7 @@ export function ProjectDashboard() {
                                             <div>
                                                 <h4 className="font-bold text-zinc-200 group-hover:text-primary transition-colors truncate">{folder.name}</h4>
                                                 <p className="text-[10px] text-zinc-500 font-medium">
-                                                    {userProjects.filter(p => p.folder === folder.name && !p.deletedAt).length} projects
+                                                    {userProjects.filter(p => p.folder === folder.name).length} projects
                                                 </p>
                                             </div>
                                         </div>
@@ -896,7 +738,7 @@ export function ProjectDashboard() {
                                         onClick={() => {
                                             setActiveNav(item.label);
                                             setActiveTags([]);
-                                            setSelectedFolder(null); // Clear folder selection when changing main nav
+                                            setSelectedFolder(null);
                                         }}
                                         className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all border ${activeNav === item.label && activeTags.length === 0 && !selectedFolder
                                             ? 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.2)]'
@@ -969,7 +811,7 @@ export function ProjectDashboard() {
                                         ...userProjects.map(p => ({ ...p, type: 'user' as const })),
                                         ...EXAMPLES
                                             .filter(e => !userProjects.some(up => up.id === e.id))
-                                            .map(e => ({ ...e, type: 'example' as const }))
+                                            .map(e => ({ ...e, type: 'example' as const, ownerId: 'Example Project', tags: [] as string[], folder: '', lastModified: Date.parse(e.modified) }))
                                     ]
                                         .filter(p => (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
                                         .filter(p => {
@@ -978,37 +820,22 @@ export function ProjectDashboard() {
                                                 if ((p as any).folder !== selectedFolder) return false;
                                             }
 
-                                            // Ensure p.deletedAt is handled for both user and example projects
-                                            const isDeleted = (p as any).deletedAt;
-                                            if (activeNav === 'Trash') return !!isDeleted;
-                                            if (isDeleted) return false;
-
-                                            // Ensure p.tags is handled for both user and example projects
+                                            // Tag filter
                                             const projectTags = (p as any).tags || [];
                                             if (activeTags.length > 0) {
-                                                // Intersection: project must have ALL select tags
                                                 return activeTags.every(t => projectTags.includes(t));
                                             }
                                             const isStarred = starredProjects.includes(p.name);
                                             if (activeNav === 'Starred') return isStarred;
-                                            if (activeNav === 'Created by me') return p.type === 'user' || p.ownerId === 'Example Project';
+                                            if (activeNav === 'Created by me') return p.type === 'user' || (p as any).ownerId === 'Example Project';
                                             if (activeNav === 'Shared with me') return false;
-                                            if (activeNav === 'Last Opened') return (p.type === 'user' || p.ownerId === 'Example Project'); // All user projects + examples, will be sorted
-                                            if (activeNav === 'Tags') return (p.type === 'user' || p.ownerId === 'Example Project') && projectTags.length > 0;
-                                            if (activeNav === 'Public') return true;
+                                            if (activeNav === 'Public by me') return p.type === 'user' && (p as any).visibility === 'public';
+                                            if (activeNav === 'Last Opened') return true;
+                                            if (activeNav === 'Tags') return projectTags.length > 0;
+                                            if (activeNav === 'Trash') return false;
                                             return true;
                                         })
                                         .sort((a: any, b: any) => {
-                                            if (activeNav === 'Last Opened') {
-                                                const timeA = a.lastOpenedAt || a.lastModified || 0;
-                                                const timeB = b.lastOpenedAt || b.lastModified || 0;
-                                                return timeB - timeA;
-                                            }
-                                            // Default sort (maybe name or creation?) - keeping existing behavior if any, 
-                                            // currently map produces an array.
-                                            // The previous separate "Recent" section did the sorting. 
-                                            // Now we should sort by default or by last opened if that's the view.
-                                            // Let's default to Last Modified if no specific sort is set for consistency.
                                             return (b.lastModified || 0) - (a.lastModified || 0);
                                         })
                                         .map((project: any) => (
@@ -1027,7 +854,7 @@ export function ProjectDashboard() {
                                                 }}
                                                 onManageTags={() => {
                                                     setShowTagDialog(project);
-                                                    setTagNameInput(""); // Reset creation input in dialog
+                                                    setTagNameInput("");
                                                 }}
                                                 onViewHistory={() => setShowHistoryDialog(project.id)}
                                                 tags={tags}
@@ -1037,7 +864,7 @@ export function ProjectDashboard() {
                                                 onMoveToFolder={(folderName: string) => handleMoveProjectToFolder(project.id, folderName)}
                                             />
                                         ))}
-                                    {userProjects.filter(p => !p.deletedAt).length === 0 && EXAMPLES.length === 0 && (
+                                    {userProjects.length === 0 && EXAMPLES.length === 0 && (
                                         <div className="col-span-full py-20 text-center space-y-3">
                                             <div className="w-16 h-16 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto text-zinc-600">
                                                 <Search className="w-8 h-8" />
@@ -1114,12 +941,9 @@ export function ProjectDashboard() {
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-5 h-5 rounded-full bg-zinc-700 flex items-center justify-center text-[8px] text-white uppercase">
-                                                    {(item.author || item.owner || '?')[0]}
+                                                    {(item.ownerEmail || '?')[0]}
                                                 </div>
-                                                <span className="text-[10px] text-zinc-500 font-medium">@{item.author || item.owner}</span>
-                                            </div>
-                                            <div className="flex items-center gap-3 text-[10px] text-zinc-500">
-                                                <div className="flex items-center gap-0.5"><Clock className="w-3 h-3" /> {item.forks || 0}</div>
+                                                <span className="text-[10px] text-zinc-500 font-medium">@{item.ownerEmail}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -1146,7 +970,6 @@ export function ProjectDashboard() {
                                 <input
                                     value={folderNameInput}
                                     onChange={(e) => setFolderNameInput(e.target.value)}
-                                    // Handle Enter key
                                     onKeyDown={e => {
                                         if (e.key === 'Enter') handleCreateFolder();
                                         if (e.key === 'Escape') setShowFolderDialog(false);
@@ -1184,7 +1007,6 @@ export function ProjectDashboard() {
                                 <input
                                     value={renameFolderInput}
                                     onChange={(e) => setRenameFolderInput(e.target.value)}
-                                    // Handle Enter key
                                     onKeyDown={e => {
                                         if (e.key === 'Enter') handleRenameFolder();
                                         if (e.key === 'Escape') setRenameFolderDialog(null);
@@ -1326,16 +1148,16 @@ export function ProjectDashboard() {
                             <div className="space-y-2">
                                 <h4 className="text-2xl font-black text-foreground uppercase tracking-tighter">Extreme Danger</h4>
                                 <p className="text-muted-foreground text-sm leading-relaxed">
-                                    You are about to <span className="text-destructive font-bold underline">delete your entire HiveCAD repository</span> from GitHub.
+                                    You are about to <span className="text-destructive font-bold underline">delete your entire HiveCAD repository</span>.
                                     This will permanently erase all projects, tags, and settings history. This action cannot be undone.
                                 </p>
                             </div>
 
                             <div className="w-full bg-destructive/5 border border-destructive/10 rounded-lg p-4 text-left">
                                 <ul className="text-[10px] text-destructive/80 font-black uppercase tracking-widest space-y-2">
-                                    <li className="flex items-center gap-2"><div className="w-1 h-1 bg-destructive rounded-full" /> All JSON project files will be deleted</li>
-                                    <li className="flex items-center gap-2"><div className="w-1 h-1 bg-destructive rounded-full" /> Central index.json will be wiped</li>
-                                    <li className="flex items-center gap-2"><div className="w-1 h-1 bg-destructive rounded-full" /> Tag definitions will be destroyed</li>
+                                    <li className="flex items-center gap-2"><div className="w-1 h-1 bg-destructive rounded-full" /> All project files will be deleted</li>
+                                    <li className="flex items-center gap-2"><div className="w-1 h-1 bg-destructive rounded-full" /> Local cache will be wiped</li>
+                                    <li className="flex items-center gap-2"><div className="w-1 h-1 bg-destructive rounded-full" /> Remote storage will be reset</li>
                                 </ul>
                             </div>
 
@@ -1373,7 +1195,7 @@ export function ProjectDashboard() {
                                 <h4 className="text-2xl font-black text-foreground uppercase tracking-tighter">Proper Delete</h4>
                                 <p className="text-muted-foreground text-sm leading-relaxed">
                                     You are about to permanently delete <strong>{showDeleteConfirm.name}</strong>.
-                                    This will remove the project from GitHub, Supabase storage, and your local cache.
+                                    This will remove the project from all storage layers.
                                     <span className="block mt-2 text-destructive/80 font-bold uppercase text-[10px] tracking-widest">This action is irreversible.</span>
                                 </p>
                             </div>
@@ -1410,11 +1232,10 @@ export function ProjectDashboard() {
                     const project = userProjects.find(p => p.id === showHistoryDialog);
                     if (project) {
                         setShowHistoryDialog(null);
-                        handleOpenProject(project, sha);
+                        handleOpenProject(project);
                     }
                 }}
             />
         </div>
     );
 }
-

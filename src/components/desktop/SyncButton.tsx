@@ -1,46 +1,57 @@
 /**
- * SyncButton - Desktop-only component for git sync
- * 
- * Syncs local changes with remote GitHub repository.
+ * SyncButton — Triggers a manual sync via SyncEngine.
+ *
+ * Desktop: always shows (manual sync).
+ * Web:     auto-sync runs in background, but manual trigger is available too.
  */
 
-import { useState } from 'react';
-import { isDesktop } from '@/lib/platform/platform';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Cloud, CloudOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { StorageManager } from '@/lib/storage/StorageManager';
+import type { SyncState } from '@/lib/storage/types';
 
 export function SyncButton() {
-    const [isSyncing, setIsSyncing] = useState(false);
-    const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+    const [syncState, setSyncState] = useState<SyncState>({
+        status: 'idle',
+        lastSyncTime: null,
+        hasPendingChanges: false,
+        lastError: null,
+        wouldLoseData: false,
+    });
 
-    // Don't render on web
-    if (!isDesktop()) return null;
+    useEffect(() => {
+        const engine = StorageManager.getInstance().syncEngine;
+        if (!engine) return;
+
+        // Poll sync state (engine exposes it)
+        const interval = setInterval(() => {
+            setSyncState(engine.state);
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, []);
 
     const handleSync = async () => {
-        setIsSyncing(true);
+        const engine = StorageManager.getInstance().syncEngine;
+        if (!engine) {
+            toast.error('Sync engine not available');
+            return;
+        }
+
+        toast.loading('Syncing...', { id: 'sync' });
         try {
-            const manager = StorageManager.getInstance();
-            const adapter = manager.currentAdapter as any;
-
-            // todo:refine Hide/disable the sync button when the current adapter lacks sync support.
-            if (typeof adapter.sync !== 'function') {
-                throw new Error('Current adapter does not support sync');
-            }
-
-            toast.loading('Syncing with GitHub...', { id: 'sync' });
-            await adapter.sync();
-
-            setLastSyncTime(new Date());
-            toast.success('Successfully synced with GitHub', { id: 'sync' });
+            await engine.syncNow();
+            toast.success('Sync complete', { id: 'sync' });
         } catch (error) {
             console.error('[SyncButton] Sync failed:', error);
             toast.error(`Sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`, { id: 'sync' });
-        } finally {
-            setIsSyncing(false);
         }
     };
+
+    const isSyncing = syncState.status === 'syncing';
+    const lastSync = syncState.lastSyncTime ? new Date(syncState.lastSyncTime) : null;
 
     return (
         <Button
@@ -48,14 +59,14 @@ export function SyncButton() {
             size="sm"
             onClick={handleSync}
             disabled={isSyncing}
-            title={lastSyncTime ? `Last synced: ${lastSyncTime.toLocaleTimeString()}` : 'Sync with GitHub'}
+            title={lastSync ? `Last synced: ${lastSync.toLocaleTimeString()}` : 'Sync with remote'}
         >
             {isSyncing ? (
                 <>
                     <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                     Syncing...
                 </>
-            ) : lastSyncTime ? (
+            ) : lastSync ? (
                 <>
                     <Cloud className="h-4 w-4 mr-2 text-green-500" />
                     Synced

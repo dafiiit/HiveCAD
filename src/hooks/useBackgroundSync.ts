@@ -1,32 +1,26 @@
+/**
+ * useBackgroundSync — starts/stops the SyncEngine auto-sync
+ * when the component mounts/unmounts.
+ *
+ * Web: auto-syncs every 30 s.
+ * Desktop: no auto-sync (the user triggers manually).
+ */
 import { useEffect } from 'react';
-import { useCADStore } from '@/hooks/useCADStore';
-
-const SYNC_INTERVAL = 30 * 1000; // 30 seconds
+import { StorageManager } from '@/lib/storage/StorageManager';
+import { isDesktop } from '@/lib/platform/platform';
 
 export function useBackgroundSync() {
-    const { fileName, projectId, hasUnpushedChanges, syncToCloud, isSaving, pendingSave } = useCADStore((state) => ({
-        fileName: state.fileName,
-        projectId: state.projectId,
-        hasUnpushedChanges: state.hasUnpushedChanges,
-        syncToCloud: state.syncToCloud,
-        isSaving: state.isSaving,
-        pendingSave: state.pendingSave
-    }));
-
     useEffect(() => {
-        const interval = setInterval(() => {
-            // Use the latest values from the hook's state
-            if (fileName === 'Untitled' || !projectId) {
-                // Skip sync if project is still "Untitled" or has no ID
-                return;
-            }
+        const mgr = StorageManager.getInstance();
+        if (!mgr.isInitialized) return;
 
-            if (hasUnpushedChanges && !isSaving && !pendingSave) {
-                console.log(`[BackgroundSync] Syncing ${fileName} (${projectId})`);
-                syncToCloud();
-            }
-        }, SYNC_INTERVAL);
+        // Only auto-sync on web
+        if (!isDesktop()) {
+            mgr.syncEngine?.startAutoSync(30_000);
+        }
 
-        return () => clearInterval(interval);
-    }, [fileName, projectId, hasUnpushedChanges, isSaving, pendingSave, syncToCloud]);
+        return () => {
+            mgr.syncEngine?.stopAutoSync();
+        };
+    }, []);
 }

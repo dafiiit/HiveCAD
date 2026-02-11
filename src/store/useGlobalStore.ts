@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { AuthService } from '../lib/auth/AuthService';
 import { User } from './types';
+import { StorageManager } from '../lib/storage/StorageManager';
 
 export interface AuthState {
     user: User | null;
@@ -35,8 +36,6 @@ export const useGlobalStore = create<AuthState>((set, get) => ({
     initializeAuth: () => {
         const { data: { subscription } } = AuthService.onAuthStateChange((event, user) => {
             console.log(`[GlobalStore] Auth state changed: ${event}`, user);
-
-            // Should update state on any relevant auth event
             if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') {
                 set({ user, isAutosaveEnabled: !!user?.pat, authLoaded: true });
             } else if (event === 'SIGNED_OUT') {
@@ -44,9 +43,7 @@ export const useGlobalStore = create<AuthState>((set, get) => ({
             }
         });
 
-        // Initial check in case onAuthStateChange doesn't fire immediately for existing session
         AuthService.getCurrentUser().then(user => {
-            // Only set if we haven't received an event yet or if it matches
             if (!get().authLoaded) {
                 set({ user, isAutosaveEnabled: !!user?.pat, authLoaded: true });
             }
@@ -72,6 +69,10 @@ export const useGlobalStore = create<AuthState>((set, get) => ({
     },
 
     logout: async () => {
+        // Disconnect remote store on logout
+        const mgr = StorageManager.getInstance();
+        await mgr.disconnectRemote();
+
         await AuthService.logout();
         set({ user: null, isAutosaveEnabled: false, isStorageConnected: false });
     },
@@ -85,14 +86,19 @@ export const useGlobalStore = create<AuthState>((set, get) => ({
         if (!user) return;
 
         if (pat) {
-            // Verify token before saving
-            const { StorageManager } = await import('../lib/storage/StorageManager');
-            const githubAdapter = StorageManager.getInstance().getAdapter('github');
-            if (githubAdapter) {
-                const connected = await githubAdapter.connect(pat);
-                if (!connected) {
-                    throw new Error('Invalid GitHub token');
-                }
+            // Initialize StorageManager if needed
+            const mgr = StorageManager.getInstance();
+            if (!mgr.isInitialized) {
+                await mgr.initialize(
+                    () => get().user?.id ?? null,
+                    () => get().user?.email ?? null,
+                );
+            }
+
+            // Connect the remote store (GitHub)
+            const connected = await mgr.connectRemote(pat);
+            if (!connected) {
+                throw new Error('Invalid GitHub token');
             }
         }
 
@@ -100,7 +106,7 @@ export const useGlobalStore = create<AuthState>((set, get) => ({
         set({
             user: { ...user, pat },
             isAutosaveEnabled: !!pat,
-            isStorageConnected: !!pat
+            isStorageConnected: !!pat,
         });
     },
 }));

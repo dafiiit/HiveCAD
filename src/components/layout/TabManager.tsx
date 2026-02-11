@@ -12,7 +12,8 @@ import { CommandPalette } from '@/components/ui/CommandPalette';
 import { ProjectData } from '@/lib/storage/types';
 import { cn } from '@/lib/utils';
 import { useGlobalStore } from '@/store/useGlobalStore';
-import { isProjectEmpty, deleteProjectPermanently } from '@/lib/storage/projectUtils';
+import { isProjectEmpty } from '@/lib/storage/projectUtils';
+import { StorageManager } from '@/lib/storage/StorageManager';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -53,43 +54,26 @@ export const TabManager = () => {
     };
 
     const openProjectInNewTab = (project: ProjectData) => {
-        // If we are on a dashboard tab, convert it to a project tab
-        // Otherwise open a new tab?
-        // Requirement: "When a new tab is created, the user should be directed to the Project Dashboard. From the Project Dashboard, the user should be able to select an existing project or create a new one."
-
-        // So if the current tab is 'dashboard', we replace its type with 'project' and load data.
         setTabs(prev => prev.map(tab => {
             if (tab.id === activeTabId && tab.type === 'dashboard') {
                 const store: StoreApi<any> = tab.store;
-                // Initialize store with project data
-                if (project.id) {
-                    store.getState().setProjectId(project.id);
-                    console.log(`[TabManager] Set projectId: ${project.id}`);
-                }
-                if (project.name) store.getState().setFileName(project.name);
-                if (project.cad) {
-                    if (project.cad.code) store.getState().setCode(project.cad.code);
-                    // If we have serialized objects, we could load them here, 
-                    // but we usually rely on runCode() to reconstruct them from code.
-                    // However, for consistency we can set them.
-                    if (project.cad.objects) {
-                        // Filter out objects with invalid geometry (from JSON)
-                        const cleanObjects = (project.cad.objects as any[]).map(obj => ({
-                            ...obj,
-                            geometry: undefined,
-                            edgeGeometry: undefined
-                        }));
-                        store.setState({ objects: cleanObjects });
-                    }
-                } else if (project.files?.code) {
-                    store.getState().setCode(project.files.code);
-                } else if ((project as any).code) {
-                    // Very old legacy flat structure
-                    store.getState().setCode((project as any).code);
-                }
 
-                if (project.vcs) {
-                    store.getState().hydrateVCS(project.vcs);
+                // Set project identity
+                store.getState().setProjectId(project.meta.id);
+                store.getState().setFileName(project.meta.name);
+                console.log(`[TabManager] Set projectId: ${project.meta.id}`);
+
+                // Set code & objects from snapshot
+                if (project.snapshot.code) {
+                    store.getState().setCode(project.snapshot.code);
+                }
+                if (project.snapshot.objects?.length) {
+                    const cleanObjects = project.snapshot.objects.map((obj: any) => ({
+                        ...obj,
+                        geometry: undefined,
+                        edgeGeometry: undefined,
+                    }));
+                    store.setState({ objects: cleanObjects });
                 }
 
                 // Always trigger runCode after loading if we have code
@@ -98,13 +82,12 @@ export const TabManager = () => {
                 }
 
                 store.setState({ hasUnpushedChanges: true });
-                // Objects loading would happen here if we had them in ProjectData fully, or via storage adapter loading
 
                 return {
                     ...tab,
                     type: 'project',
-                    title: project.name,
-                    projectId: project.id // assuming project has ID, or use name
+                    title: project.meta.name,
+                    projectId: project.meta.id,
                 };
             }
             return tab;
@@ -192,8 +175,16 @@ export const TabManager = () => {
         try {
             // 1. Immediately delete if we have an ID
             if (projectId) {
+                const mgr = StorageManager.getInstance();
                 toast.promise(
-                    deleteProjectPermanently(projectId, projectName, store.getState().removeThumbnail),
+                    (async () => {
+                        await mgr.quickStore.deleteProject(projectId);
+                        if (mgr.isRemoteConnected) {
+                            await mgr.remoteStore!.deleteProject(projectId);
+                        }
+                        await mgr.supabaseMeta?.deleteProjectMeta(projectId);
+                        store.getState().removeThumbnail?.(projectName);
+                    })(),
                     {
                         loading: `Deleting empty project "${projectName}"...`,
                         success: `Project deleted`,

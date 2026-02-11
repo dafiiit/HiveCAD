@@ -1,23 +1,116 @@
-export type StorageType = 'public' | 'github' | 'local';
+/**
+ * Storage Types — Core domain types for the entire storage layer.
+ *
+ * Architecture overview:
+ *
+ *   ┌─────────────┐     ┌───────────────┐
+ *   │  QuickStore  │────▶│  RemoteStore   │   (background sync)
+ *   │ (local git / │     │  (GitHub /     │
+ *   │  in-mem git) │     │   GitLab / …)  │
+ *   └─────────────┘     └───────────────┘
+ *          │                     │
+ *          └──────┬──────────────┘
+ *                 ▼
+ *          ┌──────────────┐
+ *          │   Supabase   │  (metadata index, social, discovery)
+ *          └──────────────┘
+ *
+ * QuickStore  – instant, synchronous-feeling reads/writes.
+ *               Offline (Desktop) → local git (Tauri filesystem).
+ *               Online  (Web)     → in-memory git (RAM, backed by IndexedDB).
+ *
+ * RemoteStore – durable, shareable backup.
+ *               Currently GitHub. Designed so GitLab etc. can be added.
+ *
+ * Supabase    – project/extension metadata, social (votes, comments),
+ *               discovery, and the *link* to the remote storage.
+ */
 
-export interface StorageConfig {
-    type: StorageType;
+// ─── Identifiers ───────────────────────────────────────────────────────────
+
+/** UUID v4 string */
+export type ProjectId = string;
+/** UUID v4 string */
+export type UserId = string;
+/** Short commit hash */
+export type CommitHash = string;
+
+// ─── Project ───────────────────────────────────────────────────────────────
+
+export type ProjectVisibility = 'public' | 'private';
+
+export interface ProjectSnapshot {
+    code: string;
+    objects: SerializedCADObject[];
+}
+
+/**
+ * Minimal serializable CAD object (no THREE.js geometry).
+ */
+export interface SerializedCADObject {
+    id: string;
     name: string;
-    icon: string;
-    isAuthenticated: boolean;
-    // todo:refine Replace mock token handling with a secure auth/session model.
-    token?: string; // For demo purposes, we'll store mock tokens here
+    type: string;
+    position: [number, number, number];
+    rotation: [number, number, number];
+    scale: [number, number, number];
+    dimensions: Record<string, any>;
+    color: string;
+    visible: boolean;
+    extensionData?: Record<string, Record<string, any>>;
 }
 
-export interface ProjectNamespaceData {
-    [key: string]: any;
+/**
+ * Lightweight project metadata — used for listing/search/dashboard.
+ * Does NOT contain the full project data (code, objects, etc.).
+ */
+export interface ProjectMeta {
+    id: ProjectId;
+    name: string;
+    ownerId: UserId;
+    ownerEmail: string;
+    description: string;
+    visibility: ProjectVisibility;
+    tags: string[];
+    folder: string;
+    thumbnail: string;
+    lastModified: number;
+    createdAt: number;
+    /** Remote storage provider key, e.g. 'github' */
+    remoteProvider: string;
+    /** Owner/repo or equivalent locator on the remote */
+    remoteLocator: string;
+    /** Lock: if non-null, this user has an exclusive edit lock */
+    lockedBy: UserId | null;
 }
 
-export interface ExtensionStats {
-    downloads: number;
-    likes: number;
-    dislikes: number;
+/**
+ * Full project data — the complete state needed to open/edit a project.
+ */
+export interface ProjectData {
+    meta: ProjectMeta;
+    snapshot: ProjectSnapshot;
+    /** Extension namespace data */
+    namespaces: Record<string, Record<string, any>>;
 }
+
+// ─── Commits / VCS ─────────────────────────────────────────────────────────
+
+export interface CommitInfo {
+    hash: CommitHash;
+    parents: CommitHash[];
+    author: { name: string; email?: string; date: string };
+    message: string;
+    refNames?: string[];
+}
+
+export interface BranchInfo {
+    name: string;
+    sha: CommitHash;
+    isCurrent: boolean;
+}
+
+// ─── Extensions ────────────────────────────────────────────────────────────
 
 export interface ExtensionManifest {
     id: string;
@@ -26,112 +119,139 @@ export interface ExtensionManifest {
     author: string;
     version: string;
     icon: string;
+    category?: string;
 }
 
-export interface Extension {
+export interface ExtensionStats {
+    downloads: number;
+    likes: number;
+    dislikes: number;
+}
+
+export interface ExtensionEntry {
     id: string;
-    github_owner: string;
-    github_repo: string;
-    author: string;
-    status: 'development' | 'published';
+    manifest: ExtensionManifest;
     stats: ExtensionStats;
-    // Metadata from manifest.json (loaded separately)
-    manifest?: ExtensionManifest;
+    status: 'development' | 'published';
+    remoteProvider: string;
+    remoteOwner: string;
+    remoteRepo: string;
+    authorId: UserId;
+    authorEmail: string;
 }
 
-export interface ProjectData {
-    id: string;
-    name: string; // The "display name"
-    ownerId: string;
-    files?: any;   // Optional in new structure, legacy fallback
-    cad?: {
-        code: string;
-        objects: any[];
-    };
-    namespaces?: Record<string, ProjectNamespaceData>;
-    version: string;
-    lastModified: number;
-    tags?: string[];
-    deletedAt?: number;
-    sha?: string;
-    lastOpenedAt?: number;
-    thumbnail?: string;
-    folder?: string;
-    description?: string;
+// ─── Tags / Folders ────────────────────────────────────────────────────────
+
+export interface TagEntry { name: string; color: string }
+export interface FolderEntry { name: string; color: string }
+
+// ─── Quick Store SPI ───────────────────────────────────────────────────────
+
+/**
+ * QuickStore — fast, local-feeling storage layer.
+ *
+ * Desktop: backed by the local filesystem + git (Tauri).
+ * Web:     backed by IndexedDB (in-memory git DAG).
+ *
+ * Every write emits a change event so the UI reacts instantly.
+ */
+export interface QuickStore {
+    init(): Promise<void>;
+
+    // Projects CRUD
+    saveProject(data: ProjectData): Promise<void>;
+    loadProject(id: ProjectId): Promise<ProjectData | null>;
+    deleteProject(id: ProjectId): Promise<void>;
+    listProjects(): Promise<ProjectMeta[]>;
+
+    // Commits (local VCS)
+    commit(id: ProjectId, message: string, author: string): Promise<CommitHash>;
+    getHistory(id: ProjectId): Promise<CommitInfo[]>;
+    getBranches(id: ProjectId): Promise<BranchInfo[]>;
+    createBranch(id: ProjectId, name: string, fromHash: CommitHash): Promise<void>;
+    switchBranch(id: ProjectId, name: string): Promise<void>;
+
+    // Change listener — fires on every write
+    onChange(listener: () => void): () => void;
 }
 
-export interface StorageAdapter {
-    readonly type: StorageType;
-    readonly name: string;
+// ─── Remote Store SPI ──────────────────────────────────────────────────────
 
-    // Authentication
-    connect(token?: string): Promise<boolean>;
+/**
+ * RemoteStore — durable cloud backup.
+ *
+ * Currently: GitHub REST API.
+ * Future:    GitLab, Bitbucket, self-hosted, …
+ */
+export interface RemoteStore {
+    readonly providerKey: string;   // 'github' | 'gitlab' | …
+    readonly providerName: string;  // 'GitHub' | 'GitLab' | …
+
+    connect(token: string): Promise<boolean>;
     disconnect(): Promise<void>;
-    isAuthenticated(): boolean;
+    isConnected(): boolean;
 
-    // Persistence
-    save(projectId: string, data: any): Promise<void>;
-    load(projectId: string, owner?: string, repo?: string, ref?: string): Promise<any>;
-    delete(projectId: string): Promise<void>;
-    rename(projectId: string, newName: string): Promise<void>;
-    updateMetadata(projectId: string, updates: Partial<Pick<ProjectData, 'tags' | 'deletedAt' | 'name' | 'lastOpenedAt' | 'folder'>>): Promise<void>;
-    saveThumbnail(projectId: string, thumbnail: string): Promise<void>;
+    pushProject(data: ProjectData): Promise<void>;
+    pullProject(id: ProjectId): Promise<ProjectData | null>;
+    pullAllProjectMetas(): Promise<ProjectMeta[]>;
+    deleteProject(id: ProjectId): Promise<void>;
 
-    // History and Branching (Optional, mostly for GitHub adapter)
-    getHistory?(projectId: string): Promise<CommitInfo[]>;
-    createBranch?(projectId: string, sourceSha: string, branchName: string): Promise<void>;
-    getBranches?(projectId: string): Promise<BranchInfo[]>;
-    switchBranch?(branchName: string): Promise<void>;
-    getCurrentBranch?(): Promise<string>;
+    pushThumbnail(id: ProjectId, base64: string): Promise<void>;
+    pullThumbnail(id: ProjectId): Promise<string | null>;
 
-    // Discovery
-    listProjects?(): Promise<ProjectData[]>;
-    searchCommunityProjects?(query: string): Promise<any[]>;
-    searchCommunityExtensions?(query: string): Promise<Extension[]>;
-    submitExtension?(extension: Partial<Extension>): Promise<string>; // Returns GitHub URL
-    updateExtensionStatus?(extensionId: string, status: 'development' | 'published'): Promise<void>;
-    voteExtension?(extensionId: string, voteType: 'like' | 'dislike'): Promise<void>;
-    incrementExtensionDownloads?(extensionId: string): Promise<void>;
-    updateIndex?(projectId: string, updates: Partial<ProjectData>, isDelete?: boolean): Promise<void>;
+    getHistory(id: ProjectId): Promise<CommitInfo[]>;
+    getBranches(id: ProjectId): Promise<BranchInfo[]>;
+    createBranch(id: ProjectId, name: string, fromSha: CommitHash): Promise<void>;
 
-    // Labels management
-    listTags?(): Promise<Array<{ name: string, color: string }>>;
-    saveTags?(tags: Array<{ name: string, color: string }>): Promise<void>;
+    submitExtension(ext: Partial<ExtensionEntry>): Promise<string>;
 
-    // Folder management
-    listFolders?(): Promise<Array<{ name: string, color: string }>>;
-    saveFolders?(folders: Array<{ name: string, color: string }>): Promise<void>;
+    pushUserSettings(data: any): Promise<void>;
+    pullUserSettings(): Promise<any>;
 
-    // Versioning (Optional / Future)
-    listVersions?(projectId: string): Promise<any[]>;
-
-    // Maintenance
-    permanentlyDelete?(projectId: string): Promise<void>;
-    resetRepository?(): Promise<void>;
-
-    // Feedback
-    createIssue?(title: string, body: string): Promise<void>;
-
-    // User Settings persistence
-    saveUserSettings?(data: any): Promise<void>;
-    loadUserSettings?(): Promise<any>;
+    resetRepository(): Promise<void>;
+    createIssue(title: string, body: string): Promise<void>;
 }
 
-export interface CommitInfo {
-    hash: string;
-    parents: string[];
-    author: {
-        name: string;
-        email?: string;
-        date: string;
-    };
-    subject: string;
-    body?: string;
-    refNames?: string[]; // e.g. ["HEAD", "main", "origin/main"]
+// ─── Supabase Metadata SPI ─────────────────────────────────────────────────
+
+/**
+ * SupabaseMeta — centralized metadata/discovery layer.
+ *
+ * Stores: project metadata index, extension catalog, social data,
+ *         and *links* to storage providers. No file content here.
+ */
+export interface SupabaseMeta {
+    upsertProjectMeta(meta: ProjectMeta): Promise<void>;
+    deleteProjectMeta(id: ProjectId): Promise<void>;
+    getProjectMeta(id: ProjectId): Promise<ProjectMeta | null>;
+    listOwnProjects(userId: UserId): Promise<ProjectMeta[]>;
+    searchPublicProjects(query: string): Promise<ProjectMeta[]>;
+    setProjectVisibility(id: ProjectId, visibility: ProjectVisibility): Promise<void>;
+    lockProject(id: ProjectId, userId: UserId): Promise<boolean>;
+    unlockProject(id: ProjectId): Promise<void>;
+
+    upsertExtension(ext: ExtensionEntry): Promise<void>;
+    deleteExtension(id: string): Promise<void>;
+    searchExtensions(query: string, includeOwn?: UserId): Promise<ExtensionEntry[]>;
+    setExtensionStatus(id: string, status: 'development' | 'published'): Promise<void>;
+    voteExtension(id: string, userId: UserId, voteType: 'like' | 'dislike'): Promise<void>;
+    incrementDownloads(id: string): Promise<void>;
+
+    getUserTags(userId: UserId): Promise<TagEntry[]>;
+    saveUserTags(userId: UserId, tags: TagEntry[]): Promise<void>;
+    getUserFolders(userId: UserId): Promise<FolderEntry[]>;
+    saveUserFolders(userId: UserId, folders: FolderEntry[]): Promise<void>;
 }
 
-export interface BranchInfo {
-    name: string;
-    sha: string;
-    isCurrent: boolean;
+// ─── Sync Engine ───────────────────────────────────────────────────────────
+
+export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline';
+
+export interface SyncState {
+    status: SyncStatus;
+    lastSyncTime: number | null;
+    hasPendingChanges: boolean;
+    lastError: string | null;
+    /** True if closing the tab RIGHT NOW would lose data (web only) */
+    wouldLoseData: boolean;
 }

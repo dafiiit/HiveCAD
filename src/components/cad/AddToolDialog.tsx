@@ -11,7 +11,7 @@ import { toolRegistry } from "@/lib/tools";
 import { ToolMetadata, Tool } from "@/lib/tools/types";
 import { IconResolver } from "@/components/ui/IconResolver";
 import { StorageManager } from "@/lib/storage/StorageManager";
-import { Extension } from "@/lib/storage/types";
+import { ExtensionEntry } from "@/lib/storage/types";
 
 interface AddToolDialogProps {
     open: boolean;
@@ -21,15 +21,15 @@ interface AddToolDialogProps {
 
 export const AddToolDialog = ({ open, onOpenChange, onSelectTool }: AddToolDialogProps) => {
     const [searchQuery, setSearchQuery] = React.useState('');
-    const [extensions, setExtensions] = React.useState<Extension[]>([]);
+    const [extensions, setExtensions] = React.useState<ExtensionEntry[]>([]);
 
     React.useEffect(() => {
         if (open) {
             const fetchExtensions = async () => {
                 try {
-                    const adapter = StorageManager.getInstance().currentAdapter;
-                    if (adapter.searchCommunityExtensions) {
-                        const results = await adapter.searchCommunityExtensions("");
+                    const meta = StorageManager.getInstance().supabaseMeta;
+                    if (meta) {
+                        const results = await meta.searchExtensions("");
                         setExtensions(results);
                     }
                 } catch (error) {

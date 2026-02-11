@@ -13,7 +13,7 @@ import { Search, PlusCircle, ArrowLeft, Package, Loader2 } from "lucide-react";
 import { ExtensionCard } from "./ExtensionCard";
 import { CreateExtensionForm } from "./CreateExtensionForm";
 import { StorageManager } from "@/lib/storage/StorageManager";
-import { Extension } from "@/lib/storage/types";
+import { ExtensionEntry } from "@/lib/storage/types";
 import { toolRegistry } from "@/lib/tools";
 import { Tool } from "@/lib/tools/types";
 
@@ -28,15 +28,15 @@ export const ExtensionStoreDialog: React.FC<ExtensionStoreDialogProps> = ({
 }) => {
     const [view, setView] = useState<"browse" | "create">("browse");
     const [searchQuery, setSearchQuery] = useState("");
-    const [extensions, setExtensions] = useState<Extension[]>([]);
+    const [extensions, setExtensions] = useState<ExtensionEntry[]>([]);
     const [loading, setLoading] = useState(false);
 
     const fetchExtensions = useCallback(async (query: string) => {
         setLoading(true);
         try {
-            const adapter = StorageManager.getInstance().currentAdapter;
-            if (adapter.searchCommunityExtensions) {
-                const results = await adapter.searchCommunityExtensions(query);
+            const meta = StorageManager.getInstance().supabaseMeta;
+            if (meta) {
+                const results = await meta.searchExtensions(query);
                 setExtensions(results);
 
                 // Pre-register these extensions in the toolRegistry so their icons/labels can be resolved

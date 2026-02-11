@@ -3,9 +3,6 @@ export const EXAMPLES = [
     id: 'example-gridfinity',
     name: 'Gridfinity Box',
     modified: '2024-01-25T15:00:00Z',
-    modifiedBy: 'System',
-    ownedBy: 'HiveCAD',
-    ownerId: 'Example Project',
     thumbnail: '/previews/gridfinity.png',
     code: `const {
   draw,

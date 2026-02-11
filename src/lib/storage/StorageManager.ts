@@ -1,46 +1,39 @@
-import { StorageAdapter, StorageType } from './types';
-import { GitHubAdapter } from './adapters/GitHubAdapter';
+/**
+ * StorageManager — singleton entry point for the entire storage layer.
+ *
+ * Provides access to:
+ *   - quickStore   (local/fast reads/writes)
+ *   - remoteStore  (durable cloud backup — currently GitHub)
+ *   - supabaseMeta (metadata index, social, discovery)
+ *   - syncEngine   (background sync orchestrator)
+ *
+ * Usage:
+ *   const mgr = StorageManager.getInstance();
+ *   await mgr.initialize(userId, userEmail);
+ *   mgr.quickStore.saveProject(data);
+ *   mgr.syncEngine.syncNow();
+ */
+
 import { isDesktop } from '../platform/platform';
+import type { QuickStore, RemoteStore, SupabaseMeta } from './types';
+import { IdbQuickStore } from './quick/IdbQuickStore';
+import { GitHubRemoteStore } from './remote/GitHubRemoteStore';
+import { SupabaseMetaService } from './supabase/SupabaseMetaService';
+import { SyncEngine } from './sync/SyncEngine';
 
 export class StorageManager {
     private static instance: StorageManager;
-    private adapters: Map<StorageType, StorageAdapter> = new Map();
-    private _currentAdapter: StorageAdapter;
+
+    private _quick: QuickStore | null = null;
+    private _remote: RemoteStore | null = null;
+    private _meta: SupabaseMeta | null = null;
+    private _sync: SyncEngine | null = null;
     private _initialized = false;
 
-    private constructor() {
-        // Register GitHubAdapter (always available)
-        this.registerAdapter(new GitHubAdapter());
+    private _getUserId: () => string | null = () => null;
+    private _getUserEmail: () => string | null = () => null;
 
-        // Set GitHub as initial default - will switch after async init if desktop
-        this._currentAdapter = this.adapters.get('github')!;
-    }
-
-    /**
-     * Initialize platform-specific adapters
-     * Call this once at app startup
-     */
-    async initialize(): Promise<void> {
-        if (this._initialized) return;
-
-        if (isDesktop()) {
-            // Dynamic import to enable tree-shaking in web builds
-            const { LocalGitAdapter } = await import('./adapters/LocalGitAdapter');
-            const localAdapter = new LocalGitAdapter();
-            this.registerAdapter(localAdapter);
-            this._currentAdapter = localAdapter;
-            console.log('[StorageManager] Initialized with LocalGitAdapter for desktop');
-        } else {
-            console.log('[StorageManager] Initialized with GitHubAdapter for web');
-        }
-
-        this._initialized = true;
-    }
-
-    get isInitialized(): boolean {
-        return this._initialized;
-    }
-
+    private constructor() {}
 
     static getInstance(): StorageManager {
         if (!StorageManager.instance) {
@@ -49,41 +42,123 @@ export class StorageManager {
         return StorageManager.instance;
     }
 
-    registerAdapter(adapter: StorageAdapter) {
-        this.adapters.set(adapter.type, adapter);
+    // ─── Initialization ─────────────────────────────────────────────────────
+
+    /**
+     * Initialize the storage layer.
+     * Call once at app startup after auth is resolved.
+     */
+    async initialize(
+        getUserId: () => string | null,
+        getUserEmail: () => string | null,
+    ): Promise<void> {
+        if (this._initialized) return;
+
+        this._getUserId = getUserId;
+        this._getUserEmail = getUserEmail;
+
+        // 1. Create QuickStore (platform-specific)
+        if (isDesktop()) {
+            const { LocalGitQuickStore } = await import('./quick/LocalGitQuickStore');
+            this._quick = new LocalGitQuickStore();
+        } else {
+            this._quick = new IdbQuickStore();
+        }
+        await this._quick.init();
+
+        // 2. Create RemoteStore (currently always GitHub, but pluggable)
+        this._remote = new GitHubRemoteStore();
+
+        // 3. Create Supabase meta service
+        this._meta = new SupabaseMetaService();
+
+        // 4. Create SyncEngine
+        this._sync = new SyncEngine(
+            this._quick,
+            this._remote,
+            this._meta,
+            this._getUserId,
+            this._getUserEmail,
+        );
+
+        this._initialized = true;
+        console.log(`[StorageManager] Initialized (${isDesktop() ? 'desktop' : 'web'})`);
     }
 
-    getAdapter(type: StorageType): StorageAdapter | undefined {
-        return this.adapters.get(type);
+    /**
+     * Connect the remote store with a token (e.g. GitHub PAT).
+     * After connecting, starts auto-sync for web builds.
+     */
+    async connectRemote(token: string): Promise<boolean> {
+        if (!this._remote) return false;
+        const ok = await this._remote.connect(token);
+        if (ok && !isDesktop() && this._sync) {
+            this._sync.startAutoSync(30_000);
+        }
+        return ok;
     }
 
-    getAllAdapters(): StorageAdapter[] {
-        return Array.from(this.adapters.values());
+    /**
+     * Disconnect remote + stop auto-sync.
+     */
+    async disconnectRemote(): Promise<void> {
+        this._sync?.stopAutoSync();
+        await this._remote?.disconnect();
     }
 
-    get currentAdapter(): StorageAdapter {
-        return this._currentAdapter;
+    // ─── Accessors ──────────────────────────────────────────────────────────
+
+    get quickStore(): QuickStore {
+        if (!this._quick) throw new Error('StorageManager not initialized');
+        return this._quick;
     }
 
-    async openExternalProject(owner: string, repo: string, projectId: string) {
-        const githubAdapter = this.getAdapter('github') as GitHubAdapter;
-        if (!githubAdapter) {
-            throw new Error('GitHub adapter not found');
+    get remoteStore(): RemoteStore | null {
+        return this._remote ?? null;
+    }
+
+    get supabaseMeta(): SupabaseMeta | null {
+        return this._meta ?? null;
+    }
+
+    get syncEngine(): SyncEngine | null {
+        return this._sync ?? null;
+    }
+
+    get isInitialized(): boolean {
+        return this._initialized;
+    }
+
+    get isRemoteConnected(): boolean {
+        return this._remote?.isConnected() ?? false;
+    }
+
+    // ─── Convenience ────────────────────────────────────────────────────────
+
+    /**
+     * Reset ALL user data across all stores.
+     */
+    async resetAll(): Promise<void> {
+        // Delete from QuickStore
+        const metas = await this.quickStore.listProjects();
+        for (const m of metas) {
+            await this.quickStore.deleteProject(m.id);
         }
 
-        // We don't check for 'current user' here as load handles external repos
-        return githubAdapter.load(projectId, owner, repo);
-    }
-
-    setAdapter(type: StorageType) {
-        const adapter = this.adapters.get(type);
-        if (!adapter) {
-            throw new Error(`Adapter ${type} not found`);
+        // Delete from remote
+        if (this._remote?.isConnected()) {
+            await this._remote.resetRepository();
         }
 
-        // In a real app, logic here to ensure auth before switching
-        // or auto-trigger connect
-        this._currentAdapter = adapter;
-        console.log(`[StorageManager] Switched to ${adapter.name}`);
+        // Delete from Supabase
+        const userId = this._getUserId();
+        if (userId && this._meta) {
+            const ownMetas = await this._meta.listOwnProjects(userId);
+            for (const m of ownMetas) {
+                await this._meta.deleteProjectMeta(m.id);
+            }
+        }
+
+        console.log('[StorageManager] All user data reset');
     }
 }

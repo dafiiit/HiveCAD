@@ -79,18 +79,19 @@ export const useUIStore = create<UIState>((set, get) => ({
 
     loadSettings: async () => {
         try {
-            const adapter = StorageManager.getInstance().currentAdapter;
-            if (adapter.loadUserSettings) {
-                const settings = await adapter.loadUserSettings();
+            const mgr = StorageManager.getInstance();
+            const remote = mgr.remoteStore;
+            if (remote?.isConnected()) {
+                const settings = await remote.pullUserSettings();
                 if (settings && settings.customToolbars) {
                     set({
                         customToolbars: settings.customToolbars,
                         folders: settings.folders || INITIAL_FOLDERS,
                         activeToolbarId: settings.activeToolbarId || 'SOLID',
                         isInitialized: true,
-                        theme: settings.theme || 'dark'
+                        theme: settings.theme || 'dark',
                     });
-                    console.log('[UIStore] Settings loaded from GitHub');
+                    console.log('[UIStore] Settings loaded');
                 }
             }
         } catch (error) {
@@ -99,21 +100,21 @@ export const useUIStore = create<UIState>((set, get) => ({
     },
 
     saveSettings: async () => {
-        // Debounce saves
         if (saveTimeout) clearTimeout(saveTimeout);
 
         saveTimeout = setTimeout(async () => {
             try {
-                const adapter = StorageManager.getInstance().currentAdapter;
-                if (adapter.saveUserSettings) {
+                const mgr = StorageManager.getInstance();
+                const remote = mgr.remoteStore;
+                if (remote?.isConnected()) {
                     const { customToolbars, folders, activeToolbarId, theme } = get();
-                    await adapter.saveUserSettings({
+                    await remote.pushUserSettings({
                         customToolbars,
                         folders,
                         activeToolbarId,
-                        theme
+                        theme,
                     });
-                    console.log('[UIStore] Settings saved to GitHub');
+                    console.log('[UIStore] Settings saved');
                 }
             } catch (error) {
                 console.error('[UIStore] Failed to save settings:', error);

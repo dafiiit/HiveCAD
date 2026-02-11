@@ -5,7 +5,7 @@ export interface User {
     email: string;
     pat?: string | null;
 }
-import { Snapshot, Commit as VCSCommit, Repository as VCSRepo } from '../lib/vcs/types';
+import { CommitInfo as VCSCommit, SerializedCADObject } from '../lib/storage/types';
 import { ConstraintSolver, EntityId, SketchEntity, SketchConstraint, ConstraintType, SolveResult } from '../lib/solver';
 import { SnapPoint, SnappingEngine } from '../lib/snapping';
 import { AssemblyState, AssemblyComponent, AssemblyMate, ComponentId, MateId, MateType } from '../lib/assembly/types';
@@ -70,7 +70,7 @@ export interface HistoryItem {
     type: 'create' | 'modify' | 'delete' | 'sketch' | 'initial';
     name: string;
     timestamp: number;
-    objects: CADObject[];
+    objects: CADObject[] | SerializedCADObject[];
     code: string;
     selectedIds: string[];
 }
@@ -84,7 +84,7 @@ export interface Comment {
 }
 
 export interface VersionCommit extends VCSCommit {
-    // We can add UI-specific fields here if needed
+    // UI-specific fields can be added here
 }
 
 export interface SketchPrimitive {
@@ -288,7 +288,7 @@ export interface VersioningSlice {
     setMainBranch: (versionId: string) => void;
     compareVersions: (versionA: string | null, versionB: string | null) => void;
     getVersionTree: () => VCSCommit[] | null;
-    hydrateVCS: (repoData: VCSRepo) => void;
+    hydrateVCS: (repoData: any) => void;
 }
 
 export interface SolverSlice {

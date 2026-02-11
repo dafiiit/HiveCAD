@@ -135,10 +135,10 @@ export const DeveloperFeedbackDialog: React.FC<DeveloperFeedbackDialogProps> = (
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        const adapter = StorageManager.getInstance().currentAdapter;
+        const mgr = StorageManager.getInstance();
 
         // Check authentication first
-        if (!adapter.isAuthenticated()) {
+        if (!mgr.isRemoteConnected) {
             toast.error("Authentication Required", {
                 description: "Please connect to GitHub to submit feedback.",
             });
@@ -171,8 +171,8 @@ export const DeveloperFeedbackDialog: React.FC<DeveloperFeedbackDialogProps> = (
 
         try {
             // todo:refine Disable the submit UI or provide an alternate path when the adapter lacks issue creation.
-            if (!adapter.createIssue) {
-                throw new Error("Feedback submission is not supported by the current storage adapter.");
+            if (!mgr.remoteStore) {
+                throw new Error("Remote store not connected. Please connect to GitHub first.");
             }
 
             const areaLabel = findAreaLabel(area);
@@ -199,7 +199,7 @@ ${logs || 'No logs attached'}
 *Submitted via Developer Feedback UI*
             `.trim();
 
-            await adapter.createIssue(title, body);
+            await mgr.remoteStore!.createIssue(title, body);
 
             toast.success("Feedback Submitted!", {
                 description: "Thank you for helping us improve HiveCAD.",

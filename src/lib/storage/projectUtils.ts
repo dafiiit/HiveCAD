@@ -1,100 +1,77 @@
-export const DEFAULT_EMPTY_CODE_VARIANTS = [
+import type { ProjectMeta, ProjectData, ProjectSnapshot, SerializedCADObject } from './types';
+
+/** Default empty code for new projects */
+export const DEFAULT_CODE = 'const main = () => {\n  return;\n};';
+
+const DEFAULT_CODE_VARIANTS = [
     'const main = () => {\n  return;\n};',
     'const main = () => { return; };',
     'const main = () => {\n  return [];\n};',
     'const main = () => { return []; };',
 ];
 
-/**
- * Check if a project is empty (no meaningful code or geometry)
- */
-export function isProjectEmpty(code: string = '', objects: any[] = []): boolean {
-    const trimmedCode = (code || '').trim();
-    const codeEmpty = DEFAULT_EMPTY_CODE_VARIANTS.some(
-        variant => trimmedCode === variant.trim()
-    );
-
-    // Check if objects exist and are more than just axes
-    // Note: Usually there are 3 axis objects (X, Y, Z)
-    const hasGeometry = objects.length > 3;
-
+/** Check if a project is empty (no meaningful code or geometry). */
+export function isProjectEmpty(code = '', objects: any[] = []): boolean {
+    const trimmed = (code || '').trim();
+    const codeEmpty = DEFAULT_CODE_VARIANTS.some((v) => trimmed === v.trim());
+    const hasGeometry = objects.length > 3; // axes take up 3 objects
     return codeEmpty && !hasGeometry;
 }
 
-/**
- * Permanently delete a project from both cloud and local storage
- */
-export async function deleteProjectPermanently(
-    projectId: string,
-    projectName: string,
-    removeThumbnail?: (name: string) => void
-): Promise<void> {
-    const { StorageManager } = await import('./StorageManager');
-    const adapter = StorageManager.getInstance().currentAdapter;
+/** Generate a UUID-v4 */
+export function uuid(): string {
+    return crypto.randomUUID?.() ?? Math.random().toString(36).substring(2, 11);
+}
 
-    // 1. Mark as Trash immediately in index (for immediate UI feedback)
-    try {
-        if (adapter.updateMetadata) {
-            await adapter.updateMetadata(projectId, {
-                deletedAt: Date.now(),
-                tags: ['Trash']
-            });
-        }
-    } catch (e) {
-        console.warn(`[projectUtils] Failed to tag ${projectId} as Trash before deletion:`, e);
-    }
+/** Create a blank ProjectMeta with sensible defaults. */
+export function createBlankMeta(overrides: Partial<ProjectMeta> = {}): ProjectMeta {
+    const id = overrides.id ?? uuid();
+    return {
+        id,
+        name: 'Untitled',
+        ownerId: '',
+        ownerEmail: '',
+        description: '',
+        visibility: 'private',
+        tags: [],
+        folder: '',
+        thumbnail: '',
+        lastModified: Date.now(),
+        createdAt: Date.now(),
+        remoteProvider: 'github',
+        remoteLocator: '',
+        lockedBy: null,
+        ...overrides,
+    };
+}
 
-    // 2. Mark as Trash in Local IndexedDB (to prevent flicker)
-    try {
-        const { get: idbGet, set: idbSet } = await import('idb-keyval');
-        const project = await idbGet(`project:${projectId}`);
-        if (project) {
-            const trashedProject = {
-                ...project,
-                deletedAt: Date.now(),
-                tags: [...(project.tags || []), 'Trash']
-            };
-            await idbSet(`project:${projectId}`, trashedProject);
-        }
-    } catch (e) {
-        console.warn(`[projectUtils] Failed to mark as trash locally:`, e);
-    }
+/** Create a blank ProjectData. */
+export function createBlankProject(overrides: Partial<ProjectMeta> = {}): ProjectData {
+    return {
+        meta: createBlankMeta(overrides),
+        snapshot: { code: DEFAULT_CODE, objects: [] },
+        namespaces: {},
+    };
+}
 
-    // 3. Delete from Cloud (GitHub + Supabase index + Thumbnails)
-    try {
-        if (adapter.permanentlyDelete) {
-            await adapter.permanentlyDelete(projectId);
-        } else {
-            await adapter.delete(projectId);
-        }
-    } catch (error) {
-        console.error(`[projectUtils] Cloud deletion failed for ${projectId}:`, error);
-        throw error;
-    }
+/** Strip THREE.js geometry from objects for serialization. */
+export function serializeObjects(objects: any[]): SerializedCADObject[] {
+    if (!objects) return [];
+    return objects.map((obj) => {
+        const { geometry, edgeGeometry, vertexGeometry, selected, ...rest } = obj;
+        return JSON.parse(JSON.stringify(rest));
+    });
+}
 
-    // 2. Delete from Local (IndexedDB)
-    try {
-        const { del: idbDel } = await import('idb-keyval');
-        await idbDel(`project:${projectId}`);
-        await idbDel(`project:${projectName}`);
-    } catch (error) {
-        console.warn(`[projectUtils] Local IndexedDB deletion failed for ${projectId}:`, error);
-    }
-
-    // 3. Delete thumbnail from local storage
-    if (removeThumbnail) {
-        removeThumbnail(projectName);
-    } else {
-        try {
-            const currentThumbnails = JSON.parse(localStorage.getItem('hivecad_thumbnails') || '{}');
-            if (currentThumbnails[projectName]) {
-                delete currentThumbnails[projectName];
-                localStorage.setItem('hivecad_thumbnails', JSON.stringify(currentThumbnails));
-            }
-        } catch (e) {
-            console.warn("[projectUtils] Failed to clean up thumbnail from localStorage", e);
-        }
-    }
-
-    console.log(`[projectUtils] Project ${projectId} (${projectName}) deleted permanently`);
+/** Remove geometry fields without full JSON round-trip. */
+export function cleanObjects(objects: any[]): any[] {
+    if (!objects) return [];
+    return objects.map((obj) => {
+        if (!obj) return obj;
+        const copy = { ...obj };
+        delete copy.geometry;
+        delete copy.edgeGeometry;
+        delete copy.vertexGeometry;
+        return copy;
+    });
 }

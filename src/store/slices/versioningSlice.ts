@@ -1,71 +1,45 @@
 import { StateCreator } from 'zustand';
 import { toast } from 'sonner';
-import { get as idbGet, set as idbSet } from 'idb-keyval';
 import { CADState, VersioningSlice, Comment, HistoryItem } from '../types';
-import { isProjectEmpty } from '@/lib/storage/projectUtils';
-import { VCSEngine } from '../../lib/vcs/VCSEngine';
-import { Snapshot, Repository } from '../../lib/vcs/types';
+import {
+    serializeObjects, cleanObjects, createBlankProject, uuid, DEFAULT_CODE,
+} from '@/lib/storage/projectUtils';
+import { StorageManager } from '@/lib/storage/StorageManager';
+import type { ProjectData, CommitInfo } from '@/lib/storage/types';
 
-const generateId = () => Math.random().toString(36).substr(2, 9);
+const generateId = () => Math.random().toString(36).substring(2, 11);
 
-const serializeObjects = (objects: any[]): any[] => {
-    if (!objects) return [];
-    return objects.map(obj => {
-        const { geometry, edgeGeometry, ...rest } = obj;
-        return JSON.parse(JSON.stringify(rest));
-    });
-};
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
-const cleanObjects = (objects: any[]): any[] => {
-    if (!objects) return [];
-    return objects.map(obj => {
-        if (!obj) return obj;
-        const newObj = { ...obj };
-        delete newObj.geometry;
-        delete newObj.edgeGeometry;
-        return newObj;
-    });
-};
-
-const vcs = new VCSEngine();
-vcs.init({
-    code: 'const main = () => {\n  return;\n};',
-    objects: []
-});
-const repo = vcs.getRepoState();
-
-const getNextUntitledName = async (baseProjectId: string): Promise<string> => {
-    try {
-        const { StorageManager } = await import('@/lib/storage/StorageManager');
-        const adapter = StorageManager.getInstance().currentAdapter;
-
-        if (!adapter.listProjects) {
-            return `Untitled ${baseProjectId.substring(0, 6)}`;
-        }
-
-        const projects = await adapter.listProjects();
-        const untitledProjects = projects.filter(p =>
-            p.name.startsWith('Untitled') || p.name.startsWith('unnamed')
-        );
-
-        // Find highest number
-        let maxNum = 0;
-        untitledProjects.forEach(p => {
-            const match = p.name.match(/\d+$/);
-            if (match) {
-                const num = parseInt(match[0]);
-                if (num > maxNum) maxNum = num;
-            }
-        });
-
-        return maxNum > 0 ? `Untitled ${maxNum + 1}` : 'Untitled 1';
-    } catch (error) {
-        console.warn('Failed to generate untitled name:', error);
-        return `Untitled ${baseProjectId.substring(0, 6)}`;
-    }
-};
-
-let saveTimeout: any = null;
+/**
+ * Build a ProjectData from the current store state.
+ */
+function buildProjectData(state: CADState): ProjectData {
+    const mgr = StorageManager.getInstance();
+    return {
+        meta: {
+            id: state.projectId ?? uuid(),
+            name: state.fileName,
+            ownerId: '',
+            ownerEmail: '',
+            description: '',
+            visibility: 'private',
+            tags: [],
+            folder: '',
+            thumbnail: state.projectThumbnails[state.fileName] ?? '',
+            lastModified: Date.now(),
+            createdAt: Date.now(),
+            remoteProvider: mgr.remoteStore?.providerKey ?? 'github',
+            remoteLocator: '',
+            lockedBy: null,
+        },
+        snapshot: {
+            code: state.code,
+            objects: serializeObjects(state.objects),
+        },
+        namespaces: {},
+    };
+}
 
 export const createVersioningSlice: StateCreator<
     CADState,
@@ -73,7 +47,7 @@ export const createVersioningSlice: StateCreator<
     [],
     VersioningSlice
 > = (set, get) => ({
-    // Transient History (Undo/Redo)
+    // ─── Transient History (Undo/Redo) ──────────────────────────────────────
     history: [
         {
             id: 'initial',
@@ -81,13 +55,13 @@ export const createVersioningSlice: StateCreator<
             name: 'Initial State',
             timestamp: Date.now(),
             objects: [],
-            code: 'const main = () => {\n  return;\n};',
+            code: DEFAULT_CODE,
             selectedIds: [],
-        }
+        },
     ],
     historyIndex: 0,
 
-    // Project Info
+    // ─── Project Info ───────────────────────────────────────────────────────
     fileName: 'Untitled',
     projectId: null,
     isSaved: true,
@@ -96,31 +70,41 @@ export const createVersioningSlice: StateCreator<
     comments: [],
     commentsExpanded: false,
 
-    // Persistent History (VCS)
-    versions: vcs.getHistory(),
-    fullVersions: vcs.getFullHistory(),
-    branches: repo.branches,
-    currentBranch: repo.head,
-    currentVersionId: repo.branches.get(repo.head) || null,
+    // ─── Persistent History (VCS) ───────────────────────────────────────────
+    versions: [],
+    fullVersions: [],
+    branches: new Map([['main', '']]),
+    currentBranch: 'main',
+    currentVersionId: null,
 
-    versionCompareModal: {
-        isOpen: false,
-        versionA: null,
-        versionB: null,
-    },
+    versionCompareModal: { isOpen: false, versionA: null, versionB: null },
+
+    // ─── UI State ───────────────────────────────────────────────────────────
+    searchOpen: false,
+    settingsOpen: false,
+    helpOpen: false,
+    notificationsOpen: false,
+    projectThumbnails: {},
+    isSaving: false,
+    pendingSave: false,
+    lastSaveTime: Date.now(),
+    lastSaveError: null,
+
+    // ─── Transient History Actions ──────────────────────────────────────────
 
     pushToHistory: (type: HistoryItem['type'], name: string) => {
         const state = get();
-        const currentData: Omit<HistoryItem, 'id' | 'timestamp' | 'type' | 'name'> = {
+        const currentData = {
             objects: serializeObjects(state.objects),
             code: state.code,
             selectedIds: Array.from(state.selectedIds),
         };
 
-        // Don't push if change is identical to last history item
+        // Skip if identical to current
         if (state.historyIndex >= 0) {
             const last = state.history[state.historyIndex];
-            if (last.code === currentData.code && JSON.stringify(last.objects) === JSON.stringify(currentData.objects)) {
+            if (last.code === currentData.code &&
+                JSON.stringify(last.objects) === JSON.stringify(currentData.objects)) {
                 return;
             }
         }
@@ -135,26 +119,17 @@ export const createVersioningSlice: StateCreator<
 
         const newHistory = state.history.slice(0, state.historyIndex + 1);
         newHistory.push(newItem);
+        if (newHistory.length > 50) newHistory.shift();
 
-        // Limit history size to 50
-        if (newHistory.length > 50) {
-            newHistory.shift();
-        }
-
-        set({
-            history: newHistory,
-            historyIndex: newHistory.length - 1,
-            isSaved: false
-        });
+        set({ history: newHistory, historyIndex: newHistory.length - 1, isSaved: false });
     },
 
     undo: () => {
         const state = get();
         if (state.historyIndex > 0) {
-            const newIndex = state.historyIndex - 1;
-            const item = state.history[newIndex];
+            const item = state.history[state.historyIndex - 1];
             set({
-                historyIndex: newIndex,
+                historyIndex: state.historyIndex - 1,
                 objects: cleanObjects(item.objects),
                 code: item.code,
                 selectedIds: new Set(item.selectedIds),
@@ -166,10 +141,9 @@ export const createVersioningSlice: StateCreator<
     redo: () => {
         const state = get();
         if (state.historyIndex < state.history.length - 1) {
-            const newIndex = state.historyIndex + 1;
-            const item = state.history[newIndex];
+            const item = state.history[state.historyIndex + 1];
             set({
-                historyIndex: newIndex,
+                historyIndex: state.historyIndex + 1,
                 objects: cleanObjects(item.objects),
                 code: item.code,
                 selectedIds: new Set(item.selectedIds),
@@ -197,45 +171,39 @@ export const createVersioningSlice: StateCreator<
     stepBack: () => get().undo(),
     stepForward: () => get().redo(),
 
-    // Storage logic
+    // ─── Save / Sync ────────────────────────────────────────────────────────
+
     saveToLocal: async () => {
         const state = get();
         set({ syncStatus: 'saving_local' });
         try {
-            const repoState = vcs.getRepoState();
-            const projectData = {
-                id: state.projectId,
-                name: state.fileName,
-                cad: {
-                    code: state.code,
-                    objects: serializeObjects(state.objects),
-                },
-                vcs: {
-                    commits: Array.from(repoState.commits.entries()),
-                    branches: Array.from(repoState.branches.entries()),
-                    head: repoState.head
-                },
-                lastModified: Date.now(),
-            };
-
+            // Capture thumbnail
             if (state.thumbnailCapturer) {
-                const thumbnail = state.thumbnailCapturer();
-                if (thumbnail) {
-                    state.updateThumbnail(state.fileName, thumbnail);
-                }
+                const thumb = state.thumbnailCapturer();
+                if (thumb) state.updateThumbnail(state.fileName, thumb);
             }
 
-            const projectIdentifier = state.projectId || state.fileName || 'unnamed';
-            await idbSet(`project:${projectIdentifier}`, projectData);
+            const projectData = buildProjectData(get());
+
+            // Assign a projectId if we don't have one yet
+            if (!state.projectId) {
+                set({ projectId: projectData.meta.id });
+            }
+
+            const mgr = StorageManager.getInstance();
+            await mgr.quickStore.saveProject(projectData);
+
+            // Tell the sync engine we have pending changes
+            mgr.syncEngine?.markDirty();
 
             set({
                 isSaved: true,
                 hasUnpushedChanges: true,
                 syncStatus: 'idle',
-                lastSaveTime: Date.now()
+                lastSaveTime: Date.now(),
             });
         } catch (error) {
-            console.error("Local save failed", error);
+            console.error('[VersioningSlice] Local save failed:', error);
             set({ syncStatus: 'error' });
         }
     },
@@ -246,37 +214,23 @@ export const createVersioningSlice: StateCreator<
         set({ isSaving: true, syncStatus: 'pushing_cloud' });
 
         try {
-            const { StorageManager } = await import('@/lib/storage/StorageManager');
-            const adapter = StorageManager.getInstance().currentAdapter;
+            // Save locally first (ensures QuickStore is up to date)
+            await get().saveToLocal();
 
-            const repoState = vcs.getRepoState();
-            const projectData = {
-                id: state.projectId,
-                name: state.fileName,
-                cad: {
-                    code: state.code,
-                    objects: serializeObjects(state.objects),
-                },
-                vcs: {
-                    commits: Array.from(repoState.commits.entries()),
-                    branches: Array.from(repoState.branches.entries()),
-                    head: repoState.head
-                },
-                lastModified: Date.now(),
-            };
+            // Then trigger the sync engine
+            const mgr = StorageManager.getInstance();
+            await mgr.syncEngine?.syncNow();
 
-            const saveIdentifier = state.projectId || state.fileName || 'unnamed';
-            await adapter.save(saveIdentifier, projectData);
-
-            set({ isSaved: true, hasUnpushedChanges: false, isSaving: false, syncStatus: 'idle', lastSaveTime: Date.now() });
-
-            if (get().pendingSave) {
-                set({ pendingSave: false });
-                get().syncToCloud(_force);
-            }
+            set({
+                isSaved: true,
+                hasUnpushedChanges: false,
+                isSaving: false,
+                syncStatus: 'idle',
+                lastSaveTime: Date.now(),
+            });
         } catch (error: any) {
-            console.error("Save failed:", error);
-            set({ isSaving: false, lastSaveError: error.message });
+            console.error('[VersioningSlice] Cloud sync failed:', error);
+            set({ isSaving: false, syncStatus: 'error', lastSaveError: error.message });
         }
     },
 
@@ -285,143 +239,157 @@ export const createVersioningSlice: StateCreator<
     triggerSave: () => {
         if (saveTimeout) clearTimeout(saveTimeout);
         set({ pendingSave: true });
-        saveTimeout = setTimeout(() => get().saveToLocal(), 1000);
+        saveTimeout = setTimeout(() => {
+            set({ pendingSave: false });
+            get().saveToLocal();
+        }, 1000);
     },
 
-    setFileName: (name) => set({ fileName: name }),
+    setFileName: (name) => {
+        set({ fileName: name, isSaved: false });
+        get().triggerSave();
+    },
+
     setProjectId: (id) => set({ projectId: id }),
 
-    // VCS Logic
+    // ─── VCS / Versioning ───────────────────────────────────────────────────
+
     createVersion: (message: string) => {
         const state = get();
-        const snapshot: Snapshot = {
-            code: state.code,
-            objects: serializeObjects(state.objects)
-        };
-
         try {
-            const commitId = vcs.commit(snapshot, message);
-            if (commitId) {
-                const repo = vcs.getRepoState();
-                set({
-                    versions: vcs.getHistory(),
-                    fullVersions: vcs.getFullHistory(),
-                    branches: repo.branches,
-                    currentBranch: repo.head,
-                    currentVersionId: commitId,
-                    isSaved: false
-                });
-                get().triggerSave();
-                toast.success('Commit created');
+            const mgr = StorageManager.getInstance();
+            const projectId = state.projectId;
+            if (!projectId) {
+                toast.error('Save the project first before creating a commit');
+                return;
             }
+            // Commit via QuickStore
+            mgr.quickStore.commit(projectId, message, 'User').then((hash) => {
+                // Refresh history
+                mgr.quickStore.getHistory(projectId).then((commits) => {
+                    set({ fullVersions: commits as any[], currentVersionId: hash, isSaved: false });
+                });
+                toast.success('Commit created');
+                get().triggerSave();
+            }).catch((err: any) => {
+                toast.error(`Commit failed: ${err.message}`);
+            });
         } catch (error: any) {
             toast.error(`Commit failed: ${error.message}`);
         }
     },
 
     createBranch: (branchName: string) => {
-        try {
-            vcs.createBranch(branchName);
-            const repo = vcs.getRepoState();
-            set({
-                branches: repo.branches,
-                currentBranch: branchName,
-                fullVersions: vcs.getFullHistory()
+        const state = get();
+        const projectId = state.projectId;
+        if (!projectId) return;
+        const mgr = StorageManager.getInstance();
+        const currentHash = state.currentVersionId ?? '';
+        mgr.quickStore.createBranch(projectId, branchName, currentHash).then(() => {
+            mgr.quickStore.getBranches(projectId).then((branches) => {
+                const map = new Map(branches.map((b) => [b.name, b.sha]));
+                set({ branches: map, currentBranch: branchName });
             });
             toast.success(`Branch "${branchName}" created`);
             get().triggerSave();
-        } catch (error: any) {
-            toast.error(error.message);
-        }
+        }).catch((err: any) => {
+            toast.error(err.message);
+        });
     },
 
     checkoutVersion: (target: string) => {
-        try {
-            const snapshot = vcs.checkout(target);
-            const repo = vcs.getRepoState();
+        const state = get();
+        const projectId = state.projectId;
+        if (!projectId) return;
+        const mgr = StorageManager.getInstance();
 
-            set({
-                code: snapshot.code,
-                objects: cleanObjects(snapshot.objects),
-                currentBranch: repo.branches.has(repo.head) ? repo.head : 'DETACHED HEAD',
-                currentVersionId: repo.branches.has(target) ? repo.branches.get(target)! : target,
-                versions: vcs.getHistory(),
-                fullVersions: vcs.getFullHistory(),
-                history: [{
-                    id: 'checkout',
-                    type: 'initial',
-                    name: `Checkout ${target}`,
-                    timestamp: Date.now(),
-                    objects: cleanObjects(snapshot.objects),
-                    code: snapshot.code,
-                    selectedIds: []
-                }],
-                historyIndex: 0
-            });
-
-            get().runCode();
-            toast.success(`Checked out ${target}`);
-        } catch (error: any) {
-            toast.error(error.message);
+        // If target is a branch name, switch to it
+        if (state.branches.has(target)) {
+            mgr.quickStore.switchBranch(projectId, target).then(() => {
+                mgr.quickStore.loadProject(projectId).then((data) => {
+                    if (data) {
+                        set({
+                            code: data.snapshot.code,
+                            objects: cleanObjects(data.snapshot.objects as any[]),
+                            currentBranch: target,
+                            history: [{
+                                id: 'checkout',
+                                type: 'initial',
+                                name: `Checkout ${target}`,
+                                timestamp: Date.now(),
+                                objects: cleanObjects(data.snapshot.objects as any[]),
+                                code: data.snapshot.code,
+                                selectedIds: [],
+                            }],
+                            historyIndex: 0,
+                        });
+                        get().runCode();
+                    }
+                });
+                toast.success(`Checked out ${target}`);
+            }).catch((err: any) => toast.error(err.message));
+        } else {
+            toast.info('Checking out specific commits not yet supported');
         }
     },
 
-    // UI State
-    searchOpen: false,
-    settingsOpen: false,
-    helpOpen: false,
-    notificationsOpen: false,
-    projectThumbnails: {},
-    isSaving: false,
-    pendingSave: false,
-    lastSaveTime: Date.now(),
-    lastSaveError: null,
+    // ─── Comments ───────────────────────────────────────────────────────────
 
-    toggleSearch: () => set(s => ({ searchOpen: !s.searchOpen })),
-    setSearchOpen: (open) => set({ searchOpen: open }),
-    toggleSettings: () => set(s => ({ settingsOpen: !s.settingsOpen })),
-    toggleHelp: () => set(s => ({ helpOpen: !s.helpOpen })),
-    toggleNotifications: () => set(s => ({ notificationsOpen: !s.notificationsOpen })),
-
-    // Comments
     addComment: (text, position) => {
         const comment: Comment = { id: generateId(), text, author: 'User', timestamp: Date.now(), position };
-        set(s => ({ comments: [...s.comments, comment] }));
+        set((s) => ({ comments: [...s.comments, comment] }));
     },
-    deleteComment: (id) => set(s => ({ comments: s.comments.filter(c => c.id !== id) })),
-    toggleComments: () => set(s => ({ commentsExpanded: !s.commentsExpanded })),
+    deleteComment: (id) => set((s) => ({ comments: s.comments.filter((c) => c.id !== id) })),
+    toggleComments: () => set((s) => ({ commentsExpanded: !s.commentsExpanded })),
 
-    // Misc
+    // ─── UI Toggles ─────────────────────────────────────────────────────────
+
+    toggleSearch: () => set((s) => ({ searchOpen: !s.searchOpen })),
+    setSearchOpen: (open) => set({ searchOpen: open }),
+    toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
+    toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
+    toggleNotifications: () => set((s) => ({ notificationsOpen: !s.notificationsOpen })),
+
+    // ─── Project Lifecycle ──────────────────────────────────────────────────
+
     reset: () => {
         get().clearAllObjects();
         set({
-            code: 'const main = () => { return; };',
+            code: DEFAULT_CODE,
             history: [{
                 id: 'initial',
                 type: 'initial',
                 name: 'Reset Project',
                 timestamp: Date.now(),
                 objects: [],
-                code: 'const main = () => { return; };',
-                selectedIds: []
+                code: DEFAULT_CODE,
+                selectedIds: [],
             }],
-            historyIndex: 0
+            historyIndex: 0,
         });
         get().runCode();
     },
 
     closeProject: async () => {
         if (saveTimeout) clearTimeout(saveTimeout);
+
+        // Final save before close
+        const state = get();
+        if (!state.isSaved && state.projectId) {
+            await get().saveToLocal();
+        }
+
         get().clearAllObjects();
         set({
             fileName: 'Untitled',
             projectId: null,
-            code: 'const main = () => { return; };',
+            code: DEFAULT_CODE,
             history: [],
             historyIndex: -1,
             isSaved: true,
             pendingSave: false,
             versions: [],
+            fullVersions: [],
             branches: new Map([['main', '']]),
             currentBranch: 'main',
             currentVersionId: null,
@@ -429,8 +397,7 @@ export const createVersioningSlice: StateCreator<
     },
 
     updateThumbnail: async (name, thumb) => {
-        const thumbs = { ...get().projectThumbnails, [name]: thumb };
-        set({ projectThumbnails: thumbs });
+        set({ projectThumbnails: { ...get().projectThumbnails, [name]: thumb } });
     },
 
     removeThumbnail: (name) => {
@@ -439,24 +406,30 @@ export const createVersioningSlice: StateCreator<
         set({ projectThumbnails: thumbs });
     },
 
-    compareVersions: (versionA, versionB) => set({ versionCompareModal: { isOpen: true, versionA, versionB } }),
-    getVersionTree: () => vcs.getHistory(),
-    hydrateVCS: (repoData) => {
-        vcs.hydrate(repoData);
-        const repo = vcs.getRepoState();
-        set({
-            versions: vcs.getHistory(),
-            fullVersions: vcs.getFullHistory(),
-            branches: repo.branches,
-            currentBranch: repo.branches.has(repo.head) ? repo.head : 'DETACHED HEAD',
-            currentVersionId: repo.branches.has(repo.head) ? repo.branches.get(repo.head)! : repo.head,
-        });
+    compareVersions: (versionA, versionB) =>
+        set({ versionCompareModal: { isOpen: true, versionA, versionB } }),
+
+    getVersionTree: () => get().fullVersions as any,
+
+    hydrateVCS: (_repoData) => {
+        // VCS state is now managed by QuickStore — this is a no-op stub
+        // for backward compatibility with components that call it.
     },
-    // todo:everything Implement branch merge behavior.
-    mergeBranch: (branchName, targetBranch) => console.log('Merge not implemented', { branchName, targetBranch }),
-    // todo:everything Implement set-main-branch behavior.
-    setMainBranch: (versionId) => console.log('Set main branch not implemented', versionId),
-    saveAs: (name) => set({ fileName: name, isSaved: true }),
-    // todo:everything Implement open behavior.
-    open: () => console.log('Open not implemented'),
+
+    mergeBranch: (_branchName, _targetBranch) => {
+        toast.info('Branch merging coming soon');
+    },
+
+    setMainBranch: (_versionId) => {
+        toast.info('Set main branch coming soon');
+    },
+
+    saveAs: (name) => {
+        set({ fileName: name, isSaved: false });
+        get().triggerSave();
+    },
+
+    open: () => {
+        toast.info('Use the Dashboard to open projects');
+    },
 });

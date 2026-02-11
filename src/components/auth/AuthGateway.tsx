@@ -1,11 +1,10 @@
 import React, { useEffect } from 'react';
-// import { useCADStore, useCADStoreApi } from '@/hooks/useCADStore'; // Removed
 import { useGlobalStore } from '@/store/useGlobalStore';
 import { AuthDialog } from './AuthDialog';
-import { ProjectDashboard } from '../project/ProjectDashboard';
+import { StorageManager } from '@/lib/storage/StorageManager';
 
 export function AuthGateway({ children }: { children: React.ReactNode }) {
-    const { user, loadSession, initializeAuth, authLoaded, isAutosaveEnabled, showPATDialog, setShowPATDialog } = useGlobalStore();
+    const { user, initializeAuth, authLoaded, showPATDialog } = useGlobalStore();
 
     // Auth state initialization
     useEffect(() => {
@@ -13,68 +12,62 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
         return () => {
             unsubscribe();
         };
-    }, []); // Run once on mount
+    }, []);
 
-    // Auto-connect to Storage if PAT is present
+    // Initialize StorageManager + auto-connect remote when PAT is present
     useEffect(() => {
         const connectStorage = async () => {
-            if (user?.pat && user.pat.trim() !== '') {
-                const { StorageManager } = await import('@/lib/storage/StorageManager');
-                const storageManager = StorageManager.getInstance();
+            if (!user) return;
 
-                // Use the currently active adapter (LocalGit on desktop, GitHub on web)
-                const adapter = storageManager.currentAdapter;
+            const mgr = StorageManager.getInstance();
 
-                if (adapter) {
-                    if (!adapter.isAuthenticated()) {
-                        console.log(`[AuthGateway] Auto-connecting ${adapter.name} storage...`);
-                        const success = await adapter.connect(user.pat);
+            // Initialize storage manager (creates QuickStore, RemoteStore, SyncEngine)
+            if (!mgr.isInitialized) {
+                await mgr.initialize(
+                    () => useGlobalStore.getState().user?.id ?? null,
+                    () => useGlobalStore.getState().user?.email ?? null,
+                );
+            }
 
-                        // If connection failed and we are on GitHub adapter, it might be an offline issue
-                        // But if we are on LocalGitAdapter, it should work offline.
+            // Connect remote if PAT is available
+            if (user.pat && user.pat.trim() !== '') {
+                if (!mgr.isRemoteConnected) {
+                    console.log('[AuthGateway] Auto-connecting remote storage...');
+                    const success = await mgr.connectRemote(user.pat);
 
-                        if (success) {
-                            console.log(`[AuthGateway] ${adapter.name} storage connected successfully.`);
-                            useGlobalStore.getState().setStorageConnected(true);
-                            // Initialize UI store to load global settings
-                            const { useUIStore } = await import('@/store/useUIStore');
-                            useUIStore.getState().initialize();
-                        } else {
-                            console.error(`[AuthGateway] ${adapter.name} storage connection failed.`);
-                            useGlobalStore.getState().setStorageConnected(false);
-                        }
+                    if (success) {
+                        console.log('[AuthGateway] Remote storage connected.');
+                        useGlobalStore.getState().setStorageConnected(true);
+                        // Load UI settings from remote
+                        const { useUIStore } = await import('@/store/useUIStore');
+                        useUIStore.getState().initialize();
                     } else {
-                        // Already authenticated (e.g. via setPAT), ensure store is in sync
-                        if (!useGlobalStore.getState().isStorageConnected) {
-                            console.log('[AuthGateway] Storage already authenticated, syncing state.');
-                            useGlobalStore.getState().setStorageConnected(true);
-                        }
+                        console.error('[AuthGateway] Remote storage connection failed.');
+                        useGlobalStore.getState().setStorageConnected(false);
+                    }
+                } else {
+                    if (!useGlobalStore.getState().isStorageConnected) {
+                        useGlobalStore.getState().setStorageConnected(true);
                     }
                 }
             } else {
-                console.log('[AuthGateway] No PAT found for user, skipped cloud connection.');
+                console.log('[AuthGateway] No PAT found, remote storage not connected.');
                 useGlobalStore.getState().setStorageConnected(false);
             }
         };
+
         if (authLoaded && user) connectStorage();
     }, [authLoaded, user]);
 
-    // Show nothing while loading session
     if (!authLoaded) return null;
 
-    // If no user, show AuthDialog (welcome/auth)
     if (!user) {
         return <AuthDialog />;
     }
 
-    // If user exists but no PAT (or explicit update requested), show AuthDialog (pat step)
     if (!user.pat || showPATDialog) {
         return <AuthDialog forcePAT={!user.pat} />;
     }
 
-    return (
-        <>
-            {children}
-        </>
-    );
+    return <>{children}</>;
 }
