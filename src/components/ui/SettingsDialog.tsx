@@ -206,20 +206,23 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                                 <h3 className="text-sm font-semibold text-destructive">Advanced Options</h3>
                                 <div className="p-5 rounded-2xl border border-destructive/20 bg-destructive/5 space-y-3">
                                     <p className="text-xs text-muted-foreground">
-                                        Resetting the repository will clear all local data. This cannot be undone unless synced with GitHub.
+                                        Reset the current project to its initial state. This will clear all objects and code, but won't delete saved projects or extensions.
                                     </p>
                                     <Button
                                         variant="destructive"
                                         className="w-full rounded-xl gap-2 h-11"
                                         onClick={() => {
-                                            if (confirm("Are you sure you want to reset? All unsaved changes will be lost.")) {
+                                            if (confirm("Are you sure you want to reset the current project? All unsaved changes will be lost.")) {
                                                 reset();
                                                 onOpenChange(false);
                                             }
                                         }}
                                     >
-                                        <RefreshCw className="w-4 h-4" /> Reset Repository
+                                        <RefreshCw className="w-4 h-4" /> Reset Current Project
                                     </Button>
+                                    <p className="text-xs text-muted-foreground mt-3">
+                                        To delete all projects and extensions, use the "Reset Repository" button in the Project Dashboard.
+                                    </p>
                                 </div>
                             </section>
                         </TabsContent>

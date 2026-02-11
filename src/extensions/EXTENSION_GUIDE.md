@@ -298,7 +298,7 @@ Before publishing your extension:
 
 Your extensions live in:
 ```
-https://github.com/{your-username}/hivecad-projects/tree/main/extensions/{extension-id}/
+https://github.com/{your-username}/hivecad-data/tree/main/extensions/{extension-id}/
 ```
 
 All files in this folder are version-controlled, so you have full history.

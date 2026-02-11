@@ -191,7 +191,7 @@ export function AuthDialog({ forcePAT = false }: { forcePAT?: boolean }) {
                                     <div className="flex items-start gap-4 p-4 bg-primary/5 border border-primary/10 rounded-xl">
                                         <Info className="w-6 h-6 text-primary shrink-0" />
                                         <p className="text-sm text-zinc-400 leading-relaxed">
-                                            Provide your Personal Access Token (PAT) to initialize a github repository called <strong className="text-zinc-200">hivecad-projects</strong> where all your collaborative designs will be stored, ensuring they remain decentralized and under your control.
+                                            Provide your Personal Access Token (PAT) to initialize a github repository called <strong className="text-zinc-200">hivecad-data</strong> where all your collaborative designs will be stored, ensuring they remain decentralized and under your control.
                                         </p>
                                     </div>
 

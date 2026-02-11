@@ -137,28 +137,34 @@ export class StorageManager {
 
     /**
      * Reset ALL user data across all stores.
+     * This includes:
+     * - All projects in QuickStore (local)
+     * - All data in GitHub (projects, extensions, settings)
+     * - All data in Supabase (project metadata, extensions, votes, tags, folders)
      */
     async resetAll(): Promise<void> {
-        // Delete from QuickStore
+        console.log('[StorageManager] Starting reset of all user data...');
+
+        // 1. Delete from QuickStore (local storage)
         const metas = await this.quickStore.listProjects();
         for (const m of metas) {
             await this.quickStore.deleteProject(m.id);
         }
+        console.log(`[StorageManager] Deleted ${metas.length} projects from QuickStore`);
 
-        // Delete from remote
+        // 2. Delete from GitHub remote (projects, extensions, settings)
         if (this._remote?.isConnected()) {
             await this._remote.resetRepository();
+            console.log('[StorageManager] Deleted all data from GitHub repository');
         }
 
-        // Delete from Supabase
+        // 3. Delete ALL user data from Supabase (projects, extensions, votes, tags, folders)
         const userId = this._getUserId();
         if (userId && this._meta) {
-            const ownMetas = await this._meta.listOwnProjects(userId);
-            for (const m of ownMetas) {
-                await this._meta.deleteProjectMeta(m.id);
-            }
+            await this._meta.resetAllUserData(userId);
+            console.log('[StorageManager] Deleted all user data from Supabase');
         }
 
-        console.log('[StorageManager] All user data reset');
+        console.log('[StorageManager] All user data reset complete');
     }
 }

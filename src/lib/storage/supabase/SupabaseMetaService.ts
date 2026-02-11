@@ -230,6 +230,77 @@ export class SupabaseMetaService implements SupabaseMeta {
             updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id' });
     }
+
+    // ─── Reset All User Data ────────────────────────────────────────────────
+
+    /**
+     * Delete ALL user data from Supabase:
+     * - All projects owned by the user
+     * - All extensions authored by the user
+     * - All extension votes by the user
+     * - User tags
+     * - User folders
+     */
+    async resetAllUserData(userId: UserId): Promise<void> {
+        console.log(`[SupabaseMetaService] Resetting all data for user ${userId}...`);
+
+        // Delete all projects owned by the user
+        const { error: projectsError } = await supabase
+            .from('projects')
+            .delete()
+            .eq('owner_id', userId);
+        if (projectsError) {
+            console.warn('[SupabaseMetaService] Error deleting projects:', projectsError);
+        } else {
+            console.log('[SupabaseMetaService] Deleted all user projects');
+        }
+
+        // Delete all extensions authored by the user
+        const { error: extensionsError } = await supabase
+            .from('extensions')
+            .delete()
+            .eq('author_id', userId);
+        if (extensionsError) {
+            console.warn('[SupabaseMetaService] Error deleting extensions:', extensionsError);
+        } else {
+            console.log('[SupabaseMetaService] Deleted all user extensions');
+        }
+
+        // Delete all extension votes by the user
+        const { error: votesError } = await supabase
+            .from('extension_votes')
+            .delete()
+            .eq('user_id', userId);
+        if (votesError) {
+            console.warn('[SupabaseMetaService] Error deleting extension votes:', votesError);
+        } else {
+            console.log('[SupabaseMetaService] Deleted all user extension votes');
+        }
+
+        // Delete user tags
+        const { error: tagsError } = await supabase
+            .from('user_tags')
+            .delete()
+            .eq('user_id', userId);
+        if (tagsError) {
+            console.warn('[SupabaseMetaService] Error deleting user tags:', tagsError);
+        } else {
+            console.log('[SupabaseMetaService] Deleted user tags');
+        }
+
+        // Delete user folders
+        const { error: foldersError } = await supabase
+            .from('user_folders')
+            .delete()
+            .eq('user_id', userId);
+        if (foldersError) {
+            console.warn('[SupabaseMetaService] Error deleting user folders:', foldersError);
+        } else {
+            console.log('[SupabaseMetaService] Deleted user folders');
+        }
+
+        console.log('[SupabaseMetaService] User data reset complete');
+    }
 }
 
 // ─── Row Mappers ────────────────────────────────────────────────────────────

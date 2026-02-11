@@ -534,10 +534,15 @@ export function ProjectDashboard() {
     const handleResetRepository = async () => {
         setLoadingMessage("Purging Repository...");
         try {
+            // Delete all data from all storage layers:
+            // - QuickStore (IndexedDB/local git): all projects
+            // - GitHub: projects/, extensions/, hivecad/ directories
+            // - Supabase: projects, extensions, extension_votes, user_tags, user_folders
             await mgr.resetAll();
 
             closeProject();
 
+            // Clean up UI-specific localStorage
             localStorage.removeItem('hivecad_thumbnails');
             localStorage.removeItem('hivecad_example_opens');
             localStorage.removeItem('hivecad_thumbnails_cache');

@@ -167,11 +167,13 @@ export class GitHubRemoteStore implements RemoteStore {
     // ─── Thumbnails ─────────────────────────────────────────────────────────
 
     async pushThumbnail(id: ProjectId, base64: string): Promise<void> {
-        await this.writeFile(
-            `hivecad/thumbnails/${id}.png`,
-            base64,
-            `Update thumbnail for ${id}`,
-        );
+        // Use commitTree for atomic update (base64 is already encoded, don't double-encode)
+        await this.commitTree(`Update thumbnail for ${id}`, [
+            {
+                path: `hivecad/thumbnails/${id}.png`,
+                content: base64,
+            },
+        ]);
     }
 
     async pullThumbnail(id: ProjectId): Promise<string | null> {
@@ -279,8 +281,40 @@ export class GitHubRemoteStore implements RemoteStore {
 
     async resetRepository(): Promise<void> {
         if (!this.octokit || !this.owner) throw new Error('Not connected');
-        // Delete all files in hivecad/
-        await this.deleteDir('hivecad');
+        
+        console.log('[GitHubRemoteStore] Resetting repository - deleting all projects and extensions...');
+        
+        // Delete all files in hivecad/ (projects, thumbnails, settings)
+        try {
+            await this.deleteDir('hivecad');
+            console.log('[GitHubRemoteStore] Deleted hivecad/ directory');
+        } catch (error: any) {
+            if (error.status !== 404) {
+                console.warn('[GitHubRemoteStore] Error deleting hivecad/:', error);
+            }
+        }
+        
+        // Delete all extensions
+        try {
+            await this.deleteDir('extensions');
+            console.log('[GitHubRemoteStore] Deleted extensions/ directory');
+        } catch (error: any) {
+            if (error.status !== 404) {
+                console.warn('[GitHubRemoteStore] Error deleting extensions/:', error);
+            }
+        }
+        
+        // Delete projects/ directory (new structure)
+        try {
+            await this.deleteDir('projects');
+            console.log('[GitHubRemoteStore] Deleted projects/ directory');
+        } catch (error: any) {
+            if (error.status !== 404) {
+                console.warn('[GitHubRemoteStore] Error deleting projects/:', error);
+            }
+        }
+        
+        console.log('[GitHubRemoteStore] Repository reset complete');
     }
 
     async createIssue(title: string, body: string): Promise<void> {
@@ -299,15 +333,17 @@ export class GitHubRemoteStore implements RemoteStore {
     private async ensureRepo(): Promise<void> {
         if (!this.octokit || !this.owner) return;
         try {
-            await this.octokit.rest.repos.get({ owner: this.owner, repo: this.repo });
+            const { data } = await this.octokit.rest.repos.get({ owner: this.owner, repo: this.repo });
+            if (data?.default_branch) this.branch = data.default_branch;
         } catch (err: any) {
             if (err.status === 404) {
-                await this.octokit.rest.repos.createForAuthenticatedUser({
+                const { data } = await this.octokit.rest.repos.createForAuthenticatedUser({
                     name: this.repo,
                     private: true,
                     auto_init: true,
                     description: 'HiveCAD project storage (auto-created)',
                 });
+                if (data?.default_branch) this.branch = data.default_branch;
                 console.log('[GitHubRemoteStore] Created repo', this.repo);
             } else {
                 throw err;
@@ -418,6 +454,7 @@ export class GitHubRemoteStore implements RemoteStore {
 
     /**
      * Atomic multi-file commit using the Git tree API.
+     * Content is treated as UTF-8 text. For binary data, pass it base64-encoded as a string.
      */
     private async commitTree(
         message: string,
@@ -438,12 +475,18 @@ export class GitHubRemoteStore implements RemoteStore {
                 commit_sha: latestCommitSha,
             });
 
-            const tree = files.map((f) => ({
-                path: f.path,
-                mode: '100644' as const,
-                type: 'blob' as const,
-                content: f.content,
-            }));
+            const tree = files.map((f) => {
+                // Check if this is a binary file (PNG, etc.) by checking the path
+                const isBinary = /\.(png|jpg|jpeg|gif|pdf|zip|tar|gz)$/i.test(f.path);
+                
+                return {
+                    path: f.path,
+                    mode: '100644' as const,
+                    type: 'blob' as const,
+                    content: f.content,
+                    encoding: isBinary ? ('base64' as const) : ('utf-8' as const),
+                };
+            });
 
             const { data: newTree } = await this.octokit!.rest.git.createTree({
                 owner: this.owner!,

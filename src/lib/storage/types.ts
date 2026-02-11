@@ -241,6 +241,8 @@ export interface SupabaseMeta {
     saveUserTags(userId: UserId, tags: TagEntry[]): Promise<void>;
     getUserFolders(userId: UserId): Promise<FolderEntry[]>;
     saveUserFolders(userId: UserId, folders: FolderEntry[]): Promise<void>;
+
+    resetAllUserData(userId: UserId): Promise<void>;
 }
 
 // ─── Sync Engine ───────────────────────────────────────────────────────────

@@ -53,7 +53,7 @@ export function ProjectCard({
     }
 
     if (!thumbnail && project.sha && !isExample) {
-        thumbnail = `https://raw.githubusercontent.com/${project.ownerId}/hivecad-projects/main/hivecad/thumbnails/${project.id}.png`;
+        thumbnail = `https://raw.githubusercontent.com/${project.ownerId}/hivecad-data/main/hivecad/thumbnails/${project.id}.png`;
     }
 
     const deleteMessage = project.deletedAt ? `Deleted ${Math.floor((Date.now() - project.deletedAt) / (1000 * 60 * 60 * 24))}d ago (Expires in ${7 - Math.floor((Date.now() - project.deletedAt) / (1000 * 60 * 60 * 24))}d)` : null;
