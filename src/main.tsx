@@ -6,12 +6,7 @@ import "./index.css";
 import { loadBuiltinExtensions } from "./lib/extensions";
 loadBuiltinExtensions();
 
-// Initialize StorageManager
-import { StorageManager } from "./lib/storage/StorageManager";
-
 const initApp = async () => {
-    await StorageManager.getInstance().initialize();
-
     createRoot(document.getElementById("root")!).render(<App />);
 };
 

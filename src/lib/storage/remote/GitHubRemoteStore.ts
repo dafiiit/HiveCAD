@@ -465,7 +465,7 @@ export class GitHubRemoteStore implements RemoteStore {
                 repo: this.repo,
                 ref: `heads/${this.branch}`,
                 sha: newCommit.sha,
-                force: false,
+                force: true,
             });
         });
     }
