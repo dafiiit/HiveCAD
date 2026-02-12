@@ -251,10 +251,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
                 onPointerDownOutside={() => setSearchOpen(false)}
             >
                 <DialogTitle className="sr-only">Command Palette</DialogTitle>
-                <div className="w-[90vw] max-w-2xl bg-background/40 backdrop-blur-3xl rounded-[2.5rem] overflow-hidden shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)] border border-white/10 ring-1 ring-white/20">
+                <div className="w-[90vw] max-w-2xl bg-card/95 backdrop-blur-2xl rounded-[2.5rem] overflow-hidden shadow-2xl border border-border/70 ring-1 ring-border/40">
                     <Command className={cn(
                         "bg-transparent [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-14 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5",
-                        searchQuery.length === 0 ? "[&_[cmdk-input-wrapper]]:border-none" : "[&_[cmdk-input-wrapper]]:border-white/10"
+                        searchQuery.length === 0 ? "[&_[cmdk-input-wrapper]]:border-none" : "[&_[cmdk-input-wrapper]]:border-border/50"
                     )}>
                         <CommandInput
                             placeholder="Search tools, commands, extensions..."
@@ -263,9 +263,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
                         />
                         <div className={cn("overflow-hidden transition-all duration-300", searchQuery.length > 0 ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0")}>
                             <CommandList className="max-h-[500px] p-3">
-                                <CommandEmpty className="py-16 border-t border-white/5">
-                                    <div className="flex flex-col items-center gap-3 text-muted-foreground/60">
-                                        <Search className="w-10 h-10 opacity-20" />
+                                <CommandEmpty className="py-16 border-t border-border/30">
+                                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                                        <Search className="w-10 h-10 opacity-30" />
                                         <p className="text-lg">No results found for "{searchQuery}"</p>
                                     </div>
                                 </CommandEmpty>
@@ -276,9 +276,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
                                                 <CommandItem
                                                     key={item.label}
                                                     onSelect={() => runCommand(item.action)}
-                                                    className="cursor-pointer rounded-2xl py-4 px-5 aria-selected:bg-white/10 aria-selected:text-primary transition-all mb-1.5 group"
+                                                    className="cursor-pointer rounded-2xl py-4 px-5 aria-selected:bg-secondary aria-selected:text-foreground transition-all mb-1.5 group"
                                                 >
-                                                    <div className="p-2.5 rounded-xl bg-white/5 mr-4 group-aria-selected:bg-primary/20 transition-colors shadow-sm">
+                                                    <div className="p-2.5 rounded-xl bg-secondary/70 mr-4 group-aria-selected:bg-primary/15 transition-colors shadow-sm">
                                                         {React.cloneElement(item.icon as React.ReactElement, { className: "w-5 h-5" })}
                                                     </div>
                                                     <div className="flex flex-col">
@@ -288,7 +288,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onOpenExtensionS
                                                 </CommandItem>
                                             ))}
                                         </CommandGroup>
-                                        <CommandSeparator className="bg-white/5 my-3" />
+                                        <CommandSeparator className="bg-border/40 my-3" />
                                     </React.Fragment>
                                 ))}
                             </CommandList>

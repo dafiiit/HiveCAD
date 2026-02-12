@@ -596,16 +596,22 @@ export function ProjectDashboard() {
                     <span className="font-bold text-foreground text-xl tracking-tight">HiveCAD</span>
                 </div>
                 <div className="flex-1 flex justify-center">
-                    <div className="bg-muted/50 p-1.5 rounded-full flex border border-border/50 backdrop-blur-sm">
+                    <div className="relative grid grid-cols-2 bg-muted/50 p-1.5 rounded-full border border-border/50 backdrop-blur-sm min-w-[380px]">
+                        <div
+                            className={cn(
+                                "absolute top-1.5 bottom-1.5 left-1.5 w-[calc(50%-0.375rem)] rounded-full bg-background shadow-sm transition-transform duration-300 ease-out",
+                                dashboardMode === 'workspace' ? "translate-x-0" : "translate-x-full"
+                            )}
+                        />
                         <button
                             onClick={() => setDashboardMode('workspace')}
-                            className={`px-6 py-2 text-sm font-bold rounded-full transition-all duration-300 ${dashboardMode === 'workspace' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                            className={`relative z-10 w-full px-6 py-2 text-sm font-bold rounded-full transition-colors duration-300 ${dashboardMode === 'workspace' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                         >
                             MY WORKSPACE
                         </button>
                         <button
                             onClick={() => setDashboardMode('discover')}
-                            className={`px-6 py-2 text-sm font-bold rounded-full transition-all duration-300 ${dashboardMode === 'discover' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                            className={`relative z-10 w-full px-6 py-2 text-sm font-bold rounded-full transition-colors duration-300 ${dashboardMode === 'discover' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                         >
                             DISCOVER
                         </button>
@@ -747,14 +753,14 @@ export function ProjectDashboard() {
                                         }}
                                         className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all border ${activeNav === item.label && activeTags.length === 0 && !selectedFolder
                                             ? 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.2)]'
-                                            : 'bg-zinc-800/30 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'
+                                            : 'bg-secondary/55 border-border text-muted-foreground hover:text-foreground hover:bg-secondary'
                                             }`}
                                     >
                                         <item.icon className="w-3.5 h-3.5" />
                                         {item.label.toUpperCase()}
                                     </button>
                                 ))}
-                                <div className="w-px h-6 bg-zinc-800 mx-2" />
+                                <div className="w-px h-6 bg-border/70 mx-2" />
                                 {tags.map(tag => {
                                     const isSelected = activeTags.includes(tag.name);
                                     return (

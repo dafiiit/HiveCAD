@@ -33,6 +33,7 @@ export class SyncEngine {
     private intervalId: ReturnType<typeof setInterval> | null = null;
     private listeners = new Set<(s: SyncState) => void>();
     private syncing = false;
+    private suspended = false;
 
     /** Public read-only accessor for current sync state */
     get state(): SyncState {
@@ -72,6 +73,7 @@ export class SyncEngine {
     /** Trigger a sync immediately. Idempotent — skips if already syncing. */
     async syncNow(): Promise<void> {
         if (this.syncing) return;
+        if (this.suspended) return;
         if (!this.remote?.isConnected()) {
             this._state = { ...this._state, status: 'offline' };
             this.emit();
@@ -120,6 +122,31 @@ export class SyncEngine {
     markDirty(): void {
         this._state = { ...this._state, hasPendingChanges: true, wouldLoseData: true };
         this.emit();
+    }
+
+    /** Suspend sync activity temporarily (used for destructive maintenance operations). */
+    suspend(): void {
+        this.suspended = true;
+        this.stopAutoSync();
+    }
+
+    /** Resume sync activity after temporary suspension. */
+    resumeAutoSync(intervalMs = 30_000): void {
+        this.suspended = false;
+        if (this.remote?.isConnected()) {
+            this.startAutoSync(intervalMs);
+        }
+    }
+
+    /** Wait until any in-flight sync operation has completed. */
+    async waitForIdle(timeoutMs = 15_000): Promise<void> {
+        const startedAt = Date.now();
+        while (this.syncing) {
+            if (Date.now() - startedAt > timeoutMs) {
+                throw new Error('Timed out waiting for sync to become idle');
+            }
+            await new Promise(resolve => setTimeout(resolve, 150));
+        }
     }
 
     // ─── Internal ───────────────────────────────────────────────────────────

@@ -281,40 +281,79 @@ export class GitHubRemoteStore implements RemoteStore {
 
     async resetRepository(): Promise<void> {
         if (!this.octokit || !this.owner) throw new Error('Not connected');
-        
+
         console.log('[GitHubRemoteStore] Resetting repository - deleting all projects and extensions...');
-        
-        // Delete all files in hivecad/ (projects, thumbnails, settings)
-        try {
-            await this.deleteDir('hivecad');
-            console.log('[GitHubRemoteStore] Deleted hivecad/ directory');
-        } catch (error: any) {
-            if (error.status !== 404) {
-                console.warn('[GitHubRemoteStore] Error deleting hivecad/:', error);
+
+        await retryOn409(async () => {
+            const { data: refData } = await this.octokit!.rest.git.getRef({
+                owner: this.owner!,
+                repo: this.repo,
+                ref: `heads/${this.branch}`,
+            });
+            const latestCommitSha = refData.object.sha;
+
+            const { data: commitData } = await this.octokit!.rest.git.getCommit({
+                owner: this.owner!,
+                repo: this.repo,
+                commit_sha: latestCommitSha,
+            });
+
+            const { data: fullTree } = await this.octokit!.rest.git.getTree({
+                owner: this.owner!,
+                repo: this.repo,
+                tree_sha: commitData.tree.sha,
+                recursive: '1',
+            });
+
+            const pathsToDelete = (fullTree.tree ?? [])
+                .filter((entry: any) =>
+                    entry.type === 'blob' &&
+                    typeof entry.path === 'string' &&
+                    (
+                        entry.path.startsWith('hivecad/') ||
+                        entry.path.startsWith('extensions/') ||
+                        entry.path.startsWith('projects/')
+                    )
+                )
+                .map((entry: any) => entry.path as string);
+
+            if (pathsToDelete.length === 0) {
+                console.log('[GitHubRemoteStore] Repository reset complete (nothing to delete)');
+                return;
             }
-        }
-        
-        // Delete all extensions
-        try {
-            await this.deleteDir('extensions');
-            console.log('[GitHubRemoteStore] Deleted extensions/ directory');
-        } catch (error: any) {
-            if (error.status !== 404) {
-                console.warn('[GitHubRemoteStore] Error deleting extensions/:', error);
-            }
-        }
-        
-        // Delete projects/ directory (new structure)
-        try {
-            await this.deleteDir('projects');
-            console.log('[GitHubRemoteStore] Deleted projects/ directory');
-        } catch (error: any) {
-            if (error.status !== 404) {
-                console.warn('[GitHubRemoteStore] Error deleting projects/:', error);
-            }
-        }
-        
-        console.log('[GitHubRemoteStore] Repository reset complete');
+
+            const deleteEntries = pathsToDelete.map((path) => ({
+                path,
+                mode: '100644' as const,
+                type: 'blob' as const,
+                sha: null,
+            }));
+
+            const { data: newTree } = await this.octokit!.rest.git.createTree({
+                owner: this.owner!,
+                repo: this.repo,
+                base_tree: commitData.tree.sha,
+                tree: deleteEntries,
+            });
+
+            const { data: newCommit } = await this.octokit!.rest.git.createCommit({
+                owner: this.owner!,
+                repo: this.repo,
+                message: 'Reset HiveCAD repository data',
+                tree: newTree.sha,
+                parents: [latestCommitSha],
+            });
+
+            await this.octokit!.rest.git.updateRef({
+                owner: this.owner!,
+                repo: this.repo,
+                ref: `heads/${this.branch}`,
+                sha: newCommit.sha,
+                force: true,
+            });
+
+            console.log(`[GitHubRemoteStore] Repository reset complete (deleted ${pathsToDelete.length} files)`);
+        });
     }
 
     async createIssue(title: string, body: string): Promise<void> {
@@ -401,26 +440,28 @@ export class GitHubRemoteStore implements RemoteStore {
 
     private async deleteFile(path: string): Promise<void> {
         if (!this.octokit || !this.owner) return;
-        try {
-            const { data } = await this.octokit.rest.repos.getContent({
-                owner: this.owner,
-                repo: this.repo,
-                path,
-                ref: this.branch,
-            });
-            if ('sha' in data) {
-                await this.octokit.rest.repos.deleteFile({
-                    owner: this.owner,
+        await retryOn409(async () => {
+            try {
+                const { data } = await this.octokit!.rest.repos.getContent({
+                    owner: this.owner!,
                     repo: this.repo,
                     path,
-                    message: `Delete ${path}`,
-                    sha: data.sha,
-                    branch: this.branch,
+                    ref: this.branch,
                 });
+                if ('sha' in data) {
+                    await this.octokit!.rest.repos.deleteFile({
+                        owner: this.owner!,
+                        repo: this.repo,
+                        path,
+                        message: `Delete ${path}`,
+                        sha: data.sha,
+                        branch: this.branch,
+                    });
+                }
+            } catch (e: any) {
+                if (e.status !== 404) throw e;
             }
-        } catch (e: any) {
-            if (e.status !== 404) throw e;
-        }
+        });
     }
 
     private async listDir(path: string): Promise<Array<{ name: string; type: string }>> {

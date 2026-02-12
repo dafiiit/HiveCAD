@@ -142,29 +142,48 @@ export class StorageManager {
      * - All data in GitHub (projects, extensions, settings)
      * - All data in Supabase (project metadata, extensions, votes, tags, folders)
      */
-    async resetAll(): Promise<void> {
+    async resetAll(onProgress?: (message: string) => void): Promise<void> {
         console.log('[StorageManager] Starting reset of all user data...');
 
-        // 1. Delete from QuickStore (local storage)
-        const metas = await this.quickStore.listProjects();
-        for (const m of metas) {
-            await this.quickStore.deleteProject(m.id);
-        }
-        console.log(`[StorageManager] Deleted ${metas.length} projects from QuickStore`);
+        const report = (message: string) => {
+            onProgress?.(message);
+            console.log(`[StorageManager] ${message}`);
+        };
 
-        // 2. Delete from GitHub remote (projects, extensions, settings)
-        if (this._remote?.isConnected()) {
-            await this._remote.resetRepository();
-            console.log('[StorageManager] Deleted all data from GitHub repository');
-        }
+        const shouldResumeSync = !!this._sync && !isDesktop() && !!this._remote?.isConnected();
 
-        // 3. Delete ALL user data from Supabase (projects, extensions, votes, tags, folders)
-        const userId = this._getUserId();
-        if (userId && this._meta) {
-            await this._meta.resetAllUserData(userId);
-            console.log('[StorageManager] Deleted all user data from Supabase');
-        }
+        this._sync?.suspend();
+        try {
+            await this._sync?.waitForIdle();
 
-        console.log('[StorageManager] All user data reset complete');
+            // 1. Delete from QuickStore (local storage)
+            report('Deleting local projects...');
+            const metas = await this.quickStore.listProjects();
+            for (const m of metas) {
+                await this.quickStore.deleteProject(m.id);
+            }
+            report(`Deleted ${metas.length} projects from local storage.`);
+
+            // 2. Delete from GitHub remote (projects, extensions, settings)
+            if (this._remote?.isConnected()) {
+                report('Deleting data from GitHub repository...');
+                await this._remote.resetRepository();
+                report('Deleted all data from GitHub repository.');
+            }
+
+            // 3. Delete ALL user data from Supabase (projects, extensions, votes, tags, folders)
+            const userId = this._getUserId();
+            if (userId && this._meta) {
+                report('Deleting user metadata from Supabase...');
+                await this._meta.resetAllUserData(userId);
+                report('Deleted all user metadata from Supabase.');
+            }
+
+            report('Reset complete.');
+        } finally {
+            if (shouldResumeSync) {
+                this._sync?.resumeAutoSync(30_000);
+            }
+        }
     }
 }

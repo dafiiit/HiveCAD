@@ -2,6 +2,7 @@
 
 > Single source of truth for the codebase structure, design principles, and data flow.  
 > Every contributor (human or AI) must read this before modifying the codebase.
+> If the architecture is altered it must be reflected in this document
 
 ---
 

@@ -83,6 +83,7 @@ export const createSketchSlice: StateCreator<
     sketchPlane: null,
     sketchStep: 'select-plane',
     activeSketchPrimitives: [],
+    sketchRedoPrimitives: [],
     currentDrawingPrimitive: null,
     lockedValues: {},
     sketchPoints: [],
@@ -97,11 +98,12 @@ export const createSketchSlice: StateCreator<
     addSketchPoint: (point) => set(state => ({ sketchPoints: [...state.sketchPoints, point] })),
 
     addSketchPrimitive: (primitive) => set(state => ({
-        activeSketchPrimitives: [...state.activeSketchPrimitives, primitive]
+        activeSketchPrimitives: [...state.activeSketchPrimitives, primitive],
+        sketchRedoPrimitives: [],
     })),
 
     updateCurrentDrawingPrimitive: (primitive) => set({ currentDrawingPrimitive: primitive }),
-    clearSketch: () => set({ sketchPoints: [], activeSketchPrimitives: [], currentDrawingPrimitive: null }),
+    clearSketch: () => set({ sketchPoints: [], activeSketchPrimitives: [], sketchRedoPrimitives: [], currentDrawingPrimitive: null }),
 
     enterSketchMode: (sketchId?: string) => {
         const state = get();
@@ -126,6 +128,7 @@ export const createSketchSlice: StateCreator<
                     activeTab: 'SKETCH',
                     activeTool: 'line',
                     activeSketchPrimitives: primitives as any[],
+                    sketchRedoPrimitives: [],
                     currentDrawingPrimitive: null,
                     sketchPoints: [],
                     activeSketchId: sketchId,
@@ -142,6 +145,7 @@ export const createSketchSlice: StateCreator<
             activeTab: 'SKETCH',
             activeTool: 'line',
             activeSketchPrimitives: [],
+            sketchRedoPrimitives: [],
             currentDrawingPrimitive: null,
             sketchPoints: [],
             activeSketchId: null,
@@ -154,6 +158,7 @@ export const createSketchSlice: StateCreator<
             isSketchMode: false,
             sketchPoints: [],
             activeSketchPrimitives: [],
+            sketchRedoPrimitives: [],
             currentDrawingPrimitive: null,
             sketchPlane: null,
             activeTab: 'SOLID',
@@ -172,6 +177,7 @@ export const createSketchSlice: StateCreator<
                 isSketchMode: false,
                 sketchPoints: [],
                 activeSketchPrimitives: [],
+                sketchRedoPrimitives: [],
                 currentDrawingPrimitive: null,
                 sketchPlane: null,
                 activeTab: 'SOLID',
@@ -220,6 +226,7 @@ export const createSketchSlice: StateCreator<
             isSketchMode: false,
             sketchPoints: [],
             activeSketchPrimitives: [],
+            sketchRedoPrimitives: [],
             currentDrawingPrimitive: null,
             sketchPlane: null,
             activeTab: 'SOLID',
@@ -240,8 +247,22 @@ export const createSketchSlice: StateCreator<
                 return { currentDrawingPrimitive: null };
             }
             if (state.activeSketchPrimitives.length === 0) return {};
+            const lastPrimitive = state.activeSketchPrimitives[state.activeSketchPrimitives.length - 1];
             return {
                 activeSketchPrimitives: state.activeSketchPrimitives.slice(0, -1),
+                sketchRedoPrimitives: [...state.sketchRedoPrimitives, lastPrimitive],
+            };
+        });
+    },
+
+    redoLastPrimitive: () => {
+        set(state => {
+            if (state.sketchRedoPrimitives.length === 0) return {};
+            const primitiveToRestore = state.sketchRedoPrimitives[state.sketchRedoPrimitives.length - 1];
+            return {
+                activeSketchPrimitives: [...state.activeSketchPrimitives, primitiveToRestore],
+                sketchRedoPrimitives: state.sketchRedoPrimitives.slice(0, -1),
+                currentDrawingPrimitive: null,
             };
         });
     },

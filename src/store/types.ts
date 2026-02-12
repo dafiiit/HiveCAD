@@ -254,6 +254,7 @@ export interface SketchSlice {
     sketchPlane: 'XY' | 'XZ' | 'YZ' | null;
     sketchStep: 'select-plane' | 'drawing';
     activeSketchPrimitives: SketchPrimitive[];
+    sketchRedoPrimitives: SketchPrimitive[];
     currentDrawingPrimitive: SketchPrimitive | null;
     lockedValues: Record<string, number | null>;
     sketchPoints: [number, number][];
@@ -278,6 +279,7 @@ export interface SketchSlice {
     clearSketch: () => void;
     enterSketchMode: (sketchId?: string) => void;
     undoLastPrimitive: () => void;
+    redoLastPrimitive: () => void;
     setChainMode: (enabled: boolean) => void;
     setGridSnapSize: (size: number) => void;
     editSketch: (sketchId: string) => void;

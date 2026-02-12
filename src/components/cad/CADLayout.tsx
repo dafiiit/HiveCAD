@@ -29,6 +29,8 @@ const CADLayout = () => {
     isSaved,
     undo,
     redo,
+    undoLastPrimitive,
+    redoLastPrimitive,
     save,
     duplicateSelected,
     deleteObject,
@@ -49,11 +51,19 @@ const CADLayout = () => {
             break;
           case 'z':
             e.preventDefault();
-            undo();
+            if (isSketchMode) {
+              undoLastPrimitive();
+            } else {
+              undo();
+            }
             break;
           case 'y':
             e.preventDefault();
-            redo();
+            if (isSketchMode) {
+              redoLastPrimitive();
+            } else {
+              redo();
+            }
             break;
           case 'd':
             e.preventDefault();
@@ -81,7 +91,7 @@ const CADLayout = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo, save, duplicateSelected, deleteObject, selectedIds, isSketchMode, exitSketchMode, isFullscreen, toggleFullscreen, activeTool, setActiveTool]);
+  }, [undo, redo, undoLastPrimitive, redoLastPrimitive, save, duplicateSelected, deleteObject, selectedIds, isSketchMode, exitSketchMode, isFullscreen, toggleFullscreen, activeTool, setActiveTool]);
 
   if (isFullscreen) {
     return (

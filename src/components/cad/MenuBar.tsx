@@ -50,7 +50,12 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
     lastSaveError,
     setCode,
     setFileName,
-    runCode
+    runCode,
+    isSketchMode,
+    activeSketchPrimitives,
+    sketchRedoPrimitives,
+    undoLastPrimitive,
+    redoLastPrimitive,
   } = useCADStore();
 
   const { theme, setTheme } = useUIStore();
@@ -88,6 +93,16 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
   };
 
   const handleUndo = () => {
+    if (isSketchMode) {
+      if (activeSketchPrimitives.length === 0) {
+        toast.error("Nothing to undo");
+        return;
+      }
+      undoLastPrimitive();
+      toast("Undo sketch step");
+      return;
+    }
+
     if (historyIndex <= 0) {
       toast.error("Nothing to undo");
       return;
@@ -97,6 +112,16 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
   };
 
   const handleRedo = () => {
+    if (isSketchMode) {
+      if (sketchRedoPrimitives.length === 0) {
+        toast.error("Nothing to redo");
+        return;
+      }
+      redoLastPrimitive();
+      toast("Redo sketch step");
+      return;
+    }
+
     if (historyIndex >= history.length - 1) {
       toast.error("Nothing to redo");
       return;
@@ -144,16 +169,12 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
       />
 
       <div className="h-10 bg-background flex items-center justify-between px-2 text-xs relative z-30">
-        {/* Bottom border line that runs across but is redundant if we want fusion (kept for non-tab areas) */}
-        <div className="absolute bottom-0 left-0 right-0 h-px bg-toolbar-border z-0" />
-
         {/* Left section - App controls - Vertically Centered */}
         <div className="flex items-center gap-1 h-full">
           <button
-            className="p-1 rounded transition-colors flex items-center justify-center cursor-default"
-            // todo:refine Restore app menu action or remove the disabled control entirely.
-            // Disabled for now - use tab close button (X) instead
-            title="HiveCAD"
+            className="p-1 rounded transition-colors flex items-center justify-center hover:bg-secondary"
+            onClick={() => closeTab(activeTabId)}
+            title="Back to Dashboard"
           >
             <img src="/favicon.ico" alt="HiveCAD Logo" className="w-5 h-5" />
           </button>
@@ -192,19 +213,19 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           <div className="w-px h-4 bg-border mx-1" />
 
           <button
-            className={`p-1.5 hover:bg-secondary rounded transition-colors ${historyIndex > 0 ? 'text-icon-default hover:text-icon-hover' : 'text-muted-foreground/50'}`}
+            className={`p-1.5 hover:bg-secondary rounded transition-colors ${(isSketchMode ? activeSketchPrimitives.length > 0 : historyIndex > 0) ? 'text-icon-default hover:text-icon-hover' : 'text-muted-foreground/50'}`}
             onClick={handleUndo}
-            disabled={historyIndex <= 0}
-            title={historyIndex > 0 ? `Undo ${history[historyIndex]?.name || ''} (Ctrl+Z)` : "Nothing to undo"}
+            disabled={isSketchMode ? activeSketchPrimitives.length === 0 : historyIndex <= 0}
+            title={isSketchMode ? (activeSketchPrimitives.length > 0 ? "Undo sketch step (Ctrl+Z)" : "Nothing to undo") : (historyIndex > 0 ? `Undo ${history[historyIndex]?.name || ''} (Ctrl+Z)` : "Nothing to undo")}
           >
             <Undo2 className="w-4 h-4" />
           </button>
 
           <button
-            className={`p-1.5 hover:bg-secondary rounded transition-colors ${historyIndex < history.length - 1 ? 'text-icon-default hover:text-icon-hover' : 'text-muted-foreground/50'}`}
+            className={`p-1.5 hover:bg-secondary rounded transition-colors ${(isSketchMode ? sketchRedoPrimitives.length > 0 : historyIndex < history.length - 1) ? 'text-icon-default hover:text-icon-hover' : 'text-muted-foreground/50'}`}
             onClick={handleRedo}
-            disabled={historyIndex >= history.length - 1}
-            title={historyIndex < history.length - 1 ? `Redo ${history[historyIndex + 1]?.name || ''} (Ctrl+Y)` : "Nothing to redo"}
+            disabled={isSketchMode ? sketchRedoPrimitives.length === 0 : historyIndex >= history.length - 1}
+            title={isSketchMode ? (sketchRedoPrimitives.length > 0 ? "Redo sketch step (Ctrl+Y)" : "Nothing to redo") : (historyIndex < history.length - 1 ? `Redo ${history[historyIndex + 1]?.name || ''} (Ctrl+Y)` : "Nothing to redo")}
           >
             <Redo2 className="w-4 h-4" />
           </button>

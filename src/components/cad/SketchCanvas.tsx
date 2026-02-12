@@ -33,7 +33,7 @@ const SketchCanvas = () => {
         activeSnapPoint, snappingEnabled, snappingEngine,
         setSnapPoint, setSnappingEngine,
         // New sketch features
-        chainMode, gridSnapSize, undoLastPrimitive,
+        chainMode, gridSnapSize,
     } = useCADStore();
 
     const [hoverPoint, setHoverPoint] = useState<[number, number] | null>(null);
@@ -91,15 +91,10 @@ const SketchCanvas = () => {
                     e.preventDefault();
                 }
             }
-            // Ctrl+Z / Cmd+Z: undo last primitive
-            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-                undoLastPrimitive();
-                e.preventDefault();
-            }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [currentDrawingPrimitive, updateCurrentDrawingPrimitive, undoLastPrimitive]);
+    }, [currentDrawingPrimitive, updateCurrentDrawingPrimitive]);
 
     const annotationCtx = useMemo(() => sketchPlane ? createAnnotationContext(sketchPlane) : null, [sketchPlane]);
 

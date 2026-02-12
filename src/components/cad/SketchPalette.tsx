@@ -7,7 +7,6 @@ import {
   Pencil,
   ArrowUpRight,
   PencilRuler,
-  Undo2,
   Link,
   Grid3X3
 } from "lucide-react";
@@ -57,7 +56,6 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
     setChainMode,
     gridSnapSize,
     setGridSnapSize,
-    undoLastPrimitive,
     activeSketchPrimitives,
   } = useCADStore();
 
@@ -354,18 +352,10 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
 
       {/* Bottom Actions */}
       <div className="shrink-0 border-t border-border px-3 py-2 space-y-2">
-        {/* Entity count + Undo */}
+        {/* Entity count */}
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{activeSketchPrimitives.length} entit{activeSketchPrimitives.length === 1 ? 'y' : 'ies'}</span>
-          <button
-            onClick={() => { undoLastPrimitive(); }}
-            disabled={activeSketchPrimitives.length === 0}
-            className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-secondary/70 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            title="Undo last (Ctrl+Z)"
-          >
-            <Undo2 className="w-3 h-3" />
-            <span>Undo</span>
-          </button>
+          <span className="text-[11px] text-muted-foreground/80">Use top-left Undo/Redo</span>
         </div>
 
         {/* Finish / Cancel */}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     Dialog,
     DialogContent,
@@ -29,6 +29,8 @@ import { useCADStore } from '@/hooks/useCADStore';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { StorageManager } from '@/lib/storage/StorageManager';
+import { toast } from 'sonner';
 
 interface SettingsDialogProps {
     open: boolean;
@@ -38,7 +40,44 @@ interface SettingsDialogProps {
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     const { theme, setTheme } = useUIStore();
     const { user, logout, setShowPATDialog } = useGlobalStore();
-    const { reset } = useCADStore();
+    const { closeProject } = useCADStore();
+    const [isResetting, setIsResetting] = useState(false);
+    const [resetStatus, setResetStatus] = useState<string | null>(null);
+
+    const handleResetRepository = async () => {
+        const confirmed = confirm(
+            "Reset all HiveCAD data? This deletes all your projects/extensions in local storage, hivecad-data, and Supabase. This cannot be undone."
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            setIsResetting(true);
+            setResetStatus('Starting reset...');
+            const mgr = StorageManager.getInstance();
+            await mgr.resetAll((status) => setResetStatus(status));
+
+            setResetStatus('Closing current project...');
+            await closeProject();
+
+            setResetStatus('Cleaning local UI cache...');
+            localStorage.removeItem('hivecad_thumbnails');
+            localStorage.removeItem('hivecad_example_opens');
+            localStorage.removeItem('hivecad_thumbnails_cache');
+
+            toast.success("All repository and user data has been reset.");
+            onOpenChange(false);
+        } catch (error) {
+            console.error("Reset failed:", error);
+            const message = error instanceof Error ? error.message : 'Unknown reset error';
+            setResetStatus(`Reset failed: ${message}`);
+            toast.error(`Failed to reset repository data: ${message}`);
+        } finally {
+            setIsResetting(false);
+        }
+    };
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -206,22 +245,24 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                                 <h3 className="text-sm font-semibold text-destructive">Advanced Options</h3>
                                 <div className="p-5 rounded-2xl border border-destructive/20 bg-destructive/5 space-y-3">
                                     <p className="text-xs text-muted-foreground">
-                                        Reset the current project to its initial state. This will clear all objects and code, but won't delete saved projects or extensions.
+                                        Delete all user data across local storage, the hivecad-data GitHub repository, and Supabase metadata.
                                     </p>
                                     <Button
                                         variant="destructive"
                                         className="w-full rounded-xl gap-2 h-11"
-                                        onClick={() => {
-                                            if (confirm("Are you sure you want to reset the current project? All unsaved changes will be lost.")) {
-                                                reset();
-                                                onOpenChange(false);
-                                            }
-                                        }}
+                                        onClick={handleResetRepository}
+                                        disabled={isResetting}
                                     >
-                                        <RefreshCw className="w-4 h-4" /> Reset Current Project
+                                        <RefreshCw className={`w-4 h-4 ${isResetting ? 'animate-spin' : ''}`} />
+                                        {isResetting ? 'Resetting...' : 'Reset Repository & User Data'}
                                     </Button>
+                                    {resetStatus && (
+                                        <p className="text-xs text-muted-foreground mt-2" role="status" aria-live="polite">
+                                            {resetStatus}
+                                        </p>
+                                    )}
                                     <p className="text-xs text-muted-foreground mt-3">
-                                        To delete all projects and extensions, use the "Reset Repository" button in the Project Dashboard.
+                                        This permanently removes all projects, extension metadata, tags, folders, and votes associated with your account.
                                     </p>
                                 </div>
                             </section>
