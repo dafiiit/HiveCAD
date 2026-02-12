@@ -1,5 +1,4 @@
-import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../../../../types';
-import type { CodeManager } from '../../../../../code-manager';
+import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchToolContext } from '../../../../types';
 import { generateToolId } from '../../../../types';
 import { LineSegment } from '../../../../../sketch-graph/Geometry';
 import { renderBezierPreview } from './preview';
@@ -34,7 +33,8 @@ export const bezierTool: Tool = {
         }
         return geoms;
     },
-    addToSketch(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void {
+    addToSketch(context: SketchToolContext): void {
+        const { codeManager, sketchName, primitive } = context;
         const end = primitive.points[1];
         const controlPoints = primitive.points.slice(2).map(p => [p[0], p[1]]);
         codeManager.addOperation(sketchName, 'bezierCurveTo', [[end[0], end[1]], controlPoints]);

@@ -1,5 +1,4 @@
-import type { Tool } from '../../../types';
-import type { CodeManager } from '../../../../code-manager';
+import type { Tool, ToolContext } from '../../../types';
 import { renderRevolvePreview } from './preview';
 
 export const revolveTool: Tool = {
@@ -50,8 +49,9 @@ export const revolveTool: Tool = {
         max: 2,
         allowedTypes: ['sketch', 'face', 'edge', 'datumAxis']
     },
-    execute(codeManager: CodeManager, selectedIds: string[], params: Record<string, any>): void {
-        const { profile, axis, angle, limitType } = params;
+    execute(context: ToolContext): void {
+        const { codeManager } = context;
+        const { profile, axis, angle, limitType } = context.params;
 
         if (profile) {
             const args: any[] = [];

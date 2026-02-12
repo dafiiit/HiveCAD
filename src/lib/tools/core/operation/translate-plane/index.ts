@@ -1,5 +1,4 @@
-import type { Tool } from '../../../types';
-import type { CodeManager } from '../../../../code-manager';
+import type { Tool, ToolContext } from '../../../types';
 
 export const translatePlaneTool: Tool = {
     metadata: {
@@ -14,10 +13,11 @@ export const translatePlaneTool: Tool = {
         { key: 'y', label: 'Y Offset', type: 'number', default: 0, unit: 'mm' },
         { key: 'z', label: 'Z Offset', type: 'number', default: 0, unit: 'mm' }
     ],
-    execute(codeManager: CodeManager, selectedIds: string[], params: Record<string, any>): void {
-        const selectedId = selectedIds[0];
+    execute(context: ToolContext): void {
+        const { codeManager } = context;
+        const selectedId = context.scene.selectedIds[0];
         if (selectedId) {
-            const { x = 0, y = 0, z = 0 } = params;
+            const { x = 0, y = 0, z = 0 } = context.params;
             codeManager.addOperation(selectedId, 'translate', [x, y, z]);
         }
     }

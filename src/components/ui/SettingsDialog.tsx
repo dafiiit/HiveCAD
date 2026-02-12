@@ -13,7 +13,6 @@ import {
     User,
     Github,
     HelpCircle,
-    Bell,
     RefreshCw,
     LogOut,
     Moon,
@@ -31,6 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { StorageManager } from '@/lib/storage/StorageManager';
 import { toast } from 'sonner';
+import { isDesktop } from '@/lib/platform/platform';
 
 interface SettingsDialogProps {
     open: boolean;
@@ -40,9 +40,37 @@ interface SettingsDialogProps {
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     const { theme, setTheme } = useUIStore();
     const { user, logout, setShowPATDialog } = useGlobalStore();
-    const { closeProject } = useCADStore();
+    const { closeProject, snappingEnabled, toggleSnapping } = useCADStore();
     const [isResetting, setIsResetting] = useState(false);
+    const [isUpdating, setIsUpdating] = useState(false);
     const [resetStatus, setResetStatus] = useState<string | null>(null);
+
+    const handleCheckAndInstallUpdate = async () => {
+        if (!isDesktop()) {
+            toast.info('In-app updates are only available in the desktop app.');
+            return;
+        }
+
+        try {
+            setIsUpdating(true);
+            const { checkForUpdates, installUpdate } = await import('@/lib/platform/desktop');
+            const update = await checkForUpdates();
+
+            if (!update) {
+                toast.success('You are on the latest version.');
+                return;
+            }
+
+            toast.loading(`Installing v${update.version}...`, { id: 'desktop-update' });
+            await installUpdate();
+            toast.success('Update installed. The app will restart.', { id: 'desktop-update' });
+        } catch (error) {
+            console.error('Update failed:', error);
+            toast.error('Failed to install update. Please try again.');
+        } finally {
+            setIsUpdating(false);
+        }
+    };
 
     const handleResetRepository = async () => {
         const confirmed = confirm(
@@ -111,12 +139,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                             <User className="w-4 h-4" /> Account
                         </TabsTrigger>
                         <TabsTrigger
-                            value="notifications"
-                            className="justify-start gap-3 px-4 py-2.5 rounded-xl data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
-                        >
-                            <Bell className="w-4 h-4" /> Notifications
-                        </TabsTrigger>
-                        <TabsTrigger
                             value="help"
                             className="justify-start gap-3 px-4 py-2.5 rounded-xl data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
                         >
@@ -151,19 +173,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                                             <Moon className="w-5 h-5 text-blue-400" />
                                         )}
                                     </button>
-                                </div>
-                            </section>
-
-                            <section className="space-y-4">
-                                <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
-                                    <RefreshCw className="w-4 h-4" /> Workspace
-                                </h3>
-                                <div className="flex items-center justify-between p-4 rounded-2xl bg-muted/20 border border-border/10">
-                                    <div className="space-y-0.5">
-                                        <div className="text-sm font-medium">Grid Snap</div>
-                                        <div className="text-xs text-muted-foreground">Snap objects to grid increments</div>
-                                    </div>
-                                    <Switch checked={true} />
                                 </div>
                             </section>
                         </TabsContent>
@@ -209,20 +218,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                             </section>
                         </TabsContent>
 
-                        <TabsContent value="notifications" className="m-0 space-y-4">
-                            <h3 className="text-sm font-semibold text-muted-foreground">Recent Activity</h3>
-                            <div className="space-y-3">
-                                <div className="p-4 rounded-2xl bg-muted/10 border border-border/5 space-y-1">
-                                    <div className="text-sm font-medium">Welcome to CAD Editor</div>
-                                    <div className="text-xs text-muted-foreground">Start creating by clicking tools in the toolbar</div>
-                                </div>
-                                <div className="p-4 rounded-2xl bg-muted/10 border border-border/5 space-y-1">
-                                    <div className="text-sm font-medium">Auto-save enabled</div>
-                                    <div className="text-xs text-muted-foreground">Your work will be saved automatically</div>
-                                </div>
-                            </div>
-                        </TabsContent>
-
                         <TabsContent value="help" className="m-0 space-y-6">
                             <section className="space-y-4">
                                 <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
@@ -241,6 +236,35 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         </TabsContent>
 
                         <TabsContent value="system" className="m-0 space-y-6">
+                            <section className="space-y-4">
+                                <h3 className="text-sm font-semibold text-muted-foreground">CAD Interaction</h3>
+                                <div className="flex items-center justify-between p-4 rounded-2xl bg-muted/20 border border-border/10">
+                                    <div className="space-y-0.5">
+                                        <div className="text-sm font-medium">Grid Snapping</div>
+                                        <div className="text-xs text-muted-foreground">Snap sketch input to the active grid</div>
+                                    </div>
+                                    <Switch checked={snappingEnabled} onCheckedChange={toggleSnapping} />
+                                </div>
+                            </section>
+
+                            <section className="space-y-4">
+                                <h3 className="text-sm font-semibold text-muted-foreground">Application Update</h3>
+                                <div className="p-4 rounded-2xl bg-muted/20 border border-border/10 space-y-3">
+                                    <p className="text-xs text-muted-foreground">
+                                        Check for a new standalone version and install it directly.
+                                    </p>
+                                    <Button
+                                        variant="outline"
+                                        className="w-full rounded-xl gap-2"
+                                        onClick={handleCheckAndInstallUpdate}
+                                        disabled={isUpdating}
+                                    >
+                                        <RefreshCw className={`w-4 h-4 ${isUpdating ? 'animate-spin' : ''}`} />
+                                        {isUpdating ? 'Updating...' : 'Check for Updates'}
+                                    </Button>
+                                </div>
+                            </section>
+
                             <section className="space-y-4">
                                 <h3 className="text-sm font-semibold text-destructive">Advanced Options</h3>
                                 <div className="p-5 rounded-2xl border border-destructive/20 bg-destructive/5 space-y-3">

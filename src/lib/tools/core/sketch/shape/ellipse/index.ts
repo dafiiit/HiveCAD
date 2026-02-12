@@ -1,5 +1,4 @@
-import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchPlane } from '../../../../types';
-import type { CodeManager } from '../../../../../code-manager';
+import type { Tool, SketchPrimitiveData, SketchPrimitive, ShapeToolContext } from '../../../../types';
 import { generateToolId } from '../../../../types';
 import { LineSegment } from '../../../../../sketch-graph/Geometry';
 import { renderEllipsePreview, renderEllipseAnnotation } from './preview';
@@ -32,7 +31,8 @@ export const ellipseTool: Tool = {
         }
         return result;
     },
-    createShape(codeManager: CodeManager, primitive: SketchPrimitiveData, plane: string): string {
+    createShape(context: ShapeToolContext): string {
+        const { codeManager, primitive, plane } = context;
         const [center, edge] = primitive.points;
         const rx = Math.abs(edge[0] - center[0]) || 1;
         const ry = Math.abs(edge[1] - center[1]) || 1;

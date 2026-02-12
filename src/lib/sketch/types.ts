@@ -111,6 +111,7 @@ export interface SketchEntityProperties {
 // ──────────────────────────────────────────────────────────────
 
 import type { ConstraintType } from '../solver/types';
+import { ID } from '../utils/id-generator';
 
 export interface SketchConstraint {
     id: string;
@@ -193,13 +194,12 @@ export function deserializeSketch(data: SerializedSketch): SketchObject {
 // Helpers
 // ──────────────────────────────────────────────────────────────
 
-let _nextId = 1;
 export function generateSketchId(): string {
-    return `sk_${Date.now().toString(36)}_${(_nextId++).toString(36)}`;
+    return ID.generatePrefixed('sk');
 }
 
 export function generateEntityId(): string {
-    return `se_${Date.now().toString(36)}_${(_nextId++).toString(36)}`;
+    return ID.generatePrefixed('se');
 }
 
 export function createSketchObject(

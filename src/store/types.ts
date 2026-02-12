@@ -206,6 +206,7 @@ export interface VersioningSlice {
     saveAs: (name: string) => void;
     open: () => void;
     reset: () => void;
+    loadState: (fixture: Record<string, any>) => void;
     setFileName: (name: string) => void;
     setProjectId: (id: string | null) => void;
     closeProject: () => void;

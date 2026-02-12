@@ -1,5 +1,4 @@
-import type { Tool } from '../../../types';
-import type { CodeManager } from '../../../../code-manager';
+import type { Tool, ToolContext } from '../../../types';
 
 export const pointTool: Tool = {
     metadata: {
@@ -15,10 +14,10 @@ export const pointTool: Tool = {
         { key: 'y', label: 'Y', type: 'number', default: 0, unit: 'mm', step: 1 },
         { key: 'z', label: 'Z', type: 'number', default: 0, unit: 'mm', step: 1 }
     ],
-    create(codeManager: CodeManager, params: Record<string, any>): string {
-        const { x = 0, y = 0, z = 0 } = params;
+    create(context: ToolContext): string {
+        const { x = 0, y = 0, z = 0 } = context.params;
         // Create a reference point
-        return codeManager.addFeature('makePoint', null, [[x, y, z]]);
+        return context.codeManager.addFeature('makePoint', null, [[x, y, z]]);
     }
 };
 

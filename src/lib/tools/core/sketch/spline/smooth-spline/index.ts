@@ -1,5 +1,4 @@
-import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../../../../types';
-import type { CodeManager } from '../../../../../code-manager';
+import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchToolContext } from '../../../../types';
 import { generateToolId } from '../../../../types';
 import { LineSegment } from '../../../../../sketch-graph/Geometry';
 import { renderSmoothSplinePreview } from './preview';
@@ -43,7 +42,8 @@ export const smoothSplineTool: Tool = {
         }
         return geoms;
     },
-    addToSketch(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void {
+    addToSketch(context: SketchToolContext): void {
+        const { codeManager, sketchName, primitive } = context;
         for (let i = 1; i < primitive.points.length; i++) {
             const pt = primitive.points[i];
             const config: Record<string, any> = {};

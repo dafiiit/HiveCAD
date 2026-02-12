@@ -1,5 +1,4 @@
-import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchPlane } from '../../../../types';
-import type { CodeManager } from '../../../../../code-manager';
+import type { Tool, SketchPrimitiveData, SketchPrimitive, ShapeToolContext } from '../../../../types';
 import { generateToolId } from '../../../../types';
 import { LineSegment } from '../../../../../sketch-graph/Geometry';
 import { renderRectanglePreview, renderRectangleAnnotation } from './preview';
@@ -29,7 +28,8 @@ export const rectangleTool: Tool = {
             new LineSegment(p4, { x: p1x, y: p1y })
         ];
     },
-    createShape(codeManager: CodeManager, primitive: SketchPrimitiveData, plane: string): string {
+    createShape(context: ShapeToolContext): string {
+        const { codeManager, primitive, plane } = context;
         const [p1, p2] = primitive.points;
         const width = Math.abs(p2[0] - p1[0]);
         const height = Math.abs(p2[1] - p1[1]);

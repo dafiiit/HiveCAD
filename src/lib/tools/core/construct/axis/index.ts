@@ -1,5 +1,4 @@
-import type { Tool } from '../../../types';
-import type { CodeManager } from '../../../../code-manager';
+import type { Tool, ToolContext } from '../../../types';
 
 export const axisTool: Tool = {
     metadata: {
@@ -31,8 +30,8 @@ export const axisTool: Tool = {
         { key: 'dirZ', label: 'Dir Z', type: 'number', default: 1, step: 0.1 },
         { key: 'length', label: 'Length', type: 'number', default: 100, unit: 'mm', min: 1, step: 10 }
     ],
-    create(codeManager: CodeManager, params: Record<string, any>): string {
-        const { direction = 'z', originX = 0, originY = 0, originZ = 0, dirX = 0, dirY = 0, dirZ = 1, length = 100 } = params;
+    create(context: ToolContext): string {
+        const { direction = 'z', originX = 0, originY = 0, originZ = 0, dirX = 0, dirY = 0, dirZ = 1, length = 100 } = context.params;
 
         let dir: [number, number, number];
         switch (direction) {
@@ -43,7 +42,7 @@ export const axisTool: Tool = {
         }
 
         // Create a datum axis as a helper object
-        return codeManager.addFeature('makeDatumAxis', null, [[originX, originY, originZ], dir, length]);
+        return context.codeManager.addFeature('makeDatumAxis', null, [[originX, originY, originZ], dir, length]);
     }
 };
 

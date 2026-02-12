@@ -19,6 +19,7 @@ import type {
     QuickStore, ProjectData, ProjectMeta, ProjectId,
     CommitHash, CommitInfo, BranchInfo,
 } from '../types';
+import { ID } from '../../utils/id-generator';
 
 // We dynamically import Tauri APIs to enable tree-shaking on web builds.
 const tauriInvoke = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
@@ -26,7 +27,7 @@ const tauriInvoke = async <T>(cmd: string, args?: Record<string, unknown>): Prom
     return invoke<T>(cmd, args);
 };
 
-const genId = () => Math.random().toString(36).substring(2, 11);
+const genId = () => ID.generatePrefixed('commit');
 
 export class LocalGitQuickStore implements QuickStore {
     private listeners = new Set<() => void>();

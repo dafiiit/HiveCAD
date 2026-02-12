@@ -1,0 +1,23 @@
+{
+  "fileName": "Simple Box",
+  "projectId": "proj-simple-box",
+  "code": "const main = () => {\n  const box1 = makeBaseBox(10, 20, 30);\n  return box1;\n};",
+  "objects": [
+    {
+      "id": "box1",
+      "name": "Box 1",
+      "type": "box",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "dimensions": { "width": 10, "depth": 20, "height": 30 },
+      "color": "#6090c0",
+      "visible": true,
+      "selected": false
+    }
+  ],
+  "selectedIds": ["box1"],
+  "activeTool": "select",
+  "activeTab": "SOLID",
+  "isSketchMode": false
+}

@@ -1,5 +1,5 @@
-import type { Tool } from '../../../types';
-import type { CodeManager } from '../../../../code-manager';
+import type { Tool, ToolContext } from '../../../types';
+import { applyBoxFeature } from './logic';
 
 export const boxTool: Tool = {
     metadata: {
@@ -15,10 +15,8 @@ export const boxTool: Tool = {
         { key: 'height', label: 'Height', type: 'number', default: 10, unit: 'mm', min: 0.1, step: 0.5 },
         { key: 'depth', label: 'Depth', type: 'number', default: 10, unit: 'mm', min: 0.1, step: 0.5 }
     ],
-    create(codeManager: CodeManager, params: Record<string, any>): string {
-        const { width = 10, height = 10, depth = 10 } = params;
-        // Replicad makeBaseBox uses (x, y, z) convention
-        return codeManager.addFeature('makeBaseBox', null, [width, depth, height]);
+    create(context: ToolContext): string {
+        return applyBoxFeature(context.codeManager, context.params);
     }
 };
 

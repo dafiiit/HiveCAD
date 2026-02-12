@@ -1,5 +1,4 @@
-import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../../../../types';
-import type { CodeManager } from '../../../../../code-manager';
+import type { Tool, SketchPrimitiveData, SketchPrimitive, ShapeToolContext } from '../../../../types';
 import { generateToolId } from '../../../../types';
 import { LineSegment } from '../../../../../sketch-graph/Geometry';
 import { rectangleTool } from '../rectangle';
@@ -29,7 +28,7 @@ export const roundedRectangleTool: Tool = {
         const r = Math.min(primitive.properties?.radius || 3, w / 2, h / 2);
 
         if (r < 0.01) {
-            return rectangleTool.getPlanarGeometry!(primitive);
+            return rectangleTool.getPlanarGeometry?.(primitive as any) ?? [];
         }
 
         const result: any[] = [];
@@ -59,7 +58,8 @@ export const roundedRectangleTool: Tool = {
         }
         return result;
     },
-    createShape(codeManager: CodeManager, primitive: SketchPrimitiveData, plane: string): string {
+    createShape(context: ShapeToolContext): string {
+        const { codeManager, primitive, plane } = context;
         const [p1, p2] = primitive.points;
         const width = Math.abs(p2[0] - p1[0]);
         const height = Math.abs(p2[1] - p1[1]);

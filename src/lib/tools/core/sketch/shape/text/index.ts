@@ -1,5 +1,4 @@
-import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../../../../types';
-import type { CodeManager } from '../../../../../code-manager';
+import type { Tool, SketchPrimitiveData, SketchPrimitive, ShapeToolContext } from '../../../../types';
 import { generateToolId } from '../../../../types';
 import { renderTextPreview } from './preview';
 
@@ -17,7 +16,8 @@ export const textTool: Tool = {
         { key: 'text', label: 'Text', type: 'text', default: 'Text' },
         { key: 'fontSize', label: 'Font Size', type: 'number', default: 16, unit: 'mm', min: 1 }
     ],
-    createShape(codeManager: CodeManager, primitive: SketchPrimitiveData, plane: string): string {
+    createShape(context: ShapeToolContext): string {
+        const { codeManager, primitive, plane } = context;
         const pos = primitive.points[0];
         const text = primitive.properties?.text || 'Text';
         const fontSize = primitive.properties?.fontSize || 16;

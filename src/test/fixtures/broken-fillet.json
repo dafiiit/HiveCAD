@@ -1,0 +1,26 @@
+{
+  "fileName": "Broken Fillet Repro",
+  "projectId": "proj-broken-fillet",
+  "code": "const main = () => {\n  const profile = drawRectangle(40, 20).sketchOnPlane('XY');\n  const body = profile.extrude(10);\n  return body;\n};",
+  "objects": [
+    {
+      "id": "body1",
+      "name": "Body 1",
+      "type": "extrusion",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "dimensions": {
+        "distance": 10,
+        "operation": "new"
+      },
+      "color": "#6090c0",
+      "visible": true,
+      "selected": true
+    }
+  ],
+  "selectedIds": ["body1"],
+  "activeTool": "fillet",
+  "activeTab": "SOLID",
+  "isSketchMode": false
+}

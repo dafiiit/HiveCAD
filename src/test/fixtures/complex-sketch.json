@@ -1,0 +1,63 @@
+{
+  "fileName": "Complex Sketch",
+  "projectId": "proj-complex-sketch",
+  "activeTool": "line",
+  "activeTab": "SKETCH",
+  "isSketchMode": true,
+  "sketchPlane": "XY",
+  "code": "const main = () => {\n  return;\n};",
+  "activeSketchPrimitives": [
+    {
+      "id": "se_mock-id-1",
+      "type": "line",
+      "points": [[0, 0], [40, 0]],
+      "properties": { "lockedLength": 40 }
+    },
+    {
+      "id": "se_mock-id-2",
+      "type": "line",
+      "points": [[40, 0], [40, 20]],
+      "properties": { "lockedLength": 20 }
+    }
+  ],
+  "sketches": [
+    {
+      "id": "sk_mock-id-1",
+      "name": "Sketch 1",
+      "plane": "XY",
+      "origin": [0, 0, 0],
+      "entities": [
+        {
+          "id": "se_mock-id-1",
+          "type": "line",
+          "points": [[0, 0], [40, 0]],
+          "construction": false,
+          "properties": { "lockedLength": 40 }
+        },
+        {
+          "id": "se_mock-id-2",
+          "type": "line",
+          "points": [[40, 0], [40, 20]],
+          "construction": false,
+          "properties": { "lockedLength": 20 }
+        }
+      ],
+      "constraints": [
+        {
+          "id": "c_mock-id-1",
+          "type": "horizontal",
+          "entityIds": ["se_mock-id-1"]
+        },
+        {
+          "id": "c_mock-id-2",
+          "type": "vertical",
+          "entityIds": ["se_mock-id-2"]
+        }
+      ],
+      "featureId": null,
+      "consumed": false,
+      "createdAt": 1735689600000,
+      "updatedAt": 1735689600000
+    }
+  ]
+}

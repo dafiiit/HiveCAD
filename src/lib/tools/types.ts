@@ -2,6 +2,7 @@ import type { CodeManager } from '../code-manager';
 import type * as THREE from 'three';
 import type { ReactNode } from 'react';
 import type { CADObject, SketchPrimitive } from '../../store/types';
+import { ID } from '../utils/id-generator';
 
 // Re-export for tooling convenience
 export type { SketchPrimitive };
@@ -61,6 +62,27 @@ export interface SelectionRequirements {
     allowedTypes?: ('sketch' | 'face' | 'solid' | 'edge' | 'datumAxis' | 'other')[]; // Map to CADObject types
 }
 
+export interface ToolSceneContext {
+    selectedIds: string[];
+    objects: CADObject[];
+}
+
+export interface ToolContext {
+    params: Record<string, any>;
+    scene: ToolSceneContext;
+    codeManager: CodeManager;
+}
+
+export interface SketchToolContext extends ToolContext {
+    sketchName: string;
+    primitive: SketchPrimitiveData;
+}
+
+export interface ShapeToolContext extends ToolContext {
+    primitive: SketchPrimitiveData;
+    plane: string;
+}
+
 // Base Tool interface - all tools implement this
 export interface Tool {
     metadata: ToolMetadata;
@@ -74,7 +96,7 @@ export interface Tool {
      * @param params - Tool parameters from UI
      * @returns The feature ID/name created in the code
      */
-    create?(codeManager: CodeManager, params: Record<string, any>): string;
+    create?(context: ToolContext): string;
 
     /**
      * Add sketch primitive to an existing sketch (for sketch tools)
@@ -82,7 +104,7 @@ export interface Tool {
      * @param sketchName - Name of the sketch feature to add to
      * @param primitive - The sketch primitive data
      */
-    addToSketch?(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void;
+    addToSketch?(context: SketchToolContext): void;
 
     /**
      * Execute operation on selected objects (for modify/boolean tools)
@@ -90,7 +112,7 @@ export interface Tool {
      * @param selectedIds - Currently selected object IDs
      * @param params - Operation parameters
      */
-    execute?(codeManager: CodeManager, selectedIds: string[], params: Record<string, any>): void;
+    execute?(context: ToolContext): void;
 
     /**
      * Process points into a sketch primitive (for interactive sketch drawing)
@@ -107,7 +129,7 @@ export interface Tool {
      * @param plane - The sketch plane ('XY', 'XZ', 'YZ')
      * @returns The feature ID/name created
      */
-    createShape?(codeManager: CodeManager, primitive: SketchPrimitiveData, plane: string): string;
+    createShape?(context: ShapeToolContext): string;
 
     /**
      * Render the preview geometry while drawing (replaces switch in SketchCanvas.renderPrimitive)
@@ -192,4 +214,4 @@ export interface Tool {
 }
 
 // Helper to generate IDs
-export const generateToolId = () => Math.random().toString(36).substr(2, 9);
+export const generateToolId = () => ID.generatePrefixed('tool');

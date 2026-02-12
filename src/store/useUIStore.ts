@@ -2,8 +2,9 @@ import { create } from 'zustand';
 import { CustomToolbar, ToolbarFolder, ToolbarSection } from './types';
 import { toast } from 'sonner';
 import { StorageManager } from '@/lib/storage/StorageManager';
+import { ID } from '@/lib/utils/id-generator';
 
-const generateId = () => Math.random().toString(36).substring(2, 9);
+const generateId = () => ID.generatePrefixed('ui');
 
 const BODY_FOLDER_ID = 'folder-body';
 let saveTimeout: any = null;

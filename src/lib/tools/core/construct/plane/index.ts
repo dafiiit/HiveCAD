@@ -1,5 +1,4 @@
-import type { Tool } from '../../../types';
-import type { CodeManager } from '../../../../code-manager';
+import type { Tool, ToolContext } from '../../../types';
 
 export const planeTool: Tool = {
     metadata: {
@@ -25,9 +24,9 @@ export const planeTool: Tool = {
         { key: 'offsetY', label: 'Offset Y', type: 'number', default: 0, unit: 'mm', step: 1 },
         { key: 'offsetZ', label: 'Offset Z', type: 'number', default: 0, unit: 'mm', step: 1 }
     ],
-    create(codeManager: CodeManager, params: Record<string, any>): string {
-        const { plane = 'XY', offsetX = 0, offsetY = 0, offsetZ = 0 } = params;
-        return codeManager.addFeature('makePlane', null, [plane, [offsetX, offsetY, offsetZ]]);
+    create(context: ToolContext): string {
+        const { plane = 'XY', offsetX = 0, offsetY = 0, offsetZ = 0 } = context.params;
+        return context.codeManager.addFeature('makePlane', null, [plane, [offsetX, offsetY, offsetZ]]);
     }
 };
 

@@ -1,5 +1,4 @@
-import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../../../../types';
-import type { CodeManager } from '../../../../../code-manager';
+import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchToolContext } from '../../../../types';
 import { generateToolId } from '../../../../types';
 import { LineSegment } from '../../../../../sketch-graph/Geometry';
 import { renderQuadraticBezierPreview } from './preview';
@@ -37,7 +36,8 @@ export const quadraticBezierTool: Tool = {
         }
         return geoms;
     },
-    addToSketch(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void {
+    addToSketch(context: SketchToolContext): void {
+        const { codeManager, sketchName, primitive } = context;
         const end = primitive.points[1];
         const ctrlX = primitive.properties?.ctrlX || 5;
         const ctrlY = primitive.properties?.ctrlY || 5;

@@ -1,5 +1,4 @@
-import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchPlane } from '../../../../types';
-import type { CodeManager } from '../../../../../code-manager';
+import type { Tool, SketchPrimitiveData, SketchPrimitive, ShapeToolContext } from '../../../../types';
 import { generateToolId } from '../../../../types';
 import { Circle } from '../../../../../sketch-graph/Geometry';
 import { renderCirclePreview, renderCircleAnnotation } from './preview';
@@ -20,7 +19,8 @@ export const circleTool: Tool = {
         const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
         return [new Circle({ x: center[0], y: center[1] }, radius)];
     },
-    createShape(codeManager: CodeManager, primitive: SketchPrimitiveData, plane: string): string {
+    createShape(context: ShapeToolContext): string {
+        const { codeManager, primitive, plane } = context;
         const [center, edge] = primitive.points;
         const radius = Math.sqrt(Math.pow(edge[0] - center[0], 2) + Math.pow(edge[1] - center[1], 2));
         const sketchName = codeManager.addFeature('drawCircle', null, [radius]);

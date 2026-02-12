@@ -1,5 +1,4 @@
-import type { Tool } from '../../../types';
-import type { CodeManager } from '../../../../code-manager';
+import type { Tool, ToolContext } from '../../../types';
 
 export const coilTool: Tool = {
     metadata: {
@@ -15,13 +14,13 @@ export const coilTool: Tool = {
         { key: 'turns', label: 'Turns', type: 'number', default: 5, min: 0.5, step: 0.5 },
         { key: 'tubeRadius', label: 'Tube Radius', type: 'number', default: 1, unit: 'mm', min: 0.1, step: 0.1 }
     ],
-    create(codeManager: CodeManager, params: Record<string, any>): string {
-        const { radius = 5, height = 20, turns = 5, tubeRadius = 1 } = params;
+    create(context: ToolContext): string {
+        const { radius = 5, height = 20, turns = 5, tubeRadius = 1 } = context.params;
         // Coil via twisted extrusion
-        const sketchName = codeManager.addFeature('drawCircle', null, [tubeRadius]);
-        codeManager.addOperation(sketchName, 'translate', [radius, 0]);
-        codeManager.addOperation(sketchName, 'sketchOnPlane', ["XY"]);
-        codeManager.addOperation(sketchName, 'extrude', [height, { twistAngle: 360 * turns }]);
+        const sketchName = context.codeManager.addFeature('drawCircle', null, [tubeRadius]);
+        context.codeManager.addOperation(sketchName, 'translate', [radius, 0]);
+        context.codeManager.addOperation(sketchName, 'sketchOnPlane', ["XY"]);
+        context.codeManager.addOperation(sketchName, 'extrude', [height, { twistAngle: 360 * turns }]);
         return sketchName;
     }
 };

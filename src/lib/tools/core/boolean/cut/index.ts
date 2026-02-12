@@ -1,5 +1,4 @@
-import type { Tool } from '../../../types';
-import type { CodeManager } from '../../../../code-manager';
+import type { Tool, ToolContext } from '../../../types';
 
 export const cutTool: Tool = {
     metadata: {
@@ -15,7 +14,9 @@ export const cutTool: Tool = {
         min: 2,
         allowedTypes: ['solid']
     },
-    execute(codeManager: CodeManager, selectedIds: string[]): void {
+    execute(context: ToolContext): void {
+        const { codeManager } = context;
+        const selectedIds = context.scene.selectedIds;
         if (selectedIds.length < 2) return;
 
         const primaryId = selectedIds[0];

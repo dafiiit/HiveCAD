@@ -5,9 +5,11 @@ import {
     serializeObjects, cleanObjects, createBlankProject, uuid, DEFAULT_CODE,
 } from '@/lib/storage/projectUtils';
 import { StorageManager } from '@/lib/storage/StorageManager';
+import { ID } from '@/lib/utils/id-generator';
 import type { ProjectData, CommitInfo } from '@/lib/storage/types';
+import { buildHydratedPatch, type CADStateFixture } from '../hydration';
 
-const generateId = () => Math.random().toString(36).substring(2, 11);
+const generateId = () => ID.generatePrefixed('hist');
 
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -432,6 +434,14 @@ export const createVersioningSlice: StateCreator<
     saveAs: (name) => {
         set({ fileName: name, isSaved: false });
         get().triggerSave();
+    },
+
+    loadState: (fixture: Record<string, any>) => {
+        const patch = buildHydratedPatch(fixture as CADStateFixture);
+        set({
+            ...patch,
+            isSaved: false,
+        } as Partial<CADState>);
     },
 
     open: () => {

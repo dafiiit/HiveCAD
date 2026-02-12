@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-    Star, MoreVertical, Trash2, Info, Tag, Folder, LayoutGrid, GitBranch
+    Star, MoreVertical, Trash2, Info, Tag, Folder, LayoutGrid, GitBranch, Share2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -14,6 +14,7 @@ export interface ProjectCardProps {
     onDelete: () => void;
     onRename: () => void;
     onManageTags: () => void;
+    onShare: () => void;
     onViewHistory: () => void;
     tags: Array<{ name: string; color: string }>;
     projectThumbnails: Record<string, string>;
@@ -32,6 +33,7 @@ export function ProjectCard({
     onDelete,
     onRename,
     onManageTags,
+    onShare,
     onViewHistory,
     tags,
     projectThumbnails,
@@ -98,16 +100,19 @@ export function ProjectCard({
                     })}
                 </div>
 
-                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className={cn(
+                    "absolute top-2 right-2 flex gap-1 transition-opacity",
+                    isStarred || showMenu ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                )}>
                     <button
                         onClick={(e) => { e.stopPropagation(); onToggleStar(e, project.name); }}
-                        className={`p-1.5 rounded-md backdrop-blur-md transition-all ${isStarred ? 'bg-primary text-white' : 'bg-muted/50 text-muted-foreground hover:bg-muted/80'}`}
+                        className={`p-1.5 rounded-md border backdrop-blur-md transition-all ${isStarred ? 'bg-primary text-primary-foreground border-primary/70' : 'bg-card/90 border-border/70 text-muted-foreground hover:bg-card'}`}
                     >
-                        <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-white' : ''}`} />
+                        <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-current' : ''}`} />
                     </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); onAction(); }}
-                        className={`p-1.5 rounded-md backdrop-blur-md transition-all ${showMenu ? 'bg-primary text-white' : 'bg-muted/50 text-muted-foreground hover:bg-muted/80'}`}
+                        className={`p-1.5 rounded-md border backdrop-blur-md transition-all ${showMenu ? 'bg-primary text-primary-foreground border-primary/70' : 'bg-card/90 border-border/70 text-muted-foreground hover:bg-card'}`}
                     >
                         <MoreVertical className="w-3.5 h-3.5" />
                     </button>
@@ -141,6 +146,11 @@ export function ProjectCard({
                     <button onClick={(e) => { e.stopPropagation(); onManageTags(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3">
                         <Tag className="w-3.5 h-3.5 text-primary" /> MANAGE TAGS
                     </button>
+                    {!isExample && (
+                        <button onClick={(e) => { e.stopPropagation(); onShare(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3">
+                            <Share2 className="w-3.5 h-3.5 text-blue-400" /> SHARE PROJECT
+                        </button>
+                    )}
                     {hasPAT && (
                         <button onClick={(e) => { e.stopPropagation(); onViewHistory(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3">
                             <GitBranch className="w-3.5 h-3.5 text-blue-400" /> HISTORY & BRANCHES

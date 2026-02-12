@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useCADStore } from '@/hooks/useCADStore';
 import { useGlobalStore } from '@/store/useGlobalStore';
 import { useTabManager } from '@/components/layout/TabContext';
@@ -62,6 +62,8 @@ export function ProjectDashboard() {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<ProjectMeta | null>(null);
     const [deleteInput, setDeleteInput] = useState("");
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isSyncingDashboard, setIsSyncingDashboard] = useState(false);
+    const autoOpenHandledRef = useRef(false);
 
     // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -120,6 +122,76 @@ export function ProjectDashboard() {
     useEffect(() => {
         refreshProjects();
     }, [refreshProjects]);
+
+    useEffect(() => {
+        if (autoOpenHandledRef.current) {
+            return;
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const projectId = params.get('project');
+
+        if (!projectId) {
+            autoOpenHandledRef.current = true;
+            return;
+        }
+
+        if (user?.pat && !isStorageConnected) {
+            return;
+        }
+
+        const clearProjectQueryParam = () => {
+            const nextUrl = new URL(window.location.href);
+            nextUrl.searchParams.delete('project');
+            const nextQuery = nextUrl.searchParams.toString();
+            const cleanedUrl = `${nextUrl.pathname}${nextQuery ? `?${nextQuery}` : ''}${nextUrl.hash}`;
+            window.history.replaceState({}, '', cleanedUrl);
+        };
+
+        autoOpenHandledRef.current = true;
+        let cancelled = false;
+
+        const openSharedProject = async () => {
+            setLoadingMessage('Opening shared project...');
+
+            try {
+                let data = await mgr.quickStore.loadProject(projectId);
+
+                if (!data && mgr.isRemoteConnected) {
+                    data = await mgr.remoteStore!.pullProject(projectId);
+                    if (data) {
+                        await mgr.quickStore.saveProject(data);
+                    }
+                }
+
+                if (cancelled) {
+                    return;
+                }
+
+                if (data) {
+                    openProjectInNewTab(data);
+                    toast.success(`Opened shared project: ${data.meta.name}`);
+                    await refreshProjects();
+                } else {
+                    toast.error('Shared project could not be loaded');
+                }
+            } catch (error) {
+                console.error('[ProjectDashboard] Failed to auto-open shared project:', error);
+                toast.error('Failed to open shared project');
+            } finally {
+                if (!cancelled) {
+                    setLoadingMessage(null);
+                    clearProjectQueryParam();
+                }
+            }
+        };
+
+        void openSharedProject();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [user?.pat, isStorageConnected, openProjectInNewTab, refreshProjects]);
 
     // ─── Create Project ───────────────────────────────────────────────────
 
@@ -603,6 +675,93 @@ export function ProjectDashboard() {
         toast.success(starredProjects.includes(projectName) ? `Removed from Starred` : `Added to Starred`);
     };
 
+    const handleDashboardSync = async () => {
+        if (!user?.pat) {
+            setShowPATDialog(true);
+            toast.error('GitHub is not connected yet.');
+            return;
+        }
+
+        if (!mgr.syncEngine) {
+            toast.error('Sync engine not available.');
+            return;
+        }
+
+        try {
+            setIsSyncingDashboard(true);
+            toast.loading('Syncing with GitHub...', { id: 'dashboard-sync' });
+            await mgr.syncEngine.syncNow();
+            toast.success('Sync complete', { id: 'dashboard-sync' });
+            await refreshProjects();
+        } catch (error) {
+            console.error('[ProjectDashboard] Sync failed:', error);
+            toast.error('Sync failed', { id: 'dashboard-sync' });
+        } finally {
+            setIsSyncingDashboard(false);
+        }
+    };
+
+    const handleShareProject = async (projectId: string) => {
+        try {
+            const data = await mgr.quickStore.loadProject(projectId);
+            if (!data) {
+                toast.error('Project not found');
+                return;
+            }
+
+            const shareUrl = `${window.location.origin}/?project=${encodeURIComponent(projectId)}`;
+            const wasPrivate = data.meta.visibility !== 'public';
+
+            if (user?.id) {
+                data.meta.ownerId = user.id;
+            }
+            if (user?.email) {
+                data.meta.ownerEmail = user.email;
+            }
+
+            data.meta.visibility = 'public';
+            data.meta.remoteLocator = shareUrl;
+            data.meta.lastModified = Date.now();
+
+            await mgr.quickStore.saveProject(data);
+            mgr.syncEngine?.markDirty();
+
+            let supabaseSyncBlocked = false;
+            if (mgr.supabaseMeta && user?.id) {
+                try {
+                    await mgr.supabaseMeta.upsertProjectMeta(data.meta);
+                    await mgr.supabaseMeta.setProjectVisibility(projectId, 'public');
+                } catch (error: any) {
+                    const code = error?.code;
+                    if (code === '42501') {
+                        supabaseSyncBlocked = true;
+                        console.warn('[ProjectDashboard] Supabase RLS blocked share metadata sync. Falling back to local/GitHub sync.', error);
+                    } else {
+                        throw error;
+                    }
+                }
+            }
+
+            if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                await navigator.clipboard.writeText(shareUrl);
+                if (supabaseSyncBlocked) {
+                    toast.success(wasPrivate
+                        ? 'Project marked public locally and link copied. Supabase policy blocked immediate publish metadata.'
+                        : 'Share link copied. Supabase policy blocked immediate publish metadata.');
+                } else {
+                    toast.success(wasPrivate ? 'Project is now public. Link copied.' : 'Share link copied.');
+                }
+            } else {
+                toast.success('Project is public. Copy this link from the browser URL bar.');
+            }
+
+            await refreshProjects();
+        } catch (error) {
+            console.error('[ProjectDashboard] Share failed:', error);
+            toast.error('Failed to share project');
+        }
+    };
+
     // ─── Navigation ───────────────────────────────────────────────────────
 
     const navItems = [
@@ -649,6 +808,14 @@ export function ProjectDashboard() {
 
                 <div className="flex items-center gap-4 text-muted-foreground w-64 justify-end">
                     <div className="flex items-center gap-3 relative">
+                        <button
+                            onClick={handleDashboardSync}
+                            className="p-2 hover:bg-secondary rounded-full transition-colors text-muted-foreground hover:text-foreground"
+                            title={!user?.pat ? 'GitHub Sync Disabled - Click to link' : 'Sync with GitHub'}
+                        >
+                            <RefreshCw className={`w-5 h-5 ${isSyncingDashboard ? 'animate-spin' : ''}`} />
+                        </button>
+
                         <button
                             onClick={() => setIsSettingsOpen(true)}
                             className="p-2 hover:bg-secondary rounded-full transition-colors text-muted-foreground hover:text-foreground"
@@ -896,6 +1063,7 @@ export function ProjectDashboard() {
                                                     setShowTagDialog(project);
                                                     setTagNameInput("");
                                                 }}
+                                                onShare={() => handleShareProject(project.id)}
                                                 onViewHistory={() => setShowHistoryDialog(project.id)}
                                                 tags={tags}
                                                 projectThumbnails={projectThumbnails}

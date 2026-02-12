@@ -1,4 +1,5 @@
 import type { ProjectMeta, ProjectData, ProjectSnapshot, SerializedCADObject } from './types';
+import { ID } from '../utils/id-generator';
 
 /** Default empty code for new projects */
 export const DEFAULT_CODE = 'const main = () => {\n  return;\n};';
@@ -20,7 +21,7 @@ export function isProjectEmpty(code = '', objects: any[] = []): boolean {
 
 /** Generate a UUID-v4 */
 export function uuid(): string {
-    return crypto.randomUUID?.() ?? Math.random().toString(36).substring(2, 11);
+    return ID.generate();
 }
 
 /** Create a blank ProjectMeta with sensible defaults. */

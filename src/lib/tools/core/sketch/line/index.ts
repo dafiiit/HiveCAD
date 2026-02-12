@@ -1,5 +1,4 @@
-import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchPlane } from '../../../types';
-import type { CodeManager } from '../../../../code-manager';
+import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchToolContext } from '../../../types';
 import { generateToolId } from '../../../types';
 import { LineSegment } from '../../../../sketch-graph/Geometry';
 import { renderLinePreview, renderLineAnnotation } from './preview';
@@ -23,7 +22,8 @@ export const lineTool: Tool = {
         }
         return geoms;
     },
-    addToSketch(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void {
+    addToSketch(context: SketchToolContext): void {
+        const { codeManager, sketchName, primitive } = context;
         // For multi-point lines, add each segment
         for (let i = 1; i < primitive.points.length; i++) {
             const pt = primitive.points[i];

@@ -5,6 +5,7 @@ import { initCAD, replicadToThreeGeometry, replicadToThreeEdges } from '../../li
 import { CodeManager } from '../../lib/code-manager';
 import { getDependencyGraph, mergeExecutionResults } from '../../lib/dependency-graph';
 import { toolRegistry } from '../../lib/tools';
+import { invokeToolCreate, invokeToolExecute } from '../../lib/tools/invoke';
 import { CADState, ObjectSlice, CADObject } from '../types';
 import * as THREE from 'three';
 
@@ -171,7 +172,14 @@ export const createObjectSlice: StateCreator<
         if (tool) {
             const params = { ...toolRegistry.getDefaultParams(type), ...options.dimensions };
             if (tool.create) {
-                tool.create(cm, params);
+                invokeToolCreate(tool, {
+                    codeManager: cm,
+                    params,
+                    scene: {
+                        selectedIds: [...currentState.selectedIds],
+                        objects: currentState.objects,
+                    },
+                });
             } else if (tool.execute) {
                 const selectedIds = [...currentState.selectedIds];
                 if (tool.selectionRequirements) {
@@ -219,7 +227,14 @@ export const createObjectSlice: StateCreator<
                     toast.error(`No object selected for ${type}`);
                     return;
                 }
-                tool.execute(cm, selectedIds, params);
+                invokeToolExecute(tool, {
+                    codeManager: cm,
+                    params,
+                    scene: {
+                        selectedIds,
+                        objects: currentState.objects,
+                    },
+                });
             }
         } else {
             console.warn(`Tool "${type}" not found in registry, using legacy implementation`);

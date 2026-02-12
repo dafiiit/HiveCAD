@@ -1,5 +1,4 @@
-import type { Tool } from '../../../types';
-import type { CodeManager } from '../../../../code-manager';
+import type { Tool, ToolContext } from '../../../types';
 
 export const pivotTool: Tool = {
     metadata: {
@@ -23,10 +22,11 @@ export const pivotTool: Tool = {
             ]
         }
     ],
-    execute(codeManager: CodeManager, selectedIds: string[], params: Record<string, any>): void {
-        const selectedId = selectedIds[0];
+    execute(context: ToolContext): void {
+        const { codeManager } = context;
+        const selectedId = context.scene.selectedIds[0];
         if (selectedId) {
-            const { angle = 45, axis = 'Z' } = params;
+            const { angle = 45, axis = 'Z' } = context.params;
             const axisMap: Record<string, number[]> = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] };
             const axisVec = axisMap[axis] || [0, 0, 1];
             codeManager.addOperation(selectedId, 'pivot', [angle, axisVec]);

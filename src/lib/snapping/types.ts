@@ -4,6 +4,8 @@
  * Types for the 2D sketch snapping system.
  */
 
+import { ID } from '../utils/id-generator';
+
 /**
  * Types of snap points that can be detected
  */
@@ -123,5 +125,5 @@ export const DEFAULT_SNAPPING_CONFIG: SnappingConfig = {
  * Generate a unique ID for snap points
  */
 export const generateSnapPointId = (): string => {
-    return `snap_${Math.random().toString(36).substr(2, 9)}`;
+    return ID.generatePrefixed('snap');
 };

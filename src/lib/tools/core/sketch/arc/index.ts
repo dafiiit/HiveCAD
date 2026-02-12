@@ -1,6 +1,5 @@
-import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchPlane } from '../../../types';
+import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchToolContext } from '../../../types';
 import { arcFromThreePoints } from '../../../../sketch-graph/Geometry';
-import type { CodeManager } from '../../../../code-manager';
 import { generateToolId } from '../../../types';
 import { renderArcPreview, renderArcAnnotation } from './preview';
 
@@ -22,7 +21,8 @@ export const threePointsArcTool: Tool = {
         const arc = arcFromThreePoints(p1, p2, p3);
         return arc ? [arc] : [];
     },
-    addToSketch(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void {
+    addToSketch(context: SketchToolContext): void {
+        const { codeManager, sketchName, primitive } = context;
         // points: [start, end, via]
         if (primitive.points.length >= 3) {
             const end = primitive.points[1];

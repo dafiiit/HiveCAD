@@ -7,16 +7,26 @@ import { createVersioningSlice } from './slices/versioningSlice';
 import { createSketchSlice } from './slices/sketchSlice';
 import { createSnappingSlice } from './slices/snappingSlice';
 import { createToolbarSlice } from './slices/toolbarSlice';
+import { buildHydratedPatch, type CADStateFixture } from './hydration';
 
 // Re-export types for backward compatibility
 export * from './types';
 
-export const createCADStore = () => create<CADState>((...a) => ({
-    ...createObjectSlice(...a),
-    ...createViewSlice(...a),
-    ...createSolverSlice(...a),
-    ...createVersioningSlice(...a),
-    ...createSketchSlice(...a),
-    ...createSnappingSlice(...a),
-    ...createToolbarSlice(...a),
-}));
+export const createCADStore = (initialState?: CADStateFixture) => create<CADState>((...a) => {
+    const baseState = {
+        ...createObjectSlice(...a),
+        ...createViewSlice(...a),
+        ...createSolverSlice(...a),
+        ...createVersioningSlice(...a),
+        ...createSketchSlice(...a),
+        ...createSnappingSlice(...a),
+        ...createToolbarSlice(...a),
+    };
+
+    if (!initialState) return baseState;
+
+    return {
+        ...baseState,
+        ...buildHydratedPatch(initialState),
+    };
+});

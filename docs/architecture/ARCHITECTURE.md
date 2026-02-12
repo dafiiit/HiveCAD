@@ -20,6 +20,7 @@
 10. [Store Architecture](#10-store-architecture)
 11. [Component Architecture](#11-component-architecture)
 12. [Current Violations & Cleanup Roadmap](#12-current-violations--cleanup-roadmap)
+13. [Agent-Optimized Architecture & Headless Testing](#13-agent-optimized-architecture--headless-testing)
 
 ---
 
@@ -669,8 +670,8 @@ A **tombstone** system resolves this conflict — deletions leave a short-lived 
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  IndexedDB  (IdbQuickStore)           ← Web primary store   │
-│  or Local Git  (LocalGitQuickStore)   ← Tauri primary store │
+│  IndexedDB  (IdbQuickStore)           ← Web primary store    │
+│  or Local Git  (LocalGitQuickStore)   ← Tauri primary store  │
 │  ─ implements QuickStore interface                           │
 ├──────────────────────────────────────────────────────────────┤
 │  GitHub Repository  (GitHubRemoteStore)                      │
@@ -886,14 +887,142 @@ See `docs/STORAGE_DEBUG_GUIDE.md` for usage details.
 
 ---
 
+## 13. Agent-Optimized Architecture & Headless Testing
+
+### 13.1 Objective
+
+HiveCAD must be structured so AI agents can implement and verify business logic without DOM, Canvas, or React mounting.
+
+**Key Metric:** 100% of business logic is testable in Node.js (Vitest) using `.test.ts` tests.
+
+### 13.2 Hollow Component Pattern
+
+To reduce UI-coupled test flakiness, feature logic is split into pure modules and thin view binders.
+
+**Feature file contract (required):**
+
+```
+src/lib/tools/core/{category}/{tool-id}/
+├── logic.ts      # Pure logic: math, validation, code generation
+├── state.ts      # Pure state model or reducer for feature params/state
+└── index.tsx     # View binder: passes logic outputs to React/Three UI
+```
+
+**Implementation status:**
+- `operation/extrusion` now uses this split (`logic.ts`, `state.ts`, `index.tsx`) with pure execution logic extracted from tool wiring.
+- Core tools are required to use this split with no legacy method signatures.
+
+### 13.3 Code-Snapshot Testing Strategy
+
+Geometry output is validated through deterministic intermediate representation (Replicad code strings), not pixel/mesh assertions.
+
+Pipeline:
+1. Input tool parameters
+2. Execute pure `logic.ts` generator
+3. Assert generated code string contains expected IR
+
+**Canonical example implemented:**
+- `primitive/box/logic.ts` exports `generateBoxCodeSnapshot(params)`.
+- `primitive/box/logic.test.ts` validates expected Replicad code string.
+
+### 13.4 Deterministic IDs for Testability
+
+All ID generation now routes through `src/lib/utils/id-generator.ts`:
+
+```typescript
+ID.generate();
+ID.generatePrefixed('sk');
+ID.reset('mock-id');
+```
+
+Rules:
+- Never call `crypto.randomUUID()` directly in `lib/`.
+- In test mode (`NODE_ENV=test`) IDs are deterministic and incrementing.
+- In non-test mode, runtime uses `crypto.randomUUID()` with safe fallback.
+
+### 13.5 Fixture-First Workflow
+
+State fixtures live in:
+
+```
+src/test/fixtures/
+├── simple-box.json
+├── complex-sketch.json
+└── broken-fillet.json
+```
+
+Store hydration support:
+- `createCADStore(initialState?)` accepts fixture JSON at store construction.
+- `versioningSlice.loadState(fixture)` hydrates an existing store.
+- `store/hydration.ts` normalizes fixture JSON into store-safe types (`Set`, `Map`, sketches).
+
+### 13.6 Strict Interface Boundaries with Context Objects
+
+Tool invocation is context-first:
+
+```typescript
+interface ToolContext {
+  params: Record<string, any>;
+  scene: { selectedIds: string[]; objects: CADObject[] };
+  codeManager: CodeManager;
+}
+```
+
+Current enforcement model:
+- Runtime dispatch in `lib/tools/invoke.ts` sends `ToolContext` first.
+- Only context-style handlers are supported. Positional signatures are invalid.
+
+### 13.7 Headless Test Runner Contract
+
+Vitest is configured for headless business-logic runs:
+
+- Environment: `node`
+- Include: `src/lib/**/*.test.ts`
+- Exclude: `.tsx` and `src/test/**`
+
+This establishes the agent contract: if `lib` tests pass, business logic is valid.
+
+### 13.8 Migration Guardrails
+
+1. Keep React/Three rendering in view binders only (`index.tsx`/`preview.tsx`).
+2. Keep computation, validation, and code generation in `logic.ts`.
+3. Add snapshot-style tests for each new tool logic module.
+4. Use fixture hydration for regression reproduction before touching UI.
+
+### 13.9 Automated Enforcement Guard
+
+The architecture is enforced with a headless guard suite:
+
+- File: `src/lib/testing/architecture-guard.test.ts`
+- Executed by: `npm test` (Vitest lib-only run)
+
+Guard assertions:
+1. No core tool may declare positional signatures such as:
+  - `create(codeManager, ...)`
+  - `execute(codeManager, ...)`
+  - `addToSketch(codeManager, ...)`
+  - `createShape(codeManager, ...)`
+2. `src/lib/tools/invoke.ts` must not contain arity-based fallback dispatch.
+3. `src/lib/**` must not call `crypto.randomUUID()` directly (except `src/lib/utils/id-generator.ts`).
+
+If any guard fails, CI/local test runs fail immediately.
+
+---
+
 ## Appendix A: Adding a New Tool (Checklist)
 
 1. **Create directory:** `src/lib/tools/core/{category}/{tool-id}/`
-2. **Create `index.ts`:** Define the `Tool` object with metadata, uiProperties, and logic methods.
-3. **Create `preview.tsx`** (if the tool has visual previews): Export render functions, import them in `index.ts`.
-4. **Export from category index:** Add to `src/lib/tools/core/{category}/index.ts`.
-5. **Register in `allCoreTools`:** Add to the array in `src/lib/tools/core/index.ts`.
-6. **Done.** No other files need modification. The toolbar, properties panel, sketch canvas, and extension system all discover the tool automatically via the registry.
+2. **Create `logic.ts`:** Implement pure math/validation/code-generation logic.
+3. **Create `state.ts`:** Implement pure local reducer/state defaults for tool params.
+4. **Create `index.tsx`:** Implement a hollow view binder (no business logic).
+5. **Create `index.ts`:** Define the `Tool` object and bind methods to `ToolContext` signatures only.
+6. **Create `preview.tsx`** (if needed): Keep visual rendering isolated.
+7. **Export from category index:** Add to `src/lib/tools/core/{category}/index.ts`.
+8. **Register in `allCoreTools`:** Add to the array in `src/lib/tools/core/index.ts`.
+9. **Add tests:**
+  - `logic.test.ts` snapshot-style code assertions
+  - Ensure `architecture-guard.test.ts` remains green
+10. **Done.** No component-level tool branching changes are required.
 
 ## Appendix B: Adding a New Extension Tool (Checklist)
 

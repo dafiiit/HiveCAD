@@ -3,6 +3,8 @@
  * Based on the planegcs (FreeCAD GCS) entity and constraint model.
  */
 
+import { ID } from '../utils/id-generator';
+
 // ==================== Entity Types ====================
 
 /** Unique identifier for entities */
@@ -133,10 +135,10 @@ export interface EntityUpdateEvent {
 
 /** Generate a unique entity ID */
 export const generateEntityId = (): EntityId => {
-    return `e_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    return ID.generatePrefixed('e');
 };
 
 /** Generate a unique constraint ID */
 export const generateConstraintId = (): string => {
-    return `c_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    return ID.generatePrefixed('c');
 };

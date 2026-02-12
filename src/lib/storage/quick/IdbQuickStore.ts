@@ -15,6 +15,7 @@
  */
 
 import { get, set, del, keys } from 'idb-keyval';
+import { ID } from '../../utils/id-generator';
 import type {
     QuickStore, ProjectData, ProjectMeta, ProjectId,
     CommitHash, CommitInfo, BranchInfo,
@@ -34,7 +35,7 @@ const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-const genId = () => Math.random().toString(36).substring(2, 11);
+const genId = () => ID.generatePrefixed('commit');
 
 interface StoredBranches {
     branches: Record<string, CommitHash>;

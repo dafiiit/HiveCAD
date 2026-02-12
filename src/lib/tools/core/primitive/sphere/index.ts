@@ -1,5 +1,4 @@
-import type { Tool } from '../../../types';
-import type { CodeManager } from '../../../../code-manager';
+import type { Tool, ToolContext } from '../../../types';
 
 export const sphereTool: Tool = {
     metadata: {
@@ -12,9 +11,9 @@ export const sphereTool: Tool = {
     uiProperties: [
         { key: 'radius', label: 'Radius', type: 'number', default: 10, unit: 'mm', min: 0.1, step: 0.5 }
     ],
-    create(codeManager: CodeManager, params: Record<string, any>): string {
-        const { radius = 10 } = params;
-        return codeManager.addFeature('makeSphere', null, [radius]);
+    create(context: ToolContext): string {
+        const { radius = 10 } = context.params;
+        return context.codeManager.addFeature('makeSphere', null, [radius]);
     }
 };
 
