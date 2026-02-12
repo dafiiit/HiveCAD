@@ -16,9 +16,10 @@
 6. [Extension System](#6-extension-system)
 7. [Sketch Pipeline](#7-sketch-pipeline)
 8. [Code Execution Pipeline](#8-code-execution-pipeline)
-9. [Store Architecture](#9-store-architecture)
-10. [Component Architecture](#10-component-architecture)
-11. [Current Violations & Cleanup Roadmap](#11-current-violations--cleanup-roadmap)
+9. [Storage & Sync Architecture](#9-storage--sync-architecture)
+10. [Store Architecture](#10-store-architecture)
+11. [Component Architecture](#11-component-architecture)
+12. [Current Violations & Cleanup Roadmap](#12-current-violations--cleanup-roadmap)
 
 ---
 
@@ -100,49 +101,49 @@ Every concept has exactly **one type definition** in one file. Other files impor
 ## 2. System Layers
 
 ```
-┌───────────────────────────────────────────────────────────────────────────┐
-│                              FRONTEND                                     │
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              FRONTEND                                   │
 │ ┌─────────────┐  ┌────────────────┐  ┌────────────────┐  ┌────────────┐ │
-│ │  Viewport    │  │  SketchCanvas  │  │  Panels        │  │  Dialogs   │ │
-│ │  (3D view)   │  │  (2D sketch)   │  │  (properties,  │  │  (tools,   │ │
-│ │              │  │                │  │   browser,     │  │   files)   │ │
-│ │              │  │                │  │   timeline)    │  │            │ │
-│ └──────┬───────┘  └───────┬────────┘  └───────┬────────┘  └─────┬──────┘ │
-│        │                  │                   │                  │        │
-│        └──────────────────┼───────────────────┼──────────────────┘        │
-│                           │                   │                           │
-│                    ┌──────▼───────────────────▼──────┐                    │
-│                    │         TOOL REGISTRY           │                    │
-│                    │  (single source of tool defs)   │                    │
-│                    └──────────────┬──────────────────┘                    │
-│                                  │                                       │
-│  ┌───────────────────────────────┼───────────────────────────────┐       │
-│  │                          LIB LAYER                            │       │
-│  │                                                               │       │
-│  │  ┌────────┐  ┌───────────┐  ┌──────────┐  ┌──────────────┐  │       │
-│  │  │ Code   │  │ Sketch    │  │ Topology │  │ Constraint   │  │       │
-│  │  │Manager │  │ Pipeline  │  │ Engine   │  │ Solver       │  │       │
-│  │  └───┬────┘  └─────┬─────┘  └────┬─────┘  └──────┬───────┘  │       │
-│  │      │             │             │               │           │       │
-│  │      └─────────────┼─────────────┼───────────────┘           │       │
-│  │                    │             │                            │       │
-│  │             ┌──────▼─────────────▼─────┐                     │       │
-│  │             │    Replicad Worker Pool   │                     │       │
-│  │             │   (WASM/OpenCascade)      │                     │       │
-│  │             └──────────────────────────┘                      │       │
-│  └───────────────────────────────────────────────────────────────┘       │
-│                                                                          │
-│  ┌──────────────────────────────────────────────────────────────┐        │
-│  │                     ZUSTAND STORE                            │        │
-│  │  objectSlice │ sketchSlice │ viewSlice │ versioningSlice     │        │
-│  │  solverSlice │ snappingSlice │ toolbarSlice                  │        │
-│  └──────────────────────────────────────────────────────────────┘        │
-│                                                                          │
-│  ┌──────────────────────────────────────────────────────────────┐        │
-│  │                    PERSISTENCE                               │        │
-│  │  StorageManager │ GitHub Remote │ IndexedDB Local │ Supabase │        │
-│  └──────────────────────────────────────────────────────────────┘        │
-└───────────────────────────────────────────────────────────────────────────┘
+│ │  Viewport   │  │  SketchCanvas  │  │  Panels        │  │  Dialogs   │ │
+│ │  (3D view)  │  │  (2D sketch)   │  │  (properties,  │  │  (tools,   │ │
+│ │             │  │                │  │   browser,     │  │   files)   │ │
+│ │             │  │                │  │   timeline)    │  │            │ │
+│ └──────┬──────┘  └───────┬────────┘  └───────┬────────┘  └─────┬──────┘ │
+│        │                 │                   │                 │        │
+│        └─────────────────┼───────────────────┼─────────────────┘        │
+│                          │                   │                          │
+│                   ┌──────▼───────────────────▼──────┐                   │
+│                   │         TOOL REGISTRY           │                   │
+│                   │  (single source of tool defs)   │                   │
+│                   └──────────────┬──────────────────┘                   │
+│                                  │                                      │
+│  ┌───────────────────────────────┼───────────────────────────────┐      │
+│  │                          LIB LAYER                            │      │
+│  │                                                               │      │
+│  │  ┌────────┐  ┌───────────┐  ┌──────────┐  ┌──────────────┐    │      │
+│  │  │ Code   │  │ Sketch    │  │ Topology │  │ Constraint   │    │      │
+│  │  │Manager │  │ Pipeline  │  │ Engine   │  │ Solver       │    │      │
+│  │  └───┬────┘  └─────┬─────┘  └────┬─────┘  └──────┬───────┘    │      │
+│  │      │             │             │               │            │      │
+│  │      └─────────────┼─────────────┼───────────────┘            │      │
+│  │                    │             │                            │      │
+│  │             ┌──────▼─────────────▼─────┐                      │      │
+│  │             │    Replicad Worker Pool  │                      │      │
+│  │             │   (WASM/OpenCascade)     │                      │      │
+│  │             └──────────────────────────┘                      │      │
+│  └───────────────────────────────────────────────────────────────┘      │
+│                                                                         │
+│  ┌──────────────────────────────────────────────────────────────┐       │
+│  │                     ZUSTAND STORE                            │       │
+│  │  objectSlice │ sketchSlice │ viewSlice │ versioningSlice     │       │
+│  │  solverSlice │ snappingSlice │ toolbarSlice                  │       │
+│  └──────────────────────────────────────────────────────────────┘       │
+│                                                                         │
+│  ┌──────────────────────────────────────────────────────────────┐       │
+│  │                    PERSISTENCE                               │       │
+│  │  StorageManager │ GitHub Remote │ IndexedDB Local │ Supabase │       │
+│  └──────────────────────────────────────────────────────────────┘       │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -653,9 +654,196 @@ User code (string)
 
 ---
 
-## 9. Store Architecture
+## 9. Storage & Sync Architecture
 
-### 9.1 Slice Responsibilities
+### 9.1 Overview
+
+HiveCAD persists project data across three storage layers and synchronises them via a background `SyncEngine`. The design must satisfy two requirements simultaneously:
+
+1. **Auto-create**: new or modified projects push to GitHub/Supabase automatically.
+2. **Permanent delete**: deleted projects must not reappear after a sync cycle.
+
+A **tombstone** system resolves this conflict — deletions leave a short-lived marker that tells the sync engine "do not re-pull this project."
+
+### 9.2 Storage Layers
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  IndexedDB  (IdbQuickStore)           ← Web primary store   │
+│  or Local Git  (LocalGitQuickStore)   ← Tauri primary store │
+│  ─ implements QuickStore interface                           │
+├──────────────────────────────────────────────────────────────┤
+│  GitHub Repository  (GitHubRemoteStore)                      │
+│  ─ implements RemoteStore interface                          │
+│  ─ stores projects/ extensions/ hivecad/ directories         │
+├──────────────────────────────────────────────────────────────┤
+│  Supabase  (SupabaseMetaService)                             │
+│  ─ metadata only (project meta, tags, folders, extensions)   │
+│  ─ requires authenticated userId                             │
+└──────────────────────────────────────────────────────────────┘
+```
+
+| Layer | Interface | Purpose | Requires Auth? |
+|---|---|---|---|
+| `QuickStore` | `IdbQuickStore` / `LocalGitQuickStore` | Fast local read/write of full project data | No |
+| `RemoteStore` | `GitHubRemoteStore` | Cloud backup & cross-device sync via GitHub repo | GitHub PAT |
+| `MetaService` | `SupabaseMetaService` | Metadata for discovery, social features, community | Supabase userId |
+
+### 9.3 QuickStore Interface
+
+```typescript
+interface QuickStore {
+  listProjects(): Promise<ProjectMeta[]>;
+  loadProject(id: string): Promise<ProjectData | null>;
+  saveProject(data: ProjectData): Promise<void>;  // clears tombstone for this id
+  deleteProject(id: string): Promise<void>;        // writes tombstone before deleting
+  clearAll(): Promise<void>;                       // nuclear wipe, no tombstones
+}
+```
+
+### 9.4 Tombstone System
+
+When a project is deleted via `QuickStore.deleteProject(id)`:
+
+1. A tombstone key `hive:tombstone:{id}` is written to IndexedDB with a timestamp.
+2. The project data is then deleted from the store.
+3. The tombstone prevents `SyncEngine` from re-pulling this project from GitHub/Supabase.
+4. Tombstones expire after **30 days** (`TOMBSTONE_TTL_MS`).
+5. When `saveProject(data)` is called, any existing tombstone for that ID is **cleared** — this allows intentional re-creation.
+
+```
+Delete flow:
+  deleteProject(id)
+    → write tombstone(id, Date.now())
+    → delete project data
+    → SyncEngine sees tombstone → skips pull for that id
+    → SyncEngine.propagateDeletion() → deletes from GitHub + Supabase
+
+Save flow:
+  saveProject(data)
+    → clear tombstone(data.meta.id)   // allow this project to sync again
+    → write project data
+```
+
+**Key files:**
+- `src/lib/storage/quick/IdbQuickStore.ts` — tombstone read/write
+- `src/lib/storage/types.ts` — `QuickStore` interface
+
+### 9.5 SyncEngine — Three-Phase Sync
+
+The `SyncEngine` runs every **30 seconds** on web (disabled on Tauri desktop). Each cycle executes three phases:
+
+```
+Phase 1: Propagate Deletions
+  ─ Read all tombstoned IDs from QuickStore
+  ─ For each: delete from GitHub (RemoteStore) + Supabase (MetaService)
+  ─ Errors logged but do not abort sync
+
+Phase 2: Push Local → Remote
+  ─ List all local projects from QuickStore
+  ─ Push each to GitHub via RemoteStore.saveProject()
+  ─ Push metadata to Supabase via MetaService.upsertProjectMeta()
+  ─ Does NOT require Supabase userId (GitHub push works standalone)
+
+Phase 3: Pull Remote → Local
+  ─ List all projects on GitHub via RemoteStore.listProjects()
+  ─ For each remote project:
+      ─ If tombstoned locally → SKIP (do not re-create)
+      ─ If not in local store → pull and save locally
+      ─ If remote is newer → pull and overwrite local
+```
+
+**Important**: GitHub sync (phases 1-2 push, phase 3 pull) works **without** a Supabase `userId`. This ensures project data syncs to GitHub even before the user has a Supabase account.
+
+**Key file:** `src/lib/storage/sync/SyncEngine.ts`
+
+### 9.6 Sync Triggers
+
+| Trigger | Mechanism | When |
+|---|---|---|
+| Auto-sync | 30s interval timer | Always running on web |
+| `markDirty()` | Sets dirty flag, next cycle pushes | After any local save (create, rename, tag, folder move) |
+| `syncNow()` | Immediate full sync | User clicks "Sync to Cloud" |
+| `suspend()` / `resume()` | Pauses/resumes the timer | During `resetAll()`, bulk operations |
+
+### 9.7 UI Operation → Storage Flow
+
+Every UI operation that modifies project data **must** follow this pattern:
+
+```typescript
+// 1. Modify data locally
+await mgr.quickStore.saveProject(data);
+// 2. Mark sync dirty so changes push on next cycle
+mgr.syncEngine?.markDirty();
+```
+
+For **deletions**, the pattern is:
+
+```typescript
+// 1. Delete locally (writes tombstone automatically)
+await mgr.quickStore.deleteProject(id);
+// 2. Delete from remote stores (with error handling per store)
+try { await mgr.remoteStore?.deleteProject(id); } catch (e) { /* logged, retried on next sync */ }
+try { await mgr.supabaseMeta?.deleteProjectMeta(id); } catch (e) { /* logged */ }
+```
+
+| Operation | Handler | Storage Calls |
+|---|---|---|
+| Create project | `ProjectDashboard.handleCreateProject` | `quickStore.save` → `markDirty` |
+| Delete project | `ProjectDashboard.handleConfirmDelete` | `quickStore.delete` → `remote.delete` → `supabase.delete` |
+| Rename project | `ProjectDashboard.handleRenameProject` | `quickStore.save` → `markDirty` |
+| Fork project | `ProjectDashboard.handleForkProject` | `quickStore.save` → `markDirty` |
+| Update tags | `ProjectDashboard.handleUpdateTags` | `quickStore.save` → `markDirty` |
+| Move to folder | `ProjectDashboard.handleMoveProjectToFolder` | `quickStore.save` → `markDirty` |
+| Rename folder | `ProjectDashboard.handleRenameFolder` | `quickStore.save` (each project) → `markDirty` |
+| Delete folder | `ProjectDashboard.handleDeleteFolder` | `quickStore.save` (each project) → `markDirty` |
+| Save from editor | `versioningSlice.saveToLocal` | `quickStore.save` → `markDirty` |
+| Sync to cloud | `versioningSlice.syncToCloud` | `syncEngine.syncNow()` |
+| Delete tab (empty) | `TabManager.handleConfirmDelete` | `quickStore.delete` → `remote.delete` → `supabase.delete` |
+| Reset all | `ProjectDashboard.handleResetRepository` | `mgr.resetAll()` (clears everything, suspends sync) |
+
+### 9.8 `StorageManager` — Singleton Entry Point
+
+`StorageManager` is the single entry point for all storage operations. It holds references to all three stores and the sync engine.
+
+```typescript
+class StorageManager {
+  quickStore: QuickStore;          // always available
+  remoteStore?: RemoteStore;       // set when GitHub PAT connected
+  supabaseMeta?: MetaService;      // set when Supabase authenticated
+  syncEngine?: SyncEngine;         // created on web, null on Tauri
+
+  // Nuclear reset — clears ALL data everywhere
+  async resetAll(onProgress?): Promise<void>;
+}
+```
+
+`resetAll()` behaviour:
+1. Suspends sync engine
+2. Calls `quickStore.clearAll()` (no tombstones — full wipe)
+3. Clears `localStorage` keys matching `hivecad` or `hive:`
+4. Calls `remoteStore.resetRepository()` (deletes all GitHub data)
+5. Calls `supabaseMeta.resetAllUserData(userId)` (deletes all Supabase data)
+6. **Does NOT resume sync** — user must reconnect GitHub to restart syncing
+
+### 9.9 Debug Tools
+
+Console utilities are available via `window.__hiveDebug` (auto-loaded in `main.tsx`):
+
+| Function | Purpose |
+|---|---|
+| `inspectAllStorage()` | Dump all projects from IDB, GitHub, Supabase + tombstones |
+| `clearAllHiveCADData()` | Nuclear clear of all storage layers |
+| `clearLocalCachesOnly()` | Clear only IDB + localStorage (keeps remote data) |
+| `forceSyncNow()` | Trigger an immediate sync cycle |
+
+See `docs/STORAGE_DEBUG_GUIDE.md` for usage details.
+
+---
+
+## 10. Store Architecture
+
+### 10.1 Slice Responsibilities
 
 | Slice | Responsibility | May Call |
 |---|---|---|
@@ -667,7 +855,7 @@ User code (string)
 | `snappingSlice` | Snap state | `SnappingEngine` |
 | `toolbarSlice` | Custom toolbar layout | `useUIStore` |
 
-### 9.2 What Must **Not** Be in Slices
+### 10.2 What Must **Not** Be in Slices
 
 - **File I/O logic** (belongs in `lib/storage/`)
 - **Code parsing/generation** (belongs in `CodeManager`)
@@ -677,15 +865,15 @@ User code (string)
 
 ---
 
-## 10. Component Architecture
+## 11. Component Architecture
 
-### 10.1 Component Rules
+### 11.1 Component Rules
 
 1. **No tool-specific branching.** Use `toolRegistry.get(id)` and call the tool's methods.
 2. **No direct store manipulation for business logic.** Call store actions that delegate to `lib/` services.
 3. **No inline Three.js geometry construction** outside of tool `renderPreview`/`render3DPreview` methods.
 
-### 10.2 Key Components
+### 11.2 Key Components
 
 | Component | Purpose | Info Source |
 |---|---|---|

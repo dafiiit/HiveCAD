@@ -165,6 +165,7 @@ export interface QuickStore {
     loadProject(id: ProjectId): Promise<ProjectData | null>;
     deleteProject(id: ProjectId): Promise<void>;
     listProjects(): Promise<ProjectMeta[]>;
+    clearAll(): Promise<void>;
 
     // Commits (local VCS)
     commit(id: ProjectId, message: string, author: string): Promise<CommitHash>;

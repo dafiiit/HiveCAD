@@ -138,7 +138,8 @@ export class StorageManager {
     /**
      * Reset ALL user data across all stores.
      * This includes:
-     * - All projects in QuickStore (local)
+     * - All projects in QuickStore (local) - IndexedDB
+     * - localStorage (thumbnails, cached data)
      * - All data in GitHub (projects, extensions, settings)
      * - All data in Supabase (project metadata, extensions, votes, tags, folders)
      */
@@ -152,26 +153,32 @@ export class StorageManager {
 
         const shouldResumeSync = !!this._sync && !isDesktop() && !!this._remote?.isConnected();
 
+        // Suspend sync to prevent re-population during deletion
         this._sync?.suspend();
         try {
             await this._sync?.waitForIdle();
 
-            // 1. Delete from QuickStore (local storage)
-            report('Deleting local projects...');
-            const metas = await this.quickStore.listProjects();
-            for (const m of metas) {
-                await this.quickStore.deleteProject(m.id);
-            }
-            report(`Deleted ${metas.length} projects from local storage.`);
+            // 1. Delete ALL from QuickStore (IndexedDB) - use clearAll for complete cleanup
+            report('Clearing IndexedDB...');
+            await this.quickStore.clearAll();
+            report('Cleared all IndexedDB data.');
 
-            // 2. Delete from GitHub remote (projects, extensions, settings)
+            // 2. Clear localStorage HiveCAD-related keys
+            report('Clearing localStorage...');
+            const localStorageKeys = Object.keys(localStorage).filter(k =>
+                k.includes('hivecad') || k.includes('hive:')
+            );
+            localStorageKeys.forEach(k => localStorage.removeItem(k));
+            report(`Cleared ${localStorageKeys.length} localStorage keys.`);
+
+            // 3. Delete from GitHub remote (projects, extensions, settings)
             if (this._remote?.isConnected()) {
                 report('Deleting data from GitHub repository...');
                 await this._remote.resetRepository();
                 report('Deleted all data from GitHub repository.');
             }
 
-            // 3. Delete ALL user data from Supabase (projects, extensions, votes, tags, folders)
+            // 4. Delete ALL user data from Supabase (projects, extensions, votes, tags, folders)
             const userId = this._getUserId();
             if (userId && this._meta) {
                 report('Deleting user metadata from Supabase...');
@@ -179,10 +186,26 @@ export class StorageManager {
                 report('Deleted all user metadata from Supabase.');
             }
 
-            report('Reset complete.');
+            // 5. Verify cleanup
+            report('Verifying cleanup...');
+            const remainingProjects = await this.quickStore.listProjects();
+            if (remainingProjects.length > 0) {
+                console.warn(`[StorageManager] Warning: ${remainingProjects.length} projects still exist after cleanup`);
+                report(`Warning: ${remainingProjects.length} projects still in local storage`);
+            } else {
+                report('Verification complete: all data removed.');
+            }
+
+            report('Reset complete. Reload the page for changes to take effect.');
+        } catch (error) {
+            console.error('[StorageManager] Error during reset:', error);
+            report(`Error during reset: ${error instanceof Error ? error.message : String(error)}`);
+            throw error;
         } finally {
+            // Do NOT resume sync after a reset - let the user manually reconnect
+            // This prevents the sync engine from immediately re-pulling data
             if (shouldResumeSync) {
-                this._sync?.resumeAutoSync(30_000);
+                report('Sync suspended. Reconnect GitHub to resume syncing.');
             }
         }
     }

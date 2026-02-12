@@ -83,6 +83,17 @@ export class LocalGitQuickStore implements QuickStore {
         return metas;
     }
 
+    async clearAll(): Promise<void> {
+        const ids = await tauriInvoke<string[]>('list_projects');
+        await Promise.all(ids.map(id => this.deleteProject(id)));
+        try {
+            await tauriInvoke('git_commit', { message: 'Clear all projects' });
+        } catch (err) {
+            console.warn('[LocalGitQuickStore] git_commit after clearAll:', err);
+        }
+        this.emit();
+    }
+
     // ─── Commits ────────────────────────────────────────────────────────────
 
     async commit(id: ProjectId, message: string, _author: string): Promise<CommitHash> {

@@ -8,6 +8,10 @@
  * Commit history is kept as a simple append-only log per project (in RAM + IDB).
  * This is NOT a full git implementation — just enough to give the user
  * undo-checkpoint semantics and branch pointers.
+ *
+ * Tombstone system:
+ *   When a project is deleted, a tombstone record is written so the SyncEngine
+ *   knows not to re-pull the project from remote. Tombstones expire after 30 days.
  */
 
 import { get, set, del, keys } from 'idb-keyval';
@@ -22,7 +26,11 @@ const PROJECT_KEY = (id: string) => `hive:project:${id}`;
 const META_KEY = (id: string) => `hive:meta:${id}`;
 const COMMITS_KEY = (id: string) => `hive:commits:${id}`;
 const BRANCHES_KEY = (id: string) => `hive:branches:${id}`;
+const TOMBSTONE_KEY = (id: string) => `hive:tombstone:${id}`;
 const SETTINGS_KEY = 'hive:settings';
+
+/** Tombstones expire after 30 days */
+const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -33,18 +41,27 @@ interface StoredBranches {
     head: string;
 }
 
+interface Tombstone {
+    projectId: string;
+    deletedAt: number;
+}
+
 // ─── Implementation ─────────────────────────────────────────────────────────
 
 export class IdbQuickStore implements QuickStore {
     private listeners = new Set<() => void>();
 
     async init(): Promise<void> {
-        // Nothing to initialize — idb-keyval is ready on first use
+        // Prune expired tombstones on startup
+        await this.pruneExpiredTombstones();
     }
 
     // ─── Projects ───────────────────────────────────────────────────────────
 
     async saveProject(data: ProjectData): Promise<void> {
+        // If we're saving a project, clear any tombstone for it
+        // (user explicitly re-created or re-imported it)
+        await del(TOMBSTONE_KEY(data.meta.id));
         await Promise.all([
             set(PROJECT_KEY(data.meta.id), data),
             set(META_KEY(data.meta.id), data.meta),
@@ -57,6 +74,8 @@ export class IdbQuickStore implements QuickStore {
     }
 
     async deleteProject(id: ProjectId): Promise<void> {
+        // Write tombstone BEFORE deleting so sync engine sees it
+        await set(TOMBSTONE_KEY(id), { projectId: id, deletedAt: Date.now() } as Tombstone);
         await Promise.all([
             del(PROJECT_KEY(id)),
             del(META_KEY(id)),
@@ -75,6 +94,69 @@ export class IdbQuickStore implements QuickStore {
             metaKeys.map((k) => get<ProjectMeta>(k as string)),
         );
         return metas.filter(Boolean) as ProjectMeta[];
+    }
+
+    async clearAll(): Promise<void> {
+        const allKeys = await keys();
+        const hiveKeys = allKeys.filter(
+            (k) => typeof k === 'string' && k.startsWith('hive:'),
+        );
+        await Promise.all(hiveKeys.map((k) => del(k)));
+        this.emit();
+    }
+
+    // ─── Tombstones ─────────────────────────────────────────────────────────
+
+    /** Check if a project was intentionally deleted (tombstoned). */
+    async isTombstoned(id: ProjectId): Promise<boolean> {
+        const tombstone = await get<Tombstone>(TOMBSTONE_KEY(id));
+        if (!tombstone) return false;
+        // Check if tombstone has expired
+        if (Date.now() - tombstone.deletedAt > TOMBSTONE_TTL_MS) {
+            await del(TOMBSTONE_KEY(id));
+            return false;
+        }
+        return true;
+    }
+
+    /** Get all active (non-expired) tombstone IDs. */
+    async getTombstonedIds(): Promise<Set<string>> {
+        const allKeys = await keys();
+        const tombstoneKeys = allKeys.filter(
+            (k) => typeof k === 'string' && k.startsWith('hive:tombstone:'),
+        );
+        const ids = new Set<string>();
+        const now = Date.now();
+        for (const key of tombstoneKeys) {
+            const tombstone = await get<Tombstone>(key as string);
+            if (tombstone && now - tombstone.deletedAt <= TOMBSTONE_TTL_MS) {
+                ids.add(tombstone.projectId);
+            } else {
+                // Clean up expired tombstone
+                await del(key);
+            }
+        }
+        return ids;
+    }
+
+    /** Remove a specific tombstone (e.g., after propagating deletion to all stores). */
+    async clearTombstone(id: ProjectId): Promise<void> {
+        await del(TOMBSTONE_KEY(id));
+    }
+
+    /** Remove all expired tombstones. */
+    private async pruneExpiredTombstones(): Promise<void> {
+        const allKeys = await keys();
+        const tombstoneKeys = allKeys.filter(
+            (k) => typeof k === 'string' && k.startsWith('hive:tombstone:'),
+        );
+        const now = Date.now();
+        for (const key of tombstoneKeys) {
+            const tombstone = await get<Tombstone>(key as string);
+            if (!tombstone || now - tombstone.deletedAt > TOMBSTONE_TTL_MS) {
+                await del(key);
+            }
+        }
     }
 
     // ─── Commits ────────────────────────────────────────────────────────────

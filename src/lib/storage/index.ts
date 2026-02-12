@@ -8,3 +8,4 @@ export { LocalGitQuickStore } from './quick/LocalGitQuickStore';
 export { GitHubRemoteStore } from './remote/GitHubRemoteStore';
 export { SupabaseMetaService } from './supabase/SupabaseMetaService';
 export { SyncEngine } from './sync/SyncEngine';
+export * from './debug';

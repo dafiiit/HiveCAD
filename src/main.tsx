@@ -6,6 +6,9 @@ import "./index.css";
 import { loadBuiltinExtensions } from "./lib/extensions";
 loadBuiltinExtensions();
 
+// Load debug tools (attaches to window.__hiveDebug)
+import './lib/storage/debug';
+
 const initApp = async () => {
     createRoot(document.getElementById("root")!).render(<App />);
 };

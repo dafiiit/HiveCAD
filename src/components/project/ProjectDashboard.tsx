@@ -142,9 +142,10 @@ export function ProjectDashboard() {
             ownerEmail: user?.email || '',
         });
 
-        // Save to QuickStore
+        // Save to QuickStore and mark sync dirty
         try {
             await mgr.quickStore.saveProject(newProject);
+            mgr.syncEngine?.markDirty();
         } catch (e) {
             console.error("Failed to save new project", e);
         }
@@ -226,6 +227,7 @@ export function ProjectDashboard() {
             };
 
             await mgr.quickStore.saveProject(forkedProject);
+            mgr.syncEngine?.markDirty();
 
             toast.success(`Forked "${meta.name}" to your workspace!`);
             setDashboardMode('workspace');
@@ -299,13 +301,30 @@ export function ProjectDashboard() {
         toast.success(`Deleting "${projectName}"...`);
 
         try {
+            // 1. Delete from QuickStore (this also writes a tombstone to prevent re-sync)
             await mgr.quickStore.deleteProject(projectId);
+
+            // 2. Delete from GitHub remote
             if (mgr.isRemoteConnected) {
-                await mgr.remoteStore!.deleteProject(projectId);
+                try {
+                    await mgr.remoteStore!.deleteProject(projectId);
+                } catch (err) {
+                    console.warn(`[ProjectDashboard] Failed to delete ${projectId} from remote (will retry on next sync):`, err);
+                }
             }
-            await mgr.supabaseMeta?.deleteProjectMeta(projectId);
+
+            // 3. Delete from Supabase
+            try {
+                await mgr.supabaseMeta?.deleteProjectMeta(projectId);
+            } catch (err) {
+                console.warn(`[ProjectDashboard] Failed to delete ${projectId} from Supabase:`, err);
+            }
+
+            // 4. Clean up thumbnail
             removeThumbnail(projectName);
-            console.log(`[ProjectDashboard] Deleted ${projectId}`);
+
+            console.log(`[ProjectDashboard] Deleted project "${projectName}" (${projectId}) from all stores`);
+            toast.success(`Deleted "${projectName}"`);
             await refreshProjects();
         } catch (error) {
             console.error("Delete failed:", error);
@@ -325,7 +344,8 @@ export function ProjectDashboard() {
                 data.meta.name = newName.trim();
                 data.meta.lastModified = Date.now();
                 await mgr.quickStore.saveProject(data);
-                await mgr.supabaseMeta?.upsertProjectMeta(data.meta);
+                // Mark sync dirty so rename propagates to GitHub + Supabase
+                mgr.syncEngine?.markDirty();
             }
             toast.success("Project renamed successfully");
             setShowRenameDialog(null);
@@ -350,7 +370,7 @@ export function ProjectDashboard() {
             if (data) {
                 data.meta.tags = newTags;
                 await mgr.quickStore.saveProject(data);
-                await mgr.supabaseMeta?.upsertProjectMeta(data.meta);
+                mgr.syncEngine?.markDirty();
             }
             toast.success("Tags updated");
         } catch (error) {
@@ -394,6 +414,7 @@ export function ProjectDashboard() {
                     await mgr.quickStore.saveProject(data);
                 }
             }
+            mgr.syncEngine?.markDirty();
 
             if (activeTags.includes(tagName)) {
                 setActiveTags(prev => prev.filter(t => t !== tagName));
@@ -456,6 +477,7 @@ export function ProjectDashboard() {
                     await mgr.quickStore.saveProject(data);
                 }
             }
+            mgr.syncEngine?.markDirty();
 
             if (selectedFolder === oldName) setSelectedFolder(newName);
             toast.success("Folder renamed");
@@ -490,6 +512,7 @@ export function ProjectDashboard() {
                     await mgr.quickStore.saveProject(data);
                 }
             }
+            mgr.syncEngine?.markDirty();
 
             if (selectedFolder === folderName) setSelectedFolder(null);
             toast.success("Folder deleted");
@@ -520,7 +543,7 @@ export function ProjectDashboard() {
             if (data) {
                 data.meta.folder = folderName || '';
                 await mgr.quickStore.saveProject(data);
-                await mgr.supabaseMeta?.upsertProjectMeta(data.meta);
+                mgr.syncEngine?.markDirty();
             }
             toast.success(folderName ? `Moved to ${folderName}` : `Removed from folder`);
             refreshProjects();
@@ -534,29 +557,35 @@ export function ProjectDashboard() {
     const handleResetRepository = async () => {
         setLoadingMessage("Purging Repository...");
         try {
-            // Delete all data from all storage layers:
-            // - QuickStore (IndexedDB/local git): all projects
-            // - GitHub: projects/, extensions/, hivecad/ directories
-            // - Supabase: projects, extensions, extension_votes, user_tags, user_folders
-            await mgr.resetAll();
+            // resetAll() handles all storage layers:
+            // - Suspends sync to prevent re-population
+            // - Clears QuickStore (IndexedDB) completely via clearAll()
+            //   (no tombstones written — this is a full wipe)
+            // - Clears localStorage HiveCAD keys
+            // - Deletes all data from GitHub (projects, extensions, settings)
+            // - Deletes all user data from Supabase
+            // - Does NOT resume sync after reset
+            await mgr.resetAll((msg) => setLoadingMessage(msg));
 
             closeProject();
 
-            // Clean up UI-specific localStorage
+            // Clean up any remaining UI-specific localStorage
             localStorage.removeItem('hivecad_thumbnails');
             localStorage.removeItem('hivecad_example_opens');
             localStorage.removeItem('hivecad_thumbnails_cache');
 
             setStarredProjects([]);
             setFolders([]);
+            setTags([]);
+            setUserProjects([]);
             setExampleOpenedAt({});
 
-            toast.success("Repository and local data reset successfully.");
-            await refreshProjects();
+            toast.success("Repository and local data reset successfully. Sync paused — reconnect GitHub to resume.");
             setShowResetConfirm(false);
         } catch (error) {
             console.error("Reset failed:", error);
             toast.error("Failed to reset repository.");
+            await refreshProjects();
         } finally {
             setLoadingMessage(null);
         }

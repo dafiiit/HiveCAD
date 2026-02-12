@@ -178,20 +178,31 @@ export const TabManager = () => {
         const store: StoreApi<any> = tabToDelete.store;
 
         try {
-            // 1. Immediately delete if we have an ID
+            // 1. Delete from all stores (tombstone written by QuickStore.deleteProject)
             if (projectId) {
                 const mgr = StorageManager.getInstance();
                 toast.promise(
                     (async () => {
+                        // Delete locally (writes tombstone to prevent re-sync)
                         await mgr.quickStore.deleteProject(projectId);
+                        // Delete from GitHub
                         if (mgr.isRemoteConnected) {
-                            await mgr.remoteStore!.deleteProject(projectId);
+                            try {
+                                await mgr.remoteStore!.deleteProject(projectId);
+                            } catch (err) {
+                                console.warn(`[TabManager] Failed to delete ${projectId} from remote (will retry on next sync):`, err);
+                            }
                         }
-                        await mgr.supabaseMeta?.deleteProjectMeta(projectId);
+                        // Delete from Supabase
+                        try {
+                            await mgr.supabaseMeta?.deleteProjectMeta(projectId);
+                        } catch (err) {
+                            console.warn(`[TabManager] Failed to delete ${projectId} from Supabase:`, err);
+                        }
                         store.getState().removeThumbnail?.(projectName);
                     })(),
                     {
-                        loading: `Deleting empty project "${projectName}"...`,
+                        loading: `Deleting project "${projectName}"...`,
                         success: `Project deleted`,
                         error: `Failed to delete project`,
                     }

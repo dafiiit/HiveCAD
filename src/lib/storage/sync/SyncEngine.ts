@@ -2,6 +2,16 @@
  * SyncEngine — orchestrates background synchronisation between
  * QuickStore ↔ RemoteStore ↔ Supabase.
  *
+ * Respects tombstones: when a project is deleted locally, a tombstone
+ * record is created so that the sync engine propagates the deletion
+ * to remote stores instead of re-pulling the project.
+ *
+ * Key design decisions:
+ *   - GitHub sync works independently of Supabase (no userId needed for push/pull).
+ *   - Tombstones prevent the "delete → re-sync → ghost project" cycle.
+ *   - After propagating a deletion to all stores, the tombstone is kept
+ *     for 30 days to handle race conditions with other devices.
+ *
  * Behaviour:
  *   Web app:
  *     - Syncs every 30 s while online.
@@ -20,6 +30,7 @@ import type {
     QuickStore, RemoteStore, SupabaseMeta,
     SyncState, SyncStatus, ProjectMeta, ProjectData,
 } from '../types';
+import type { IdbQuickStore } from '../quick/IdbQuickStore';
 
 export class SyncEngine {
     private _state: SyncState = {
@@ -152,48 +163,79 @@ export class SyncEngine {
     // ─── Internal ───────────────────────────────────────────────────────────
 
     private async doSync(): Promise<void> {
+        if (!this.remote) return;
+
         const userId = this.getUserId();
         const userEmail = this.getUserEmail();
-        if (!userId || !this.remote || !this.meta) return;
 
-        // 1. Push all local projects to remote + Supabase
+        // Get tombstoned project IDs (these were intentionally deleted)
+        const tombstonedIds = await this.getTombstonedIds();
+
+        // ─── Phase 1: Propagate deletions ──────────────────────────────────
+        // For each tombstoned project, ensure it's deleted from remote + Supabase
+        for (const deletedId of tombstonedIds) {
+            await this.propagateDeletion(deletedId, userId);
+        }
+
+        // ─── Phase 2: Push local projects to remote ────────────────────────
         const localMetas = await this.quick.listProjects();
         for (const localMeta of localMetas) {
+            // Skip tombstoned projects (shouldn't happen, but be safe)
+            if (tombstonedIds.has(localMeta.id)) continue;
+
             try {
                 const localProject = await this.quick.loadProject(localMeta.id);
                 if (!localProject) continue;
 
-                // Ensure ownership fields are set
-                localProject.meta.ownerId = userId;
-                localProject.meta.ownerEmail = userEmail ?? '';
+                // Set ownership fields if available
+                if (userId) localProject.meta.ownerId = userId;
+                if (userEmail) localProject.meta.ownerEmail = userEmail;
                 localProject.meta.remoteProvider = this.remote.providerKey;
 
-                // Push to remote
+                // Push to remote (GitHub) — works without userId
                 await this.remote.pushProject(localProject);
+                console.log(`[SyncEngine] Pushed project "${localMeta.name}" to ${this.remote.providerKey}`);
 
                 // Push thumbnail if present
                 if (localProject.meta.thumbnail) {
                     await this.remote.pushThumbnail(localMeta.id, localProject.meta.thumbnail);
                 }
 
-                // Upsert metadata to Supabase
-                await this.meta.upsertProjectMeta(localProject.meta);
+                // Upsert metadata to Supabase — only if we have userId
+                if (userId && this.meta) {
+                    try {
+                        await this.meta.upsertProjectMeta(localProject.meta);
+                    } catch (err) {
+                        console.warn(`[SyncEngine] Failed to upsert Supabase meta for ${localMeta.id}:`, err);
+                    }
+                }
             } catch (err) {
                 console.warn(`[SyncEngine] Failed to push project ${localMeta.id}:`, err);
             }
         }
 
-        // 2. Pull remote projects that aren't in local store
+        // ─── Phase 3: Pull remote projects that aren't local ───────────────
         try {
             const remoteMetas = await this.remote.pullAllProjectMetas();
             const localIds = new Set(localMetas.map((m) => m.id));
 
             for (const remoteMeta of remoteMetas) {
+                // Already have it locally — skip
                 if (localIds.has(remoteMeta.id)) continue;
+
+                // Was intentionally deleted — delete from remote too, DON'T re-pull
+                if (tombstonedIds.has(remoteMeta.id)) {
+                    console.log(`[SyncEngine] Skipping tombstoned project "${remoteMeta.name}" (${remoteMeta.id}) — will delete from remote`);
+                    await this.propagateDeletion(remoteMeta.id, userId);
+                    continue;
+                }
+
+                // Genuinely new from remote — pull it
                 try {
                     const remoteProject = await this.remote.pullProject(remoteMeta.id);
                     if (remoteProject) {
                         await this.quick.saveProject(remoteProject);
+                        console.log(`[SyncEngine] Pulled project "${remoteMeta.name}" from ${this.remote.providerKey}`);
                     }
                 } catch (err) {
                     console.warn(`[SyncEngine] Failed to pull project ${remoteMeta.id}:`, err);
@@ -202,6 +244,45 @@ export class SyncEngine {
         } catch (err) {
             console.warn('[SyncEngine] Failed to pull remote projects:', err);
         }
+    }
+
+    /**
+     * Propagate a deletion to remote + Supabase.
+     * Called for tombstoned projects during sync to ensure all stores are cleaned up.
+     */
+    private async propagateDeletion(projectId: string, userId: string | null): Promise<void> {
+        // Delete from remote (GitHub)
+        if (this.remote?.isConnected()) {
+            try {
+                await this.remote.deleteProject(projectId);
+                console.log(`[SyncEngine] Propagated deletion of ${projectId} to ${this.remote.providerKey}`);
+            } catch (err) {
+                console.warn(`[SyncEngine] Failed to delete ${projectId} from remote:`, err);
+            }
+        }
+
+        // Delete from Supabase
+        if (userId && this.meta) {
+            try {
+                await this.meta.deleteProjectMeta(projectId);
+                console.log(`[SyncEngine] Propagated deletion of ${projectId} to Supabase`);
+            } catch (err) {
+                console.warn(`[SyncEngine] Failed to delete ${projectId} from Supabase:`, err);
+            }
+        }
+    }
+
+    /**
+     * Get tombstoned project IDs from the QuickStore.
+     * Works with IdbQuickStore which has tombstone support.
+     * Falls back to empty set for other implementations.
+     */
+    private async getTombstonedIds(): Promise<Set<string>> {
+        // IdbQuickStore has getTombstonedIds() method
+        if ('getTombstonedIds' in this.quick && typeof (this.quick as any).getTombstonedIds === 'function') {
+            return (this.quick as IdbQuickStore).getTombstonedIds();
+        }
+        return new Set();
     }
 
     private emit(): void {
