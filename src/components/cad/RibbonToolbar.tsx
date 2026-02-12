@@ -113,18 +113,20 @@ interface ToolButtonProps {
 
 const ToolButton = React.forwardRef<HTMLButtonElement, ToolButtonProps>(({ icon, label, isActive, hasDropdown, onClick, disabled, ...props }, ref) => (
   <button
+    type="button"
     ref={ref}
     onClick={onClick}
     disabled={disabled}
+    aria-pressed={isActive}
     className={`cad-tool-button ${isActive ? 'cad-tool-button-active' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
     {...props}
   >
-    <div className="cad-tool-button-icon">
+    <div className="cad-tool-button-icon" aria-hidden="true">
       {icon}
     </div>
     <div className="flex items-center gap-0.5 mt-auto">
       <span className="cad-tool-button-label truncate max-w-[48px] leading-[1.1] text-center">{label}</span>
-      {hasDropdown && <ChevronDown className="w-2 h-2 opacity-50 shrink-0" />}
+      {hasDropdown && <ChevronDown className={`w-2 h-2 opacity-50 shrink-0 transition-transform duration-200 ${isActive ? 'rotate-180' : ''}`} />}
     </div>
   </button>
 ));

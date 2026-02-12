@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Fusion 360 CAD Design System - Professional Dark Industrial Theme */
+/* HiveCAD Design System - dark and light theme aware */
 
 @layer base {
   :root {
@@ -43,7 +43,7 @@
     --ring: 207 85% 55%;
 
     /* Radius */
-    --radius: 0.25rem;
+    --radius: 0.75rem;
 
     /* CAD-specific tokens */
     --toolbar-bg: 210 22% 20%;
@@ -82,7 +82,7 @@
   }
 
   .light {
-    /* Light Mode Overrides - Standard High Contrast Clean Theme */
+    /* Light mode overrides */
     --background: 0 0% 100%;
     --foreground: 222 47% 11%;
 
@@ -93,7 +93,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    /* Primary - More standard "Action" Blue */
+    /* Primary */
     --primary: 221.2 83.2% 53.3%;
     --primary-foreground: 210 40% 98%;
 
@@ -105,24 +105,31 @@
     --muted: 210 40% 94%;
     --muted-foreground: 215.4 16.3% 42.9%;
 
-    /* Borders - more visible for structure */
+    /* Accent + interaction */
+    --accent: 217.2 91.2% 59.8%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 72.2% 50.6%;
+    --destructive-foreground: 0 0% 98%;
+    --ring: 221.2 83.2% 53.3%;
+
+    /* Borders */
     --border: 214.3 31.8% 88%;
     --input: 214.3 31.8% 88%;
 
-    /* CAD-specific tokens - Stronger contrast for toolbars */
+    /* CAD-specific tokens */
     --toolbar-bg: 210 40% 96%;
     --toolbar-border: 214.3 31.8% 80%;
-    /* Slightly darker border for toolbars */
     --panel-bg: 0 0% 100%;
     --panel-header: 210 20% 90%;
-    /* Clearly different from panel content */
 
-    /* CRITICAL: Keep Viewport Dark as requested (Industrial Slate) */
+    /* Keep viewport dark in light mode for modeling contrast */
     --viewport-bg: 210 30% 16%;
 
     --grid-line: 210 20% 25%;
-    /* Grid stays on dark viewport */
     --grid-axis: 207 70% 50%;
+    --selection-blue: 221.2 83.2% 53.3%;
+    --sketch-grid: 210 25% 28%;
+    --sketch-origin: 0 65% 55%;
 
     --icon-default: 215.4 16.3% 40%;
     --icon-hover: 222.2 47.4% 11.2%;
@@ -130,23 +137,20 @@
     --tab-active: 221.2 83.2% 53.3%;
     --timeline-bg: 210 40% 98%;
 
-    /* Viewcube - standard light mode industrial look */
-    --viewcube-front: 221.2 83.2% 53.3%;
-    --viewcube-top: 210 40% 94%;
-    --viewcube-right: 210 40% 90%;
-    --viewcube-text: 222 47% 11%;
+    /* Viewcube */
+    --viewcube-bg: 210 40% 91%;
+    --viewcube-face: 210 38% 96%;
+    --viewcube-edge: 214 28% 74%;
 
     /* Sidebar */
-    --sidebar-bg: 210 40% 96%;
+    --sidebar-background: 210 40% 96%;
     --sidebar-foreground: 222 47% 11%;
-    --sidebar-muted: 215.4 16.3% 54.9%;
-    --sidebar-accent: 210 40% 90%;
-    --sidebar-border: 214.3 31.8% 88%;
     --sidebar-primary: 221.2 83.2% 53.3%;
     --sidebar-primary-foreground: 210 40% 98%;
     --sidebar-accent: 210 40% 96.1%;
     --sidebar-accent-foreground: 222.2 47.4% 11.2%;
     --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-ring: 221.2 83.2% 53.3%;
   }
 }
 
@@ -178,25 +182,42 @@
 
   .cad-toolbar-tab {
     @apply px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground;
-    @apply hover:text-foreground hover:bg-secondary/50 transition-colors cursor-pointer;
+    @apply rounded-md hover:text-foreground hover:bg-secondary/60 transition-all duration-150 cursor-pointer;
   }
 
   .cad-toolbar-tab-active {
-    @apply text-foreground bg-secondary border-b-2 border-tab-active;
+    @apply text-foreground bg-secondary/80 border border-tab-active/30 shadow-sm;
   }
 
   .cad-tool-button {
-    @apply flex flex-col items-center justify-center gap-0.5 p-2 rounded-sm;
-    @apply text-icon-default hover:text-icon-hover hover:bg-secondary/60 transition-all;
-    @apply cursor-pointer min-w-[48px];
+    @apply relative isolate flex flex-col items-center justify-center gap-0.5 px-2 py-1.5 rounded-xl;
+    @apply text-icon-default hover:text-icon-hover hover:bg-secondary/70 transition-all duration-200;
+    @apply cursor-pointer min-w-[52px] min-h-[56px] border border-transparent;
   }
 
   .cad-tool-button-active {
-    @apply bg-accent/20 text-accent border border-accent/40;
+    @apply bg-accent/15 text-accent border-accent/45 shadow-sm;
+    animation: cad-tool-active-pulse 1.6s ease-out;
+  }
+
+  .cad-tool-button:focus-visible {
+    @apply outline-none ring-2 ring-ring/50;
+  }
+
+  .cad-tool-button-icon {
+    @apply w-6 h-6 flex items-center justify-center transition-transform duration-200 ease-out;
+  }
+
+  .cad-tool-button-label {
+    @apply text-[10px] font-medium transition-colors duration-200;
+  }
+
+  .cad-tool-button-active .cad-tool-button-icon {
+    animation: cad-tool-icon-morph 260ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .cad-tool-group {
-    @apply flex items-end gap-0.5 px-2 border-r border-toolbar-border;
+    @apply flex items-end gap-0.5 px-2 border-r border-toolbar-border/70;
   }
 
   .cad-tool-group-label {
@@ -210,7 +231,7 @@
 
   .cad-panel-header {
     @apply flex items-center justify-between px-3 py-1.5 bg-panel-header text-xs font-medium;
-    @apply border-b border-border uppercase tracking-wide;
+    @apply border-b border-border/80 uppercase tracking-wide;
   }
 
   /* Tree View Styles */
@@ -264,6 +285,45 @@
     50% {
       transform: translateY(0);
       animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+    }
+  }
+
+  @keyframes cad-tool-icon-morph {
+    0% {
+      transform: scale(0.84) rotate(-6deg);
+      filter: saturate(0.8);
+    }
+
+    60% {
+      transform: scale(1.08) rotate(2deg);
+      filter: saturate(1.25);
+    }
+
+    100% {
+      transform: scale(1) rotate(0deg);
+      filter: saturate(1);
+    }
+  }
+
+  @keyframes cad-tool-active-pulse {
+    0% {
+      box-shadow: 0 0 0 0 hsl(var(--accent) / 0.25);
+    }
+
+    100% {
+      box-shadow: 0 0 0 7px hsl(var(--accent) / 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cad-tool-button,
+    .cad-tool-button-icon {
+      transition-duration: 0ms;
+    }
+
+    .cad-tool-button-active,
+    .cad-tool-button-active .cad-tool-button-icon {
+      animation: none;
     }
   }
 

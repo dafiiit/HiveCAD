@@ -123,13 +123,13 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
   };
 
   const planeColors: Record<string, string> = {
-    'XY': '#5577ee',
-    'XZ': '#e05555',
-    'YZ': '#55e055'
+    'XY': 'hsl(221 83% 56%)',
+    'XZ': 'hsl(0 72% 56%)',
+    'YZ': 'hsl(146 63% 42%)'
   };
 
   // Styles for the container
-  const containerClass = `absolute right-4 bottom-4 h-2/3 z-20 shadow-lg rounded-lg overflow-hidden border border-border flex flex-col bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-all duration-300 ease-in-out ${isCollapsed ? "w-12 h-auto" : "w-64"
+  const containerClass = `absolute right-4 bottom-4 h-2/3 z-20 shadow-xl rounded-2xl overflow-hidden border border-border/70 flex flex-col bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/65 transition-all duration-300 ease-in-out ${isCollapsed ? "w-12 h-auto" : "w-64"
     }`;
 
   if (isCollapsed) {
@@ -138,7 +138,7 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
         <div className="flex flex-col items-center py-2 space-y-2">
           <button
             onClick={() => setIsCollapsed(false)}
-            className="p-1.5 hover:bg-secondary rounded transition-colors"
+            className="p-1.5 hover:bg-secondary/70 rounded-lg transition-colors"
             title="Expand Palette"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -251,14 +251,14 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
                 <span>Line Type</span>
                 <div className="flex gap-1 ml-auto">
                   <button
-                    className={`p-1 rounded transition-colors ${activeTool === 'line' ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'}`}
+                    className={`p-1 rounded-md transition-all duration-150 ${activeTool === 'line' ? 'bg-primary text-primary-foreground shadow-sm' : 'hover:bg-secondary/70'}`}
                     onClick={() => handleLineType('normal')}
                     title="Normal line"
                   >
                     <Pencil className="w-3 h-3" />
                   </button>
                   <button
-                    className={`p-1 rounded transition-colors ${activeTool === 'constructionLine' ? 'bg-blue-500/30 text-blue-400' : 'hover:bg-secondary'}`}
+                    className={`p-1 rounded-md transition-all duration-150 ${activeTool === 'constructionLine' ? 'bg-primary/20 text-primary shadow-sm' : 'hover:bg-secondary/70'}`}
                     onClick={() => handleLineType('construction')}
                     title="Construction line"
                   >
@@ -291,7 +291,7 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
                 <select
                   value={gridSnapSize}
                   onChange={(e) => setGridSnapSize(Number(e.target.value))}
-                  className="ml-auto bg-secondary border border-border rounded text-xs px-1 py-0.5"
+                  className="ml-auto bg-secondary/70 border border-border rounded-md text-xs px-1 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
                   <option value={0}>Off</option>
                   <option value={0.5}>0.5mm</option>
@@ -360,7 +360,7 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
           <button
             onClick={() => { undoLastPrimitive(); }}
             disabled={activeSketchPrimitives.length === 0}
-            className="flex items-center gap-1 px-2 py-1 rounded hover:bg-secondary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-secondary/70 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Undo last (Ctrl+Z)"
           >
             <Undo2 className="w-3 h-3" />
@@ -373,13 +373,13 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
           <button
             onClick={handleFinishSketch}
             disabled={activeSketchPrimitives.length === 0}
-            className="flex-1 py-1.5 text-xs font-medium rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 py-1.5 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Finish Sketch
           </button>
           <button
             onClick={exitSketchMode}
-            className="px-3 py-1.5 text-xs rounded border border-border hover:bg-secondary transition-colors"
+            className="px-3 py-1.5 text-xs rounded-md border border-border hover:bg-secondary/70 transition-colors"
           >
             Cancel
           </button>
