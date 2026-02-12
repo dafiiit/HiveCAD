@@ -460,12 +460,21 @@ const SketchCanvas = () => {
     };
 
     const startPrimitive = (p2d: [number, number], tool: ToolType, props?: Record<string, any>) => {
-        // Try to use tool registry first
-        const toolDef = toolRegistry.get(tool);
+        // Resolve legacy aliases to their canonical tool IDs
+        const aliasMap: Record<string, string> = {
+            'box': 'rectangle',
+            'sphere': 'circle',
+            'arc': 'threePointsArc',
+            'spline': 'smoothSpline',
+        };
+        const resolvedTool = aliasMap[tool] || tool;
+
+        // Use tool registry for all tools
+        const toolDef = toolRegistry.get(resolvedTool);
         if (toolDef?.createInitialPrimitive) {
             const primitive = toolDef.createInitialPrimitive(p2d, props) as SketchPrimitive;
             // Special case: text is added immediately
-            if (tool === 'text') {
+            if (resolvedTool === 'text') {
                 addSketchPrimitive(primitive);
             } else {
                 updateCurrentDrawingPrimitive(primitive);
@@ -473,35 +482,18 @@ const SketchCanvas = () => {
             return;
         }
 
-        // Fallback for tools not yet in registry (box/sphere aliases)
+        // Final fallback: default to line
         const baseProps = {
             id: Math.random().toString(),
             points: [p2d, p2d],
             properties: props || {}
         };
-
-        switch (tool) {
-            case 'box':
-                updateCurrentDrawingPrimitive({ ...baseProps, type: 'rectangle' });
-                break;
-            case 'sphere':
-                updateCurrentDrawingPrimitive({ ...baseProps, type: 'circle' });
-                break;
-            case 'arc':
-                updateCurrentDrawingPrimitive({ ...baseProps, type: 'threePointsArc' });
-                break;
-            case 'spline':
-                updateCurrentDrawingPrimitive({ ...baseProps, type: 'smoothSpline', properties: { startTangent: props?.startTangent, endTangent: props?.endTangent } });
-                break;
-            default:
-                // Default fallback: use line with solver
-                const lineData = addSolverLineMacro(p2d, p2d);
-                updateCurrentDrawingPrimitive({
-                    ...baseProps,
-                    type: 'line',
-                    properties: { ...baseProps.properties, solverId: lineData?.p2Id }
-                });
-        }
+        const lineData = addSolverLineMacro(p2d, p2d);
+        updateCurrentDrawingPrimitive({
+            ...baseProps,
+            type: 'line',
+            properties: { ...baseProps.properties, solverId: lineData?.p2Id }
+        });
     };
 
     const continuePrimitive = (p2d: [number, number]) => {

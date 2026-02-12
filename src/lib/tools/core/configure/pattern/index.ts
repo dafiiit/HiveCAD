@@ -48,8 +48,14 @@ export const patternTool: Tool = {
                         codeManager.addOperation(id, 'translate', [[spacingX * i, spacingY * j, 0]]);
                     }
                 }
+            } else if (type === 'circular') {
+                // Circular pattern around Z axis
+                const angleStep = angle * (Math.PI / 180);
+                for (let i = 1; i < countX; i++) {
+                    const rotAngle = angleStep * i;
+                    codeManager.addOperation(id, 'rotate', [rotAngle * (180 / Math.PI), [0, 0, 1]]);
+                }
             }
-            // Circular pattern would require different approach
         });
     }
 };

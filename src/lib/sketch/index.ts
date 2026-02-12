@@ -12,7 +12,6 @@ export type {
     SketchEntityType,
     SketchEntityProperties,
     SketchConstraint,
-    ConstraintKind,
     SketchPlane,
     Point2D,
     SerializedSketch,

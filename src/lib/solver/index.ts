@@ -56,7 +56,6 @@ export type {
     CircleEntity,
     ArcEntity,
     SolverEntity,
-    SketchEntity, // deprecated alias
     ConstraintType,
     SketchConstraint,
     SolveResult,

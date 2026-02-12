@@ -1,10 +1,8 @@
-import React from 'react';
-import * as THREE from 'three';
 import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../../../../types';
 import type { CodeManager } from '../../../../../code-manager';
 import { generateToolId } from '../../../../types';
 import { LineSegment } from '../../../../../sketch-graph/Geometry';
-import { renderLine } from '../helpers';
+import { renderSmoothSplinePreview } from './preview';
 
 export const smoothSplineTool: Tool = {
     metadata: {
@@ -21,11 +19,27 @@ export const smoothSplineTool: Tool = {
     ],
     getPlanarGeometry(primitive: SketchPrimitiveData): any[] {
         if (primitive.points.length < 2) return [];
+        // Approximate Catmull-Rom spline with tessellated line segments
+        const pts = primitive.points.map(p => ({ x: p[0], y: p[1] }));
         const geoms = [];
-        for (let i = 0; i < primitive.points.length - 1; i++) {
-            const p1 = { x: primitive.points[i][0], y: primitive.points[i][1] };
-            const p2 = { x: primitive.points[i + 1][0], y: primitive.points[i + 1][1] };
-            geoms.push(new LineSegment(p1, p2));
+        const segsPerSpan = 8;
+        for (let span = 0; span < pts.length - 1; span++) {
+            const p0 = pts[Math.max(0, span - 1)];
+            const p1 = pts[span];
+            const p2 = pts[Math.min(pts.length - 1, span + 1)];
+            const p3 = pts[Math.min(pts.length - 1, span + 2)];
+            for (let i = 0; i < segsPerSpan; i++) {
+                const t1 = i / segsPerSpan;
+                const t2 = (i + 1) / segsPerSpan;
+                const evalCR = (t: number) => {
+                    const t2v = t * t, t3v = t2v * t;
+                    return {
+                        x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2v + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3v),
+                        y: 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2v + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3v),
+                    };
+                };
+                geoms.push(new LineSegment(evalCR(t1), evalCR(t2)));
+            }
         }
         return geoms;
     },
@@ -61,26 +75,5 @@ export const smoothSplineTool: Tool = {
             },
         };
     },
-    renderPreview(
-        primitive: SketchPrimitive,
-        to3D: (x: number, y: number) => THREE.Vector3,
-        isGhost: boolean = false,
-    ) {
-        const color = isGhost ? '#00ffff' : '#ffff00';
-        const points = primitive.points.map(p => to3D(p[0], p[1]));
-        if (points.length < 2) return null;
-
-        const curve = new THREE.CatmullRomCurve3(points);
-        const splinePoints = curve.getPoints(50);
-
-        return React.createElement('group', { key: primitive.id },
-            renderLine(`${primitive.id}-curve`, splinePoints, color),
-            ...(isGhost ? points.map((p, i) =>
-                React.createElement('mesh', { key: `${primitive.id}-pt-${i}`, position: p },
-                    React.createElement('boxGeometry', { args: [0.3, 0.3, 0.3] }),
-                    React.createElement('meshBasicMaterial', { color: '#ff00ff', depthTest: false })
-                )
-            ) : [])
-        );
-    },
+    renderPreview: renderSmoothSplinePreview,
 };

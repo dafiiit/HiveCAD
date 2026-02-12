@@ -1,10 +1,9 @@
-import React from 'react';
-import * as THREE from 'three';
 import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../../../../types';
 import type { CodeManager } from '../../../../../code-manager';
 import { generateToolId } from '../../../../types';
-import { renderLineLoop } from '../helpers';
+import { LineSegment } from '../../../../../sketch-graph/Geometry';
 import { rectangleTool } from '../rectangle';
+import { renderRoundedRectanglePreview } from './preview';
 
 export const roundedRectangleTool: Tool = {
     metadata: {
@@ -19,9 +18,46 @@ export const roundedRectangleTool: Tool = {
         { key: 'radius', label: 'Corner Radius', type: 'number', default: 3, unit: 'mm', min: 0 }
     ],
     getPlanarGeometry(primitive: SketchPrimitiveData): any[] {
-        // TODO: Generate actual rounded-rectangle edges in the planar graph.
-        // Reuse rectangle geometry for now (ignoring corners for simplicity).
-        return rectangleTool.getPlanarGeometry!(primitive);
+        if (primitive.points.length < 2) return [];
+        const [p1, p2] = primitive.points;
+        const minX = Math.min(p1[0], p2[0]);
+        const maxX = Math.max(p1[0], p2[0]);
+        const minY = Math.min(p1[1], p2[1]);
+        const maxY = Math.max(p1[1], p2[1]);
+        const w = maxX - minX;
+        const h = maxY - minY;
+        const r = Math.min(primitive.properties?.radius || 3, w / 2, h / 2);
+
+        if (r < 0.01) {
+            return rectangleTool.getPlanarGeometry!(primitive);
+        }
+
+        const result: any[] = [];
+        // Straight edges
+        result.push(new LineSegment({ x: minX + r, y: minY }, { x: maxX - r, y: minY })); // bottom
+        result.push(new LineSegment({ x: maxX, y: minY + r }, { x: maxX, y: maxY - r })); // right
+        result.push(new LineSegment({ x: maxX - r, y: maxY }, { x: minX + r, y: maxY })); // top
+        result.push(new LineSegment({ x: minX, y: maxY - r }, { x: minX, y: minY + r })); // left
+
+        // Corner arcs approximated as line segment chains
+        const arcSegs = 8;
+        const corners = [
+            { cx: maxX - r, cy: minY + r, start: -Math.PI / 2 }, // bottom-right
+            { cx: maxX - r, cy: maxY - r, start: 0 },             // top-right
+            { cx: minX + r, cy: maxY - r, start: Math.PI / 2 },   // top-left
+            { cx: minX + r, cy: minY + r, start: Math.PI },       // bottom-left
+        ];
+        for (const { cx, cy, start } of corners) {
+            for (let i = 0; i < arcSegs; i++) {
+                const a1 = start + (i / arcSegs) * (Math.PI / 2);
+                const a2 = start + ((i + 1) / arcSegs) * (Math.PI / 2);
+                result.push(new LineSegment(
+                    { x: cx + r * Math.cos(a1), y: cy + r * Math.sin(a1) },
+                    { x: cx + r * Math.cos(a2), y: cy + r * Math.sin(a2) },
+                ));
+            }
+        }
+        return result;
     },
     createShape(codeManager: CodeManager, primitive: SketchPrimitiveData, plane: string): string {
         const [p1, p2] = primitive.points;
@@ -48,55 +84,5 @@ export const roundedRectangleTool: Tool = {
             properties: { radius: properties?.radius || 3, ...properties }
         };
     },
-    renderPreview(
-        primitive: SketchPrimitive,
-        to3D: (x: number, y: number) => THREE.Vector3,
-        isGhost: boolean = false
-    ) {
-        const color = isGhost ? "#00ffff" : "#ffff00";
-        if (primitive.points.length < 2) return null;
-
-        const [p1, p2] = primitive.points;
-        const minX = Math.min(p1[0], p2[0]);
-        const maxX = Math.max(p1[0], p2[0]);
-        const minY = Math.min(p1[1], p2[1]);
-        const maxY = Math.max(p1[1], p2[1]);
-
-        const w = maxX - minX;
-        const h = maxY - minY;
-        const r = Math.min(primitive.properties?.radius || 3, w / 2, h / 2);
-
-        if (r < 0.01) {
-            return rectangleTool.renderPreview?.(primitive, to3D, isGhost) ?? null;
-        }
-
-        const arcSegments = 8;
-        const pts: [number, number][] = [];
-
-        // Bottom-right corner
-        for (let i = 0; i <= arcSegments; i++) {
-            const a = -Math.PI / 2 + (Math.PI / 2) * (i / arcSegments);
-            pts.push([maxX - r + r * Math.cos(a), minY + r + r * Math.sin(a)]);
-        }
-        // Top-right corner
-        for (let i = 0; i <= arcSegments; i++) {
-            const a = 0 + (Math.PI / 2) * (i / arcSegments);
-            pts.push([maxX - r + r * Math.cos(a), maxY - r + r * Math.sin(a)]);
-        }
-        // Top-left corner
-        for (let i = 0; i <= arcSegments; i++) {
-            const a = Math.PI / 2 + (Math.PI / 2) * (i / arcSegments);
-            pts.push([minX + r + r * Math.cos(a), maxY - r + r * Math.sin(a)]);
-        }
-        // Bottom-left corner
-        for (let i = 0; i <= arcSegments; i++) {
-            const a = Math.PI + (Math.PI / 2) * (i / arcSegments);
-            pts.push([minX + r + r * Math.cos(a), minY + r + r * Math.sin(a)]);
-        }
-        // Close
-        pts.push(pts[0]);
-
-        const displayPoints = pts.map(p => to3D(p[0], p[1]));
-        return renderLineLoop(primitive.id, displayPoints, color);
-    }
+    renderPreview: renderRoundedRectanglePreview,
 };

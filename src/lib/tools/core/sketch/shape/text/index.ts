@@ -1,6 +1,7 @@
 import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../../../../types';
 import type { CodeManager } from '../../../../../code-manager';
 import { generateToolId } from '../../../../types';
+import { renderTextPreview } from './preview';
 
 export const textTool: Tool = {
     metadata: {
@@ -9,7 +10,8 @@ export const textTool: Tool = {
         icon: 'Type',
         category: 'sketch',
         group: 'Shape',
-        description: 'Draw text as a sketch'
+        description: 'Draw text as a sketch (experimental — preview not available)',
+        experimental: true,
     },
     uiProperties: [
         { key: 'text', label: 'Text', type: 'text', default: 'Text' },
@@ -33,5 +35,6 @@ export const textTool: Tool = {
             points: [startPoint],
             properties: { text: properties?.text || 'Text', fontSize: properties?.fontSize || 16, ...properties }
         };
-    }
+    },
+    renderPreview: renderTextPreview,
 };

@@ -112,9 +112,6 @@ export interface SketchEntityProperties {
 
 import type { ConstraintType } from '../solver/types';
 
-/** @deprecated Use ConstraintType from solver module */
-export type ConstraintKind = ConstraintType;
-
 export interface SketchConstraint {
     id: string;
     type: ConstraintType;

@@ -1,18 +1,11 @@
 import type { CodeManager } from '../code-manager';
 import type * as THREE from 'three';
 import type { ReactNode } from 'react';
-import type { CADObject } from '../../store/types';
+import type { CADObject, SketchPrimitive } from '../../store/types';
 
-// Re-export SketchPrimitive type for tools to use
+// Re-export for tooling convenience
+export type { SketchPrimitive };
 export type SketchPlane = 'XY' | 'XZ' | 'YZ';
-
-// Minimal SketchPrimitive type for tools (matches useCADStore.SketchPrimitive)
-export interface SketchPrimitive {
-    id: string;
-    type: string;
-    points: [number, number][];
-    properties?: Record<string, any>;
-}
 
 // Tool categories for organization and filtering
 export type ToolCategory =
@@ -35,6 +28,8 @@ export interface ToolMetadata {
     description?: string;
     shortcut?: string;
     group?: string; // For dropdown grouping (e.g., 'Line' group contains vline, hline)
+    /** Mark as experimental — tool may be missing preview or geometry support */
+    experimental?: boolean;
 }
 
 // UI property definitions for OperationProperties panel

@@ -1,10 +1,8 @@
-import React from 'react';
-import * as THREE from 'three';
 import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../../../../types';
 import type { CodeManager } from '../../../../../code-manager';
 import { generateToolId } from '../../../../types';
 import { LineSegment } from '../../../../../sketch-graph/Geometry';
-import { renderLine } from '../helpers';
+import { renderQuadraticBezierPreview } from './preview';
 
 export const quadraticBezierTool: Tool = {
     metadata: {
@@ -21,9 +19,23 @@ export const quadraticBezierTool: Tool = {
     ],
     getPlanarGeometry(primitive: SketchPrimitiveData): any[] {
         if (primitive.points.length < 2) return [];
-        const p1 = { x: primitive.points[0][0], y: primitive.points[0][1] };
-        const p2 = { x: primitive.points[1][0], y: primitive.points[1][1] };
-        return [new LineSegment(p1, p2)];
+        const start = { x: primitive.points[0][0], y: primitive.points[0][1] };
+        const end = { x: primitive.points[1][0], y: primitive.points[1][1] };
+        const ctrlX = primitive.properties?.ctrlX ?? 5;
+        const ctrlY = primitive.properties?.ctrlY ?? 5;
+        const ctrl = { x: start.x + ctrlX, y: start.y + ctrlY };
+        // Tessellate quadratic Bezier
+        const N = 16;
+        const geoms = [];
+        for (let i = 0; i < N; i++) {
+            const t1 = i / N, t2 = (i + 1) / N;
+            const evalQ = (t: number) => {
+                const mt = 1 - t;
+                return { x: mt * mt * start.x + 2 * mt * t * ctrl.x + t * t * end.x, y: mt * mt * start.y + 2 * mt * t * ctrl.y + t * t * end.y };
+            };
+            geoms.push(new LineSegment(evalQ(t1), evalQ(t2)));
+        }
+        return geoms;
     },
     addToSketch(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void {
         const end = primitive.points[1];
@@ -44,35 +56,5 @@ export const quadraticBezierTool: Tool = {
             properties: { ctrlX: properties?.ctrlX || 5, ctrlY: properties?.ctrlY || 5, ...properties },
         };
     },
-    renderPreview(
-        primitive: SketchPrimitive,
-        to3D: (x: number, y: number) => THREE.Vector3,
-        isGhost: boolean = false,
-    ) {
-        const color = isGhost ? '#00ffff' : '#ffff00';
-        const points = primitive.points.map(p => to3D(p[0], p[1]));
-        if (points.length < 2) return null;
-
-        const start = points[0];
-        const end = points[1];
-
-        const ctrlX = primitive.properties?.ctrlX ?? 5;
-        const ctrlY = primitive.properties?.ctrlY ?? 5;
-        const ctrlPt2D: [number, number] = [
-            primitive.points[0][0] + ctrlX,
-            primitive.points[0][1] + ctrlY,
-        ];
-        const ctrl = to3D(ctrlPt2D[0], ctrlPt2D[1]);
-
-        const curve = new THREE.QuadraticBezierCurve3(start, ctrl, end);
-        const bezierPoints = curve.getPoints(30);
-
-        return React.createElement('group', { key: primitive.id },
-            renderLine(`${primitive.id}-curve`, bezierPoints, color),
-            React.createElement('mesh', { position: ctrl },
-                React.createElement('sphereGeometry', { args: [0.3, 16, 16] }),
-                React.createElement('meshBasicMaterial', { color: '#ff8800', depthTest: false })
-            )
-        );
-    },
+    renderPreview: renderQuadraticBezierPreview,
 };

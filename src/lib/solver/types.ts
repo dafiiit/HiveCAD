@@ -52,9 +52,6 @@ export interface ArcEntity extends BaseEntity {
 /** Union of all solver entity types */
 export type SolverEntity = PointEntity | LineEntity | CircleEntity | ArcEntity;
 
-/** @deprecated Use SolverEntity instead — renamed to avoid collision with sketch module's SketchEntity */
-export type SketchEntity = SolverEntity;
-
 // ==================== Constraint Types ====================
 
 /** All supported constraint types */

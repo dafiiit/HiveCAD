@@ -1,10 +1,8 @@
-import React from 'react';
-import * as THREE from 'three';
 import type { Tool, SketchPrimitiveData, SketchPrimitive } from '../../../../types';
 import type { CodeManager } from '../../../../../code-manager';
 import { generateToolId } from '../../../../types';
 import { LineSegment } from '../../../../../sketch-graph/Geometry';
-import { renderLine } from '../helpers';
+import { renderCubicBezierPreview } from './preview';
 
 export const cubicBezierTool: Tool = {
     metadata: {
@@ -23,9 +21,26 @@ export const cubicBezierTool: Tool = {
     ],
     getPlanarGeometry(primitive: SketchPrimitiveData): any[] {
         if (primitive.points.length < 2) return [];
-        const p1 = { x: primitive.points[0][0], y: primitive.points[0][1] };
-        const p2 = { x: primitive.points[1][0], y: primitive.points[1][1] };
-        return [new LineSegment(p1, p2)];
+        const start = { x: primitive.points[0][0], y: primitive.points[0][1] };
+        const end = { x: primitive.points[1][0], y: primitive.points[1][1] };
+        const props = primitive.properties || {};
+        const c1 = { x: start.x + (props.ctrlStartX || 3), y: start.y + (props.ctrlStartY || 5) };
+        const c2 = { x: end.x - (props.ctrlEndX || 3), y: end.y + (props.ctrlEndY || 5) };
+        // Tessellate cubic Bezier
+        const N = 16;
+        const geoms = [];
+        for (let i = 0; i < N; i++) {
+            const t1 = i / N, t2 = (i + 1) / N;
+            const evalC = (t: number) => {
+                const mt = 1 - t;
+                return {
+                    x: mt * mt * mt * start.x + 3 * mt * mt * t * c1.x + 3 * mt * t * t * c2.x + t * t * t * end.x,
+                    y: mt * mt * mt * start.y + 3 * mt * mt * t * c1.y + 3 * mt * t * t * c2.y + t * t * t * end.y,
+                };
+            };
+            geoms.push(new LineSegment(evalC(t1), evalC(t2)));
+        }
+        return geoms;
     },
     addToSketch(codeManager: CodeManager, sketchName: string, primitive: SketchPrimitiveData): void {
         const start = primitive.points[0];
@@ -55,39 +70,5 @@ export const cubicBezierTool: Tool = {
             },
         };
     },
-    renderPreview(
-        primitive: SketchPrimitive,
-        to3D: (x: number, y: number) => THREE.Vector3,
-        isGhost: boolean = false,
-    ) {
-        const color = isGhost ? '#00ffff' : '#ffff00';
-        if (primitive.points.length < 2) return null;
-
-        const start = to3D(primitive.points[0][0], primitive.points[0][1]);
-        const end = to3D(primitive.points[1][0], primitive.points[1][1]);
-        const props = primitive.properties || {};
-        const ctrl1 = to3D(
-            primitive.points[0][0] + (props.ctrlStartX || 3),
-            primitive.points[0][1] + (props.ctrlStartY || 5),
-        );
-        const ctrl2 = to3D(
-            primitive.points[1][0] - (props.ctrlEndX || 3),
-            primitive.points[1][1] + (props.ctrlEndY || 5),
-        );
-
-        const curve = new THREE.CubicBezierCurve3(start, ctrl1, ctrl2, end);
-        const bezierPoints = curve.getPoints(30);
-
-        return React.createElement('group', { key: primitive.id },
-            renderLine(`${primitive.id}-curve`, bezierPoints, color),
-            React.createElement('mesh', { position: ctrl1 },
-                React.createElement('sphereGeometry', { args: [0.25, 16, 16] }),
-                React.createElement('meshBasicMaterial', { color: '#ff8800', depthTest: false })
-            ),
-            React.createElement('mesh', { position: ctrl2 },
-                React.createElement('sphereGeometry', { args: [0.25, 16, 16] }),
-                React.createElement('meshBasicMaterial', { color: '#ff8800', depthTest: false })
-            )
-        );
-    },
+    renderPreview: renderCubicBezierPreview,
 };

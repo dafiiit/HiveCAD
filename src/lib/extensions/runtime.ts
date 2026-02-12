@@ -9,8 +9,14 @@ interface ExtensionModule {
 
 const localExtensionImporters = import.meta.glob('../../extensions/*/index.ts');
 
+/**
+ * Register an extension: tool goes to ToolRegistry, manifest goes to ExtensionRegistry.
+ * No dual storage — each registry owns its domain.
+ */
 export const registerExtension = (extension: Extension): void => {
+    // Register manifest/metadata only in the extension registry
     extensionRegistry.register(extension);
+    // Register the tool (if any) only in the tool registry
     if (extension.tool) {
         toolRegistry.register(extension.tool);
     }

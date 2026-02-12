@@ -1,5 +1,4 @@
 import type { Extension, ExtensionManifest } from './Extension';
-import type { Tool, ToolCategory } from '../tools/types';
 
 /**
  * Central registry for extension discovery and management.
@@ -118,53 +117,6 @@ export class ExtensionRegistry {
      */
     getManifest(id: string): ExtensionManifest | undefined {
         return this.extensions.get(id)?.manifest;
-    }
-
-    /**
-     * Get the Tool object for an extension (if it provides one)
-     */
-    getTool(id: string): Tool | undefined {
-        return this.extensions.get(id)?.tool;
-    }
-
-    /**
-     * Get all tools from extensions that provide them
-     */
-    getAllTools(): Tool[] {
-        return Array.from(this.extensions.values())
-            .filter(ext => ext.tool !== undefined)
-            .map(ext => ext.tool!);
-    }
-
-    /**
-     * Get tools by category
-     */
-    getToolsByCategory(category: ToolCategory): Tool[] {
-        return Array.from(this.extensions.values())
-            .filter(ext => ext.tool !== undefined && ext.manifest.category === category)
-            .map(ext => ext.tool!);
-    }
-
-    /**
-     * Get default parameters for a tool
-     */
-    getDefaultParams(id: string): Record<string, any> {
-        const tool = this.getTool(id);
-        if (!tool) return {};
-
-        const defaults: Record<string, any> = {};
-        for (const prop of tool.uiProperties) {
-            defaults[prop.key] = prop.default;
-        }
-        return defaults;
-    }
-
-    /**
-     * Get UI properties for a tool
-     */
-    getUIProperties(id: string) {
-        const tool = this.getTool(id);
-        return tool?.uiProperties || [];
     }
 
     /**

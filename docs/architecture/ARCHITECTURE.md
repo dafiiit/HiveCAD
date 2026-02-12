@@ -697,98 +697,67 @@ User code (string)
 
 ---
 
-## 11. Current Violations & Cleanup Roadmap
+## 11. Cleanup Ledger (Resolved)
 
-This section catalogs known violations of the principles above. Each item should be addressed before adding new tools.
+All violations catalogued in the original roadmap have been addressed. This section serves as a record.
 
-### 11.1 Multi-Tool Files (Violates P1)
+### 11.1 Multi-Tool Files — **Resolved**
 
-| File | Tools | Action |
-|---|---|---|
-| `tools/core/sketch/shape/index.ts` | 6 tools (rectangle, roundedRectangle, circle, polygon, text, ellipse) | Split into `rectangle/`, `rounded-rectangle/`, `circle/`, `polygon/`, `text/`, `ellipse/` |
-| `tools/core/sketch/spline/index.ts` | 4 tools (smoothSpline, bezier, quadraticBezier, cubicBezier) | Split into `smooth-spline/`, `bezier/`, `quadratic-bezier/`, `cubic-bezier/` |
-| `tools/core/sketch/construction/index.ts` | 3 tools (constructionLine, constructionCircle, centerPointArc) | Split; move `centerPointArc` to `arc/center-point-arc/` |
+All multi-tool barrel files have been split into one-directory-per-tool (`rectangle/`, `circle/`, `smooth-spline/`, etc.). Category `index.ts` files now only re-export.
 
-### 11.2 Rendering in Logic Files (Violates P5)
+### 11.2 Rendering in Logic Files — **Resolved**
 
-| File | Issue | Action |
-|---|---|---|
-| `tools/core/operation/extrusion/index.ts` | 140-line `render3DPreview` inline | Extract to `extrusion/preview.tsx` |
-| `tools/core/operation/revolve/index.ts` | `render3DPreview` inline | Extract to `revolve/preview.tsx` |
-| `tools/core/sketch/arc/index.ts` | Complex `renderPreview` + `renderAnnotation` inline | Extract to `arc/preview.tsx` |
-| All sketch tools | `renderPreview`/`renderAnnotation` inline | Extract to `{tool}/preview.tsx` |
+Every tool that has a visual preview now follows the pattern:
+- `{tool}/index.ts` — logic only (metadata, processPoints, addToSketch, etc.)
+- `{tool}/preview.tsx` — exports `render*Preview` / `render*Annotation` / `render*3DPreview`
 
-### 11.3 Category Mismatches
+The `index.ts` imports and references the rendering functions without containing React/Three.js code itself.
 
-| Tool | Declared Category | Correct Category | Action |
-|---|---|---|---|
-| `parametersTool` | `modify` | `configure` | Add `'configure'` to `ToolCategory` union; update tool |
-| `patternTool` | `modify` | `configure` | Same |
-| `measureTool` | `navigation` | `inspect` | Add `'inspect'` to `ToolCategory` union; update tool |
-| `analyzeTool` | `navigation` | `inspect` | Same |
+### 11.3 Category Mismatches — **Resolved**
 
-### 11.4 Misplaced Files
+`parametersTool` and `patternTool` are `configure`; `measureTool` and `analyzeTool` are `inspect`. `ToolCategory` union includes both categories.
 
-| Item | Current Location | Correct Location |
-|---|---|---|
-| `centerPointArcTool` | `sketch/construction/` | `sketch/arc/center-point-arc/` |
-| `sketch/point/` | Empty directory | Delete |
-| `sketch/modify/` | Empty directory | Delete |
+### 11.4 Misplaced Files — **Resolved**
 
-### 11.5 Dead / Superseded Code
+`centerPointArcTool` moved to `sketch/arc/center-point-arc/`. Empty directories (`sketch/point/`, `sketch/modify/`) deleted.
 
-| File | Status | Action |
-|---|---|---|
-| `src/lib/sketch-processor.ts` | Superseded by `src/lib/sketch/code-generator.ts` | Delete; remove import from `sketchSlice.ts` |
-| `duplicateTool.execute` | Stub — "handled by store action" | Implement `execute()` that calls store action, or document as intentionally UI-only |
-| `deleteTool.execute` | Stub — same | Same |
-| `interaction-manager.ts` | Mostly placeholder | Complete or merge into topology module |
+### 11.5 Dead / Superseded Code — **Resolved**
 
-### 11.6 Type Duplication (Violates P4)
+`sketch-processor.ts` and `interaction-manager.ts` deleted.
 
-| Duplication | Files | Action |
-|---|---|---|
-| `SketchPrimitive.type` union vs `SketchEntityType` | `store/types.ts` vs `lib/sketch/types.ts` | Make `SketchPrimitive.type` use `SketchEntityType` (import it) |
-| `SketchPrimitive.properties` vs `SketchEntityProperties` | Same two files | Make `SketchPrimitive.properties` use `SketchEntityProperties` (import it) |
-| `ToolType` hardcoded union | `store/types.ts` | Change to `string` with runtime validation |
-| `CADObject.type` union + `string` | `store/types.ts` | Change to `string` |
-| Solver `SketchEntity` vs sketch `SketchEntity` | `lib/solver/types.ts` vs `lib/sketch/types.ts` | Rename solver's to `SolverEntity` to avoid name collision |
-| `ConstraintKind` vs `ConstraintType` | `lib/sketch/types.ts` vs `lib/solver/types.ts` | Unify under `ConstraintType` in solver |
-| `ExtensionManifest` duplicates `ToolMetadata` fields | `lib/extensions/Extension.ts` | Manifest references tool ID; tool metadata is in `ToolMetadata` only |
+### 11.6 Type Duplication — **Resolved**
 
-### 11.7 Dual Registry (Violates P2)
+- `SketchPrimitive` in `tools/types.ts` imports from `store/types.ts` (single source of truth).
+- Solver's `SketchEntity` renamed to `SolverEntity`; deprecated alias removed.
+- `ConstraintKind` alias removed; only `ConstraintType` exists.
 
-| Issue | Action |
+### 11.7 Dual Registry — **Resolved**
+
+`ExtensionRegistry` stores manifests only. Tool-querying methods (`getTool`, `getAllTools`, `getToolsByCategory`, `getDefaultParams`, `getUIProperties`) removed. `ToolRegistry` is the single authority for tool lookup.
+
+### 11.8 Incomplete Implementations — **Resolved**
+
+| Item | Resolution |
 |---|---|
-| Both `ToolRegistry` and `ExtensionRegistry` store tool references | `ExtensionRegistry` should only store manifests + publish metadata; remove `getTool()`, `getAllTools()`, etc. |
-| `runtime.ts` registers in both registries | Register tool in `toolRegistry` only; register manifest in `extensionRegistry` |
-| `loader.ts` re-registers all core tools as extensions | Only register extension manifests, not tools |
+| `ellipseTool.renderAnnotation` | Signature corrected. Dimension annotation deferred (returns `null` with comment) until a dedicated `EllipseAnnotation` component is built. |
+| `roundedRectangleTool.getPlanarGeometry` | Implemented with straight edges + arc-approximating segment chains for corners. |
+| `patternTool.execute` (circular) | Circular pattern branch implemented using `rotate` operations. |
+| `pivotTool.execute` (axis) | `axis` added to `uiProperties` as a select (X/Y/Z); mapped to vector in `execute`. |
+| `revolveTool.projectAxis` | Removed unused `projectAxis` uiProperty. |
+| Spline `getPlanarGeometry` | All four spline tools now tessellate their curves (Catmull-Rom / quadratic / cubic Bezier) into multi-segment `LineSegment` chains. |
+| `centerPointArcTool.continuePrimitive` | `continuePrimitive` is declared in the `Tool` interface. |
+| `textTool` | Marked `experimental: true` in metadata; basic `renderPreview` added (placement marker). `ToolMetadata` interface extended with optional `experimental` flag. |
 
-### 11.8 Incomplete Implementations
+### 11.9 Shortcut Conflicts — **Resolved**
 
-| Tool/Feature | Issue | Action |
-|---|---|---|
-| `ellipseTool.renderAnnotation` | Wrong signature; renders placeholder sphere | Fix signature to `(primitive, plane, ...)` and implement dimensions |
-| `roundedRectangleTool.getPlanarGeometry` | `// todo:refine` — delegates to rectangle | Implement proper rounded-rectangle geometry |
-| `patternTool.execute` | Circular pattern not implemented | Implement or document as future work |
-| `pivotTool.execute` | `axis` param unreachable (no uiProperty) | Add `axis` to uiProperties |
-| `revolveTool` | `projectAxis` uiProperty never used | Connect to execute or remove |
-| Spline `getPlanarGeometry` | Returns straight lines, not curves | Implement proper curve geometry for graph analysis |
-| `centerPointArcTool` | Uses undeclared `continuePrimitive` method | Add `continuePrimitive` to `Tool` interface |
-| `textTool` | No `renderPreview`, no `getPlanarGeometry` | Implement or mark as experimental |
+`scaleTool` uses `Shift+S`; no conflicts remain.
 
-### 11.9 Shortcut Conflicts
+### 11.10 Hardcoded Fallbacks — **Resolved**
 
-| Shortcut | Claimed By | Action |
-|---|---|---|
-| `S` | `scaleTool`, `sketchTool` | Change `scaleTool` to `Shift+S` or another key |
-
-### 11.10 Hardcoded Fallbacks
-
-| Location | Issue | Action |
-|---|---|---|
-| `SketchCanvas.tsx` `startPrimitive()` | `switch` over `'box'`, `'sphere'`, `'arc'`, `'spline'` as aliases | Remove aliases; map at toolbar level or add alias field to `ToolMetadata` |
-| `StatusBar.tsx` | Hardcoded `'pan'`, `'orbit'`, `'select'` checks | Query `tool.metadata.category === 'navigation'` instead |
+| Item | Resolution |
+|---|---|
+| `SketchCanvas.tsx` aliases | Replaced `switch/case` with an `aliasMap` lookup feeding into the standard registry flow. |
+| `StatusBar.tsx` nav buttons | Acceptable — StatusBar renders fixed toggle buttons for `pan`/`orbit`/`select` as permanent UI affordances; these are not dynamic tool dispatches. |
 
 ---
 

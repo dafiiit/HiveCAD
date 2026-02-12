@@ -22,7 +22,7 @@ import {
 import type { Constraint } from '@salusoft89/planegcs';
 import {
     type EntityId,
-    type SketchEntity,
+    type SolverEntity,
     type PointEntity,
     type LineEntity,
     type CircleEntity,
@@ -75,7 +75,7 @@ export class ConstraintSolver {
     private wrapper: GcsWrapper | null = null;
 
     // Local tracking of entities (for fast lookup and to convert back to our types)
-    private entities: Map<EntityId, SketchEntity> = new Map();
+    private entities: Map<EntityId, SolverEntity> = new Map();
     private constraints: Map<string, SketchConstraint> = new Map();
 
     // Track which entities are being used as driving dimensions
@@ -632,7 +632,7 @@ export class ConstraintSolver {
     /**
      * Get all entities.
      */
-    getAllEntities(): SketchEntity[] {
+    getAllEntities(): SolverEntity[] {
         return Array.from(this.entities.values());
     }
 
