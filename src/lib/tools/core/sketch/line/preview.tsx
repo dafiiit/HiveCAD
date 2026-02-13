@@ -12,7 +12,11 @@ export function renderLinePreview(
     const points = primitive.points.map(p => to3D(p[0], p[1]));
     if (points.length < 2) return null;
 
-    return React.createElement('line', { key: primitive.id },
+    // Include point coordinates in key to force re-render when points change
+    const pointsKey = primitive.points.map(p => `${p[0]},${p[1]}`).join('|');
+    const key = `${primitive.id}-${pointsKey}`;
+
+    return React.createElement('line', { key },
         React.createElement('bufferGeometry', null,
             React.createElement('bufferAttribute', {
                 attach: 'attributes-position',

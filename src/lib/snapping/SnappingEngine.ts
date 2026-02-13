@@ -233,82 +233,101 @@ export class SnappingEngine {
      */
     private findVirtualSnap(x: number, y: number): SnapResult | null {
         const { snapDistance } = this.config;
-        let bestResult: SnapResult | null = null;
-        let minDistance = snapDistance;
-
-        // We need to check alignment with ANY significant point (endpoints, centers)
-        // Ideally, we iterate through 'important' snap points.
-        // For performance, let's limit to searching a vertical/horizontal band in the quadtree?
-        // Or just iterate all snap points if count is low (< 1000). 
-        // JavaScript is fast enough for < 1000 points iteration per frame usually.
 
         // Let's filter only high-priority snap types for alignment (endpoints, centers)
         const alignmentCandidates = this.snapPoints.filter(p =>
             p.type === 'endpoint' || p.type === 'center'
         );
 
+        // Track best horizontal and vertical alignments separately
+        let bestH: { point: typeof alignmentCandidates[0]; dy: number } | null = null;
+        let bestV: { point: typeof alignmentCandidates[0]; dx: number } | null = null;
+
         for (const p of alignmentCandidates) {
             // Horizontal Alignment (same Y)
             const dy = Math.abs(p.y - y);
-            if (dy < minDistance) {
-                // We are seemingly aligned horizontally with point p
-                // Result would be (x, p.y) - keeping X free, locking Y
-                // But strictly speaking, a snap *locks* to a point. 
-                // Fusion does "guides". The cursor *snaps* to the guide.
-
-                // We check if X is close to the X of the cursor (it is by definition x=x)
-                // The "snap point" is virtual: (x, p.y)
-
-                const distance = dy;
-                bestResult = {
-                    x: x, // Keep cursor X
-                    y: p.y, // Snap Y
-                    distance: distance,
-                    snapPoint: {
-                        id: `v_horz_${p.id}`,
-                        x: x,
-                        y: p.y,
-                        type: 'horizontal',
-                        priority: SNAP_PRIORITY.horizontal
-                    },
-                    guideLines: [{
-                        from: { x: p.x, y: p.y },
-                        to: { x: x, y: p.y },
-                        type: 'horizontal'
-                    }]
-                };
-                minDistance = distance;
+            if (dy < snapDistance && (!bestH || dy < bestH.dy)) {
+                bestH = { point: p, dy };
             }
-
             // Vertical Alignment (same X)
             const dx = Math.abs(p.x - x);
-            if (dx < minDistance) {
-                const distance = dx;
-                bestResult = {
-                    x: p.x, // Snap X
-                    y: y, // Keep cursor Y
-                    distance: distance,
-                    snapPoint: {
-                        id: `v_vert_${p.id}`,
-                        x: p.x,
-                        y: y,
-                        type: 'vertical',
-                        priority: SNAP_PRIORITY.vertical
-                    },
-                    guideLines: [{
-                        from: { x: p.x, y: p.y },
-                        to: { x: p.x, y: y },
-                        type: 'vertical'
-                    }]
-                };
-                minDistance = distance;
+            if (dx < snapDistance && (!bestV || dx < bestV.dx)) {
+                bestV = { point: p, dx };
             }
         }
 
-        // If we found both, we might be at an intersection of two guides!
-        // For now, return the best single alignment.
-        // A more tracking-heavy approach would be required for "inference" (hover to wake up point).
+        // If both H and V are found. snap to the intersection
+        if (bestH && bestV) {
+            const ix = bestV.point.x;
+            const iy = bestH.point.y;
+            const dist = Math.sqrt((ix - x) ** 2 + (iy - y) ** 2);
+            return {
+                x: ix,
+                y: iy,
+                distance: dist,
+                snapPoint: {
+                    id: `v_intersection_${bestH.point.id}_${bestV.point.id}`,
+                    x: ix,
+                    y: iy,
+                    type: 'intersection',
+                    priority: SNAP_PRIORITY.intersection,
+                },
+                guideLines: [
+                    {
+                        from: { x: bestH.point.x, y: bestH.point.y },
+                        to: { x: ix, y: iy },
+                        type: 'horizontal',
+                    },
+                    {
+                        from: { x: bestV.point.x, y: bestV.point.y },
+                        to: { x: ix, y: iy },
+                        type: 'vertical',
+                    },
+                ],
+            };
+        }
 
-        return bestResult;
+        // Single H or V alignment
+        if (bestH) {
+            return {
+                x: x,
+                y: bestH.point.y,
+                distance: bestH.dy,
+                snapPoint: {
+                    id: `v_horz_${bestH.point.id}`,
+                    x: x,
+                    y: bestH.point.y,
+                    type: 'horizontal',
+                    priority: SNAP_PRIORITY.horizontal,
+                },
+                guideLines: [{
+                    from: { x: bestH.point.x, y: bestH.point.y },
+                    to: { x: x, y: bestH.point.y },
+                    type: 'horizontal',
+                }],
+            };
+        }
+
+        if (bestV) {
+            return {
+                x: bestV.point.x,
+                y: y,
+                distance: bestV.dx,
+                snapPoint: {
+                    id: `v_vert_${bestV.point.id}`,
+                    x: bestV.point.x,
+                    y: y,
+                    type: 'vertical',
+                    priority: SNAP_PRIORITY.vertical,
+                },
+                guideLines: [{
+                    from: { x: bestV.point.x, y: bestV.point.y },
+                    to: { x: bestV.point.x, y: y },
+                    type: 'vertical',
+                }],
+            };
+        }
+
+        return null;
     }
 }

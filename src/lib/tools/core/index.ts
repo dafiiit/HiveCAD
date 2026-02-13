@@ -8,7 +8,7 @@
 import { boxTool, cylinderTool, sphereTool, torusTool, coilTool } from './primitive';
 import { extrusionTool, revolveTool, pivotTool, translatePlaneTool } from './operation';
 import { joinTool, cutTool, intersectTool } from './boolean';
-import { moveTool, rotateTool, scaleTool, duplicateTool, deleteTool } from './modify';
+import { moveTool, rotateTool, scaleTool, duplicateTool, deleteTool, toggleConstructionTool, trimTool, offsetTool, mirrorTool, dimensionTool } from './modify';
 import { parametersTool, patternTool } from './configure';
 import { planeTool, axisTool, pointTool } from './construct';
 import { measureTool, analyzeTool } from './inspect';
@@ -18,8 +18,19 @@ import {
     threePointsArcTool,
     smoothSplineTool, bezierTool, quadraticBezierTool, cubicBezierTool,
     rectangleTool, roundedRectangleTool, circleTool, polygonTool, textTool, ellipseTool,
-    constructionLineTool, constructionCircleTool, centerPointArcTool,
+    constructionLineTool,
+    sketchPointTool,
 } from './sketch';
+import {
+    equalTool, coincidentTool, tangentTool,
+    horizontalTool, verticalTool,
+    parallelTool, perpendicularTool,
+    symmetricTool, midpointTool,
+    concentricTool, collinearTool,
+    fixedTool,
+    pointOnLineTool, pointOnCircleTool,
+    equalRadiusTool,
+} from './constrain';
 
 // Re-export all categories
 export * from './primitive';
@@ -31,6 +42,7 @@ export * from './construct';
 export * from './inspect';
 export * from './navigation';
 export * from './sketch';
+export * from './constrain';
 
 // Export aggregated list of all core tools for easy registration
 export const allCoreTools = [
@@ -41,7 +53,7 @@ export const allCoreTools = [
     // Boolean
     joinTool, cutTool, intersectTool,
     // Modify
-    moveTool, rotateTool, scaleTool, duplicateTool, deleteTool,
+    moveTool, rotateTool, scaleTool, duplicateTool, deleteTool, trimTool, offsetTool, mirrorTool,
     // Configure
     parametersTool, patternTool,
     // Construct
@@ -55,6 +67,17 @@ export const allCoreTools = [
     threePointsArcTool,
     smoothSplineTool, bezierTool, quadraticBezierTool, cubicBezierTool,
     rectangleTool, roundedRectangleTool, circleTool, polygonTool, textTool, ellipseTool,
-    // Construction & specialty arcs
-    constructionLineTool, constructionCircleTool, centerPointArcTool,
+    // Construction & Dimension
+    constructionLineTool, toggleConstructionTool, dimensionTool,
+    // Sketch Point
+    sketchPointTool,
+    // Constraints
+    equalTool, coincidentTool, tangentTool,
+    horizontalTool, verticalTool,
+    parallelTool, perpendicularTool,
+    symmetricTool, midpointTool,
+    concentricTool, collinearTool,
+    fixedTool,
+    pointOnLineTool, pointOnCircleTool,
+    equalRadiusTool,
 ];

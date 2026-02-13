@@ -154,13 +154,16 @@ const isToolImplemented = (id: string): boolean => {
     'plane', 'axis', 'point',            // construct operations
     'measure', 'analyze',                 // inspect operations
     'parameters',                         // configure operations
-    'trim', 'offset', 'mirror',          // sketch modify operations
     'sketchPoint',                        // sketch construct
   ];
   
   if (notImplementedTools.includes(id)) return false;
   
   // Check if tool has any implementation method
+  // Constraint tools are implemented via applyConstraintToSelection, not execute()
+  if (tool.metadata.category === 'constrain') return true;
+  // Modify tools with uiProperties or execute are implemented
+  if (tool.metadata.category === 'modify') return true;
   return !!(tool.execute || tool.create || tool.addToSketch || tool.createShape || tool.processPoints);
 };
 
@@ -829,6 +832,28 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
     measure: handleMeasure,
     import: handleImport,
     export: exportJSON,
+    // Constraint tools — apply constraint to current selection
+    horizontal: () => applyConstraintToSelection('horizontal'),
+    vertical: () => applyConstraintToSelection('vertical'),
+    coincident: () => applyConstraintToSelection('coincident'),
+    tangent: () => applyConstraintToSelection('tangent'),
+    equal: () => applyConstraintToSelection('equal'),
+    parallel: () => applyConstraintToSelection('parallel'),
+    perpendicular: () => applyConstraintToSelection('perpendicular'),
+    fixed: () => applyConstraintToSelection('fixed'),
+    midpoint: () => applyConstraintToSelection('midpoint'),
+    concentric: () => applyConstraintToSelection('concentric'),
+    collinear: () => applyConstraintToSelection('collinear'),
+    symmetric: () => applyConstraintToSelection('symmetric'),
+    pointOnLine: () => applyConstraintToSelection('pointOnLine'),
+    pointOnCircle: () => applyConstraintToSelection('pointOnCircle'),
+    equalRadius: () => applyConstraintToSelection('equalRadius'),
+    // Modify tools — set as active tool (interaction handled by SketchCanvas)
+    trim: () => handleToolSelect('trim' as ToolType),
+    offset: () => handleToolSelect('offset' as ToolType),
+    mirror: () => handleToolSelect('mirror' as ToolType),
+    toggleConstruction: () => handleToolSelect('toggleConstruction' as ToolType),
+    dimension: () => handleToolSelect('dimension' as ToolType),
   };
 
   const activeToolbar = customToolbars.find(t => t.id === toolbarIdForLayout)

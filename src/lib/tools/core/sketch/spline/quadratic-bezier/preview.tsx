@@ -26,8 +26,12 @@ export function renderQuadraticBezierPreview(
     const curve = new THREE.QuadraticBezierCurve3(start, ctrl, end);
     const bezierPoints = curve.getPoints(30);
 
-    return React.createElement('group', { key: primitive.id },
-        renderLine(`${primitive.id}-curve`, bezierPoints, color),
+    // Include point coordinates in key to force re-render when points change
+    const pointsKey = primitive.points.map(p => `${p[0]},${p[1]}`).join('|');
+    const key = `${primitive.id}-${pointsKey}-${ctrlX},${ctrlY}`;
+
+    return React.createElement('group', { key },
+        renderLine(`${primitive.id}-curve-${pointsKey}`, bezierPoints, color),
         React.createElement('mesh', { position: ctrl },
             React.createElement('sphereGeometry', { args: [0.3, 16, 16] }),
             React.createElement('meshBasicMaterial', { color: '#ff8800', depthTest: false })

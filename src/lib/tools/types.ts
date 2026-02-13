@@ -18,7 +18,8 @@ export type ToolCategory =
     | 'boolean'     // Join, Cut, Intersect
     | 'construct'   // Plane, Axis, Point
     | 'configure'   // Parameters, Pattern
-    | 'inspect';    // Measure, Analyze
+    | 'inspect'     // Measure, Analyze
+    | 'constrain';  // Coincident, Horizontal, Parallel, etc.
 
 // Tool metadata for UI rendering
 export interface ToolMetadata {

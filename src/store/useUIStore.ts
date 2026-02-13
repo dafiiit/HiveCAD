@@ -7,8 +7,6 @@ import { ID } from '@/lib/utils/id-generator';
 const generateId = () => ID.generatePrefixed('ui');
 
 const BODY_FOLDER_ID = 'folder-body';
-const SKETCH_LINE_FOLDER_ID = 'folder-sketch-line';
-const SKETCH_ARC_FOLDER_ID = 'folder-sketch-arc';
 const SKETCH_SHAPE_FOLDER_ID = 'folder-sketch-shape';
 const SKETCH_SPLINE_FOLDER_ID = 'folder-sketch-spline';
 let saveTimeout: any = null;
@@ -34,15 +32,15 @@ const INITIAL_TOOLBARS: CustomToolbar[] = [
                 id: generateId(),
                 label: 'CREATE',
                 toolIds: [
-                    `folder:${SKETCH_LINE_FOLDER_ID}`,
-                    `folder:${SKETCH_ARC_FOLDER_ID}`,
+                    'line',
+                    'threePointsArc',
                     `folder:${SKETCH_SHAPE_FOLDER_ID}`,
                     `folder:${SKETCH_SPLINE_FOLDER_ID}`,
                     'sketchPoint'
                 ]
             },
-            { id: generateId(), label: 'MODIFY', toolIds: ['trim', 'offset', 'mirror'] },
-            { id: generateId(), label: 'CONSTRAIN', toolIds: ['equal', 'coincident', 'tangent'] }
+            { id: generateId(), label: 'MODIFY', toolIds: ['trim', 'offset', 'mirror', 'toggleConstruction', 'dimension'] },
+            { id: generateId(), label: 'CONSTRAIN', toolIds: ['horizontal', 'vertical', 'coincident', 'tangent', 'equal', 'parallel', 'perpendicular', 'fixed', 'midpoint', 'concentric', 'collinear', 'symmetric', 'pointOnLine', 'pointOnCircle', 'equalRadius'] }
         ]
     }
 ];
@@ -53,18 +51,6 @@ const INITIAL_FOLDERS: Record<string, ToolbarFolder> = {
         label: 'Body',
         icon: 'Box',
         toolIds: ['box', 'cylinder', 'sphere', 'torus', 'coil']
-    },
-    [SKETCH_LINE_FOLDER_ID]: {
-        id: SKETCH_LINE_FOLDER_ID,
-        label: 'Line',
-        icon: 'Minus',
-        toolIds: ['line', 'constructionLine']
-    },
-    [SKETCH_ARC_FOLDER_ID]: {
-        id: SKETCH_ARC_FOLDER_ID,
-        label: 'Arc',
-        icon: 'ArrowUpRight',
-        toolIds: ['threePointsArc', 'centerPointArc', 'constructionCircle']
     },
     [SKETCH_SHAPE_FOLDER_ID]: {
         id: SKETCH_SHAPE_FOLDER_ID,

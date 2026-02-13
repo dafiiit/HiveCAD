@@ -26,8 +26,13 @@ export function renderCubicBezierPreview(
     const curve = new THREE.CubicBezierCurve3(start, ctrl1, ctrl2, end);
     const bezierPoints = curve.getPoints(30);
 
-    return React.createElement('group', { key: primitive.id },
-        renderLine(`${primitive.id}-curve`, bezierPoints, color),
+    // Include point coordinates in key to force re-render when points change
+    const pointsKey = primitive.points.map(p => `${p[0]},${p[1]}`).join('|');
+    const ctrlKey = `${props.ctrlStartX || 3},${props.ctrlStartY || 5},${props.ctrlEndX || 3},${props.ctrlEndY || 5}`;
+    const key = `${primitive.id}-${pointsKey}-${ctrlKey}`;
+
+    return React.createElement('group', { key },
+        renderLine(`${primitive.id}-curve-${pointsKey}`, bezierPoints, color),
         React.createElement('mesh', { position: ctrl1 },
             React.createElement('sphereGeometry', { args: [0.25, 16, 16] }),
             React.createElement('meshBasicMaterial', { color: '#ff8800', depthTest: false })

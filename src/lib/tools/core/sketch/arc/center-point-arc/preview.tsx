@@ -13,6 +13,9 @@ export function renderCenterPointArcPreview(
     const color = isGhost ? '#00ffff' : '#ffff00';
     if (primitive.points.length < 2) return null;
 
+    // Include point coordinates in key to force re-render when points change
+    const pointsKey = primitive.points.map(p => `${p[0]},${p[1]}`).join('|');
+
     const center = primitive.points[0];
     const startPt = primitive.points[1];
     const radius = Math.hypot(startPt[0] - center[0], startPt[1] - center[1]);
@@ -28,9 +31,9 @@ export function renderCenterPointArcPreview(
                 center[1] + radius * Math.sin(theta),
             ));
         }
-        return React.createElement('group', { key: primitive.id },
-            renderDashedLine(`${primitive.id}-guide`, circlePts, '#444488'),
-            React.createElement('line', { key: `${primitive.id}-rad` },
+        return React.createElement('group', { key: `${primitive.id}-${pointsKey}` },
+            renderDashedLine(`${primitive.id}-guide-${pointsKey}`, circlePts, '#444488'),
+            React.createElement('line', { key: `${primitive.id}-rad-${pointsKey}` },
                 React.createElement('bufferGeometry', null,
                     React.createElement('bufferAttribute', {
                         attach: 'attributes-position',
@@ -64,8 +67,8 @@ export function renderCenterPointArcPreview(
         ));
     }
 
-    return React.createElement('group', { key: primitive.id },
-        React.createElement('line', { key: `${primitive.id}-arc` },
+    return React.createElement('group', { key: `${primitive.id}-${pointsKey}` },
+        React.createElement('line', { key: `${primitive.id}-arc-${pointsKey}` },
             React.createElement('bufferGeometry', null,
                 React.createElement('bufferAttribute', {
                     attach: 'attributes-position',
@@ -77,7 +80,7 @@ export function renderCenterPointArcPreview(
             React.createElement('lineBasicMaterial', { color, linewidth: 3, depthTest: false })
         ),
         // Center point marker
-        React.createElement('mesh', { key: `${primitive.id}-center`, position: to3D(center[0], center[1]) },
+        React.createElement('mesh', { key: `${primitive.id}-center-${pointsKey}`, position: to3D(center[0], center[1]) },
             React.createElement('sphereGeometry', { args: [0.2, 8, 8] }),
             React.createElement('meshBasicMaterial', { color: '#ff00ff', depthTest: false })
         ),

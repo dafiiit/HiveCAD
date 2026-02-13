@@ -65,14 +65,17 @@ export type ConstraintType =
     | 'perpendicular'   // Two lines are perpendicular
     | 'tangent'         // Line tangent to arc/circle, or two arcs tangent
     | 'equal'           // Two lines have equal length, or circles have equal radius
-    | 'symmetric'       // Points symmetric about a line
+    | 'symmetric'       // Points symmetric about a line (P1, P2 symmetric about line L)
     | 'midpoint'        // Point is at midpoint of line
     | 'distance'        // Fixed distance between points or point-to-line
     | 'angle'           // Angle between two lines
     | 'pointOnLine'     // Point lies on a line
     | 'pointOnCircle'   // Point lies on a circle/arc
     | 'radius'          // Radius of circle/arc
-    | 'fixed';          // Entity position is locked
+    | 'fixed'           // Entity position is locked
+    | 'collinear'       // Two lines are collinear (same infinite line)
+    | 'concentric'      // Two circles/arcs share the same center
+    | 'equalRadius';    // Two circles/arcs have equal radii
 
 /** A geometric constraint between entities */
 export interface SketchConstraint {

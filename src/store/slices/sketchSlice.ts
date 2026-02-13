@@ -48,7 +48,8 @@ function primitiveToEntity(prim: any): SketchEntity {
         }
     }
 
-    const isConstruction = prim.type === 'constructionLine' || prim.type === 'constructionCircle';
+    const isConstruction = prim.type === 'constructionLine' || prim.type === 'constructionCircle'
+        || props.construction === true;
 
     return {
         id: prim.id ?? generateEntityId(),
@@ -93,6 +94,11 @@ export const createSketchSlice: StateCreator<
     activeSketchId: null,
     chainMode: true,        // Auto-chain lines by default (like Fusion 360)
     gridSnapSize: 1,         // 1mm grid snap by default
+
+    // Sketch interaction state
+    hoveredPrimitiveId: null,
+    draggingHandle: null,
+    selectedPrimitiveIds: new Set<string>(),
 
     setSketchPlane: (plane) => set({ sketchPlane: plane, sketchStep: 'drawing' }),
     addSketchPoint: (point) => set(state => ({ sketchPoints: [...state.sketchPoints, point] })),
@@ -164,6 +170,9 @@ export const createSketchSlice: StateCreator<
             activeTab: 'SOLID',
             activeTool: 'select',
             activeSketchId: null,
+            hoveredPrimitiveId: null,
+            draggingHandle: null,
+            selectedPrimitiveIds: new Set(),
         });
     },
 
@@ -308,4 +317,54 @@ export const createSketchSlice: StateCreator<
     },
 
     clearSketchInputLocks: () => set({ lockedValues: {} }),
+
+    // ── Sketch Interaction Methods ────────────────────────────
+
+    setHoveredPrimitive: (id) => set({ hoveredPrimitiveId: id }),
+
+    setDraggingHandle: (handle) => set({ draggingHandle: handle }),
+
+    selectPrimitive: (id, multiSelect = false) => {
+        set(state => {
+            const newSelection = new Set(multiSelect ? state.selectedPrimitiveIds : []);
+            if (newSelection.has(id)) {
+                newSelection.delete(id); // Toggle off
+            } else {
+                newSelection.add(id);
+            }
+            return { selectedPrimitiveIds: newSelection };
+        });
+    },
+
+    clearPrimitiveSelection: () => set({ selectedPrimitiveIds: new Set() }),
+
+    updatePrimitivePoint: (primitiveId, pointIndex, newPoint) => {
+        set(state => ({
+            activeSketchPrimitives: state.activeSketchPrimitives.map(prim => {
+                if (prim.id !== primitiveId) return prim;
+                const newPoints = [...prim.points];
+                if (pointIndex >= 0 && pointIndex < newPoints.length) {
+                    newPoints[pointIndex] = newPoint;
+                }
+                return { ...prim, points: newPoints };
+            }),
+        }));
+    },
+
+    togglePrimitiveConstruction: (primitiveId) => {
+        set(state => ({
+            activeSketchPrimitives: state.activeSketchPrimitives.map(prim => {
+                if (prim.id !== primitiveId) return prim;
+                const isConst = prim.type === 'constructionLine' || prim.type === 'constructionCircle'
+                    || prim.properties?.construction === true;
+                return {
+                    ...prim,
+                    properties: {
+                        ...prim.properties,
+                        construction: !isConst,
+                    },
+                };
+            }),
+        }));
+    },
 });

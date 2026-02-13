@@ -10,6 +10,7 @@ import { ConstraintSolver, EntityId, SolverEntity, SketchConstraint, ConstraintT
 import { SnapPoint, SnappingEngine } from '../lib/snapping';
 import { AssemblyState, AssemblyComponent, AssemblyMate, ComponentId, MateId, MateType } from '../lib/assembly/types';
 import type { SketchObject, SerializedSketch, SketchEntityType, SketchEntityProperties } from '../lib/sketch';
+import type { HandlePoint, SketchEntityState } from '../lib/sketch/interaction-types';
 
 /**
  * Tool identifier — any string registered in the ToolRegistry.
@@ -269,6 +270,13 @@ export interface SketchSlice {
     /** Grid snap size (0 = disabled) */
     gridSnapSize: number;
 
+    /** Currently hovered primitive ID */
+    hoveredPrimitiveId: string | null;
+    /** Currently dragging handle info */
+    draggingHandle: HandlePoint | null;
+    /** Set of selected sketch primitive IDs (distinct from solver entity selection) */
+    selectedPrimitiveIds: Set<string>;
+
     addSketchPoint: (point: [number, number]) => void;
     setSketchPlane: (plane: 'XY' | 'XZ' | 'YZ') => void;
     addSketchPrimitive: (primitive: SketchPrimitive) => void;
@@ -287,6 +295,19 @@ export interface SketchSlice {
     deleteSketch: (sketchId: string) => void;
     getSerializedSketches: () => SerializedSketch[];
     loadSketches: (sketches: SerializedSketch[]) => void;
+
+    /** Set hovered primitive ID */
+    setHoveredPrimitive: (id: string | null) => void;
+    /** Set dragging handle */
+    setDraggingHandle: (handle: HandlePoint | null) => void;
+    /** Select a sketch primitive (adds to or replaces selection) */
+    selectPrimitive: (id: string, multiSelect?: boolean) => void;
+    /** Clear sketch primitive selection */
+    clearPrimitiveSelection: () => void;
+    /** Update a committed primitive's point at a given index */
+    updatePrimitivePoint: (primitiveId: string, pointIndex: number, newPoint: [number, number]) => void;
+    /** Toggle construction mode on a primitive */
+    togglePrimitiveConstruction: (primitiveId: string) => void;
 }
 
 export interface SnappingSlice {

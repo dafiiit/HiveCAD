@@ -53,6 +53,8 @@ Every concept has exactly **one type definition** in one file. Other files impor
 | Drawing element | `SketchPrimitive` | `src/store/types.ts` |
 | Sketch entity properties | `SketchPrimitive.properties` | `src/store/types.ts` |
 | Persisted sketch | `SketchObject` | `src/lib/sketch/types.ts` |
+| Handle point | `HandlePoint` | `src/lib/sketch/interaction-types.ts` |
+| Sketch visual state | `SketchEntityState` | `src/lib/sketch/interaction-types.ts` |
 | Tool definition | `Tool` | `src/lib/tools/types.ts` |
 | Tool metadata | `ToolMetadata` | `src/lib/tools/types.ts` |
 | Tool UI property | `ToolUIProperty` | `src/lib/tools/types.ts` |
@@ -195,6 +197,7 @@ src/
 │   │
 │   ├── sketch/                      # Sketch data model + code generation
 │   │   ├── types.ts                 # SketchObject, SketchEntityType, serialization
+│   │   ├── interaction-types.ts     # HandlePoint, SketchEntityState, construction mode
 │   │   ├── code-generator.ts        # SketchObject → Replicad code
 │   │   ├── rendering.ts             # SketchEntity → display points
 │   │   └── index.ts                 # Barrel
@@ -441,6 +444,7 @@ interface Tool {
 | `operation` | `execute()` | Acting on existing geometry (extrude, revolve, fillet) |
 | `boolean` | `execute()` | Combining solids (join, cut, intersect) |
 | `modify` | `execute()` | Transforming objects (move, rotate, scale) |
+| `constrain` | (handled by UI) | Sketch constraints (equal, coincident, tangent) |
 | `construct` | `create()` | Creating reference geometry (plane, axis, point) |
 | `navigation` | (none — handled by UI) | Viewport interaction modes |
 
@@ -619,6 +623,134 @@ SketchObject.entities[]
 ### 7.3 Removing `sketch-processor.ts`
 
 `src/lib/sketch-processor.ts` is the **legacy** code generator that works on `SketchPrimitive` directly. It has been superseded by `src/lib/sketch/code-generator.ts` which works on `SketchEntity`. The legacy file must be deleted and all imports removed.
+
+### 7.4 Sketch Interaction System
+
+The sketch interaction system provides generalized handle points, selection states, construction mode, and snapping visuals for all sketch tools. It lives in `src/lib/sketch/interaction-types.ts` and is consumed by `SketchCanvas`.
+
+#### 7.4.1 Handle Points
+
+Every committed sketch primitive has draggable handle points at its endpoints and control points. The `getHandlePoints(primitive)` function maps a primitive's type and points array into `HandlePoint[]` — a uniform structure that `SketchCanvas` renders as draggable dots.
+
+```
+HandlePoint {
+    id: string          // "primitiveId:pointIndex"
+    pointIndex: number  // Index into primitive.points[]
+    type: 'endpoint' | 'control' | 'center' | 'midpoint'
+    position: [number, number]
+}
+```
+
+**Rules:**
+- Every sketch tool's points are automatically mapped to handles via `getHandlePoints()`. New tools get handles for free.
+- Dragging a handle calls `updatePrimitivePoint(primitiveId, pointIndex, newPoint)` in the store, which updates the primitive in-place. This is a real-time update.
+- Handle visual style (size, color) is determined by `getHandleSize(type)` and `getHandleColor(type, isDragging, isHovered)`.
+- The handle system is tool-agnostic: `SketchCanvas` does not switch on tool type to render handles.
+
+**Type-specific handle mappings:**
+
+| Primitive Type | Handle Points |
+|---|---|
+| `line` | start (endpoint), end (endpoint) |
+| `threePointsArc` | start (endpoint), end (endpoint), via (control), **center (center, pointIndex -1)** |
+| `centerPointArc` | center (center), start (endpoint), end (endpoint) |
+| `circle` | center (center), radius point (endpoint) |
+| `rectangle` | corner1 (endpoint), corner2 (endpoint) |
+| `smoothSpline` | all points (endpoints at ends, control in middle) |
+| `bezier` / `cubicBezier` | start/end (endpoint), control points (control) |
+| `polygon` | center (center), vertex (endpoint) |
+
+**Special handle: `pointIndex: -1`**
+
+For the `threePointsArc` center handle, `pointIndex` is set to `-1`. When dragging, `SketchCanvas` detects this and translates **all** points of the primitive by the drag delta instead of updating a single point. This allows moving the entire arc by dragging its computed center.
+
+**Handle sizing:**
+
+Handle sizes are zoom-independent. `SketchCanvas` computes a `pixelScale` factor each frame from camera distance (perspective: `distance * 0.004`, orthographic: `1/zoom * 2`). All handle radii, snap markers, cursor rings, and hit-test thresholds are multiplied by `pixelScale`.
+
+#### 7.4.2 Entity Visual States
+
+Sketch primitives render with state-based colors and line styles. The `SketchEntityState` type determines the rendering:
+
+```
+default       → #FFFFFF (white), 2px solid
+hovered       → #66B2FF (light blue), 4px solid
+selected      → #3399FF (selection blue), 4px solid
+constrained   → #00CC66 (green), 2px solid
+construction  → #FF9933 (orange), 2px dashed
+drawing       → #FFFF00 (yellow), 3px solid
+```
+
+**Rules:**
+- Selection state is tracked in `SketchSlice.selectedPrimitiveIds: Set<string>`.
+- Hover state is tracked in `SketchSlice.hoveredPrimitiveId: string | null`.
+- Construction flag is read from `primitive.properties.construction` (universal) or legacy types (`constructionLine`, `constructionCircle`).
+- Color/width/dash are derived by `getEntityColor()`, `getEntityLineWidth()`, `getEntityDash()` — never hardcoded in components.
+
+#### 7.4.3 Construction Mode
+
+Any sketch primitive can be toggled to construction mode. Construction entities:
+- Render as **dashed orange lines** instead of solid white
+- Are **excluded from 3D profile generation** (they don't create geometry)
+- Are indicated by `properties.construction: true` on the primitive
+
+**Toggle mechanism:**
+- **Toggle Construction Tool** (`toggleConstruction`) in the MODIFY toolbar section. When activated, clicking any sketch primitive toggles its `properties.construction` flag.
+- Keyboard shortcut: **X** key when primitives are selected
+- `togglePrimitiveConstruction(primitiveId)` in `SketchSlice` flips the flag
+- Legacy types `constructionLine` / `constructionCircle` are still supported for backward compatibility
+- The dedicated construction line and construction circle tools have been removed from the toolbar; all construction conversion is done via the toggle tool.
+
+#### 7.4.4 Line Tool Behavior
+
+The line tool always requires **two clicks** (start point + end point). There is no auto-chaining from the last endpoint. Each line is an independent primitive. The `chainMode` setting has been removed from line tool behavior to ensure explicit placement of both endpoints.
+
+#### 7.4.5 Snapping Visuals
+
+| Snap Type | Visual |
+|---|---|
+| Endpoint | Green filled circle (sphere) |
+| Midpoint | Green triangle |
+| Center | Green diamond (rotated square) |
+| Grid | White ring |
+| Horizontal/Vertical | Blue dot at snap position + **dashed guide line** from cursor to source point |
+| Intersection | Gold diamond at the intersection of an H and V guide line |
+
+Horizontal guide lines render in red (#FF6666), vertical in green (#66FF66). The guide lines use the Drei `<Line>` component with `dashed` prop.
+
+#### 7.4.6 Dimension Tool
+
+The **Dimension Tool** (`dimension`) lives in the MODIFY toolbar section. When activated, clicking sketch primitives or reference geometry creates dimensional annotations.
+
+| Click Target | Dimension Type |
+|---|---|
+| Line | Length dimension (distance between endpoints) |
+| Circle | Radius dimension |
+| Arc (3-point) | Radius dimension (via circumcenter) |
+| Rectangle | Width + height dimensions |
+| Two different entities (click first, then second) | Distance between midpoints |
+| Origin point + entity | Distance from origin to entity midpoint |
+
+Dimensions are stored as local state (`sketchDimensions`) in `SketchCanvas` and rendered as:
+- **Cyan dashed reference lines** between the measured endpoints
+- **Dot markers** at each measurement endpoint
+- **`DimensionBadge`** (from `SketchAnnotations.tsx`) showing the value
+
+Dimensions are per-session visual annotations. They do not persist as solver constraints (the solver constraint system remains available for driving dimensions).
+
+#### 7.4.7 2D Axes & Origin
+
+The sketch canvas renders **clickable 2D reference axes** and an **origin point** at `(0, 0)`:
+
+- **X Axis**: Red horizontal line, extends ±100 units
+- **Y Axis**: Green vertical line, extends ±100 units  
+- **Origin**: White filled dot with gray accent ring
+
+All three are clickable:
+- With the **Select** tool: clicking selects them (highlights)
+- With the **Dimension** tool: clicking an axis makes it the first entity for a distance dimension; clicking the origin sets `(0,0)` as the first point for distance measurement
+
+Axes and origin use synthetic primitive IDs (`__xaxis__`, `__yaxis__`, `__origin__`) so they can integrate with the selection and dimension systems without requiring real primitives in the store.
 
 ---
 
@@ -1052,3 +1184,25 @@ All `SketchEntityType` values must correspond to a registered tool with at least
 | `text` | `text` | `createShape` | Closed Shape |
 | `constructionLine` | `constructionLine` | (none — guide only) | Construction |
 | `constructionCircle` | `constructionCircle` | (none — guide only) | Construction |
+
+## Appendix D: Sketch Toolbar Layout
+
+The SKETCH toolbar has three sections:
+
+**CREATE**: `line`, `threePointsArc`, Shapes folder (`rectangle`, `roundedRectangle`, `circle`, `ellipse`, `polygon`, `text`), Spline folder (`smoothSpline`, `bezier`, `quadraticBezier`, `cubicBezier`), `sketchPoint`
+
+**MODIFY**: `trim`, `offset`, `mirror`, `toggleConstruction`, `dimension`
+
+**CONSTRAIN**: `equal`, `coincident`, `tangent`
+
+Line and Arc are direct toolbar buttons (no folder). Shapes and Splines remain in folders.
+
+### Modify Tool Behaviors
+
+| Tool | Behavior |
+|---|---|
+| `toggleConstruction` | Click any sketch primitive to toggle `properties.construction` flag. Construction entities render as dashed orange lines. |
+| `dimension` | Click a primitive to annotate its dimension. Click two primitives to dimension the distance between them. Works with axes and origin. |
+| `trim` | (placeholder — not yet implemented) |
+| `offset` | (placeholder — not yet implemented) |
+| `mirror` | (placeholder — not yet implemented) |

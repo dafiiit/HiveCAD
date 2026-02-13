@@ -16,6 +16,9 @@ export function renderConstructionLinePreview(
     const points = primitive.points.map(p => to3D(p[0], p[1]));
     if (points.length < 2) return null;
 
+    // Include point coordinates in key to force re-render when points change
+    const pointsKey = primitive.points.map(p => `${p[0]},${p[1]}`).join('|');
+
     // Extend the line beyond both endpoints to make it look infinite
     const dir = new THREE.Vector3().subVectors(points[1], points[0]);
     const len = dir.length();
@@ -25,10 +28,10 @@ export function renderConstructionLinePreview(
     const extStart = points[0].clone().sub(dir.clone().multiplyScalar(ext));
     const extEnd = points[1].clone().add(dir.clone().multiplyScalar(ext));
 
-    return React.createElement('group', { key: primitive.id },
-        renderDashedLine(`${primitive.id}-ext`, [extStart, extEnd], color),
+    return React.createElement('group', { key: `${primitive.id}-${pointsKey}` },
+        renderDashedLine(`${primitive.id}-ext-${pointsKey}`, [extStart, extEnd], color),
         // Highlight the user-defined segment
-        React.createElement('line', { key: `${primitive.id}-seg` },
+        React.createElement('line', { key: `${primitive.id}-seg-${pointsKey}` },
             React.createElement('bufferGeometry', null,
                 React.createElement('bufferAttribute', {
                     attach: 'attributes-position',
@@ -41,7 +44,7 @@ export function renderConstructionLinePreview(
         ),
         // Endpoint markers
         ...points.map((p, i) =>
-            React.createElement('mesh', { key: `${primitive.id}-ep${i}`, position: p },
+            React.createElement('mesh', { key: `${primitive.id}-ep${i}-${pointsKey}`, position: p },
                 React.createElement('sphereGeometry', { args: [0.15, 8, 8] }),
                 React.createElement('meshBasicMaterial', { color: CONSTRUCTION_COLOR, depthTest: false })
             )

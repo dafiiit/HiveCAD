@@ -154,6 +154,7 @@ export const createSolverSlice: StateCreator<
             case 'perpendicular':
             case 'equal':
             case 'angle':
+            case 'collinear':
                 if (ids.length === 2 && entities.every(e => e.type === 'line')) valid = true;
                 else errorMsg = "Select 2 Lines";
                 break;
@@ -190,7 +191,45 @@ export const createSolverSlice: StateCreator<
 
             case 'distance':
                 if (ids.length === 2 && entities.every(e => e.type === 'point')) valid = true;
-                else errorMsg = "Select 2 Points (for distance)";
+                else if (ids.length === 1 && entities[0].type === 'line') valid = true;
+                else errorMsg = "Select 2 Points or 1 Line";
+                break;
+
+            case 'fixed':
+                if (ids.length >= 1) valid = true;
+                else errorMsg = "Select at least 1 entity";
+                break;
+
+            case 'symmetric':
+                // Need 2 points + 1 line
+                if (ids.length === 3) {
+                    const points = entities.filter(e => e.type === 'point');
+                    const lines = entities.filter(e => e.type === 'line');
+                    if (points.length === 2 && lines.length === 1) valid = true;
+                    else errorMsg = "Select 2 Points and 1 Line (axis)";
+                } else {
+                    errorMsg = "Select 2 Points and 1 Line (axis)";
+                }
+                break;
+
+            case 'concentric':
+                if (ids.length === 2) {
+                    const allCircular = entities.every(e => ['circle', 'arc'].includes(e.type));
+                    if (allCircular) valid = true;
+                    else errorMsg = "Select 2 Circles or Arcs";
+                } else {
+                    errorMsg = "Select 2 Circles or Arcs";
+                }
+                break;
+
+            case 'equalRadius':
+                if (ids.length === 2) {
+                    const allCircular = entities.every(e => ['circle', 'arc'].includes(e.type));
+                    if (allCircular) valid = true;
+                    else errorMsg = "Select 2 Circles or Arcs";
+                } else {
+                    errorMsg = "Select 2 Circles or Arcs";
+                }
                 break;
 
             default:
@@ -205,18 +244,56 @@ export const createSolverSlice: StateCreator<
         let value: number | undefined = undefined;
 
         if (type === 'distance') {
-            if (entities[0].type === 'point' && entities[1].type === 'point') {
+            if (entities.length === 2 && entities[0].type === 'point' && entities[1].type === 'point') {
                 const p1 = entities[0] as any;
                 const p2 = entities[1] as any;
                 value = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+            } else if (entities.length === 1 && entities[0].type === 'line') {
+                // Distance = line length
+                const line = entities[0] as any;
+                const p1 = solverInstance.getPoint(line.p1Id);
+                const p2 = solverInstance.getPoint(line.p2Id);
+                if (p1 && p2) {
+                    value = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+                }
             }
         }
 
-        const cid = solverInstance.addConstraint(type, ids, value);
+        if (type === 'angle') {
+            // Default angle = current angle between lines
+            value = value ?? (Math.PI / 2); // 90 degrees default
+        }
+
+        // For symmetric constraint, reorder entityIds: [point1, point2, line]
+        let constraintIds = ids;
+        if (type === 'symmetric') {
+            const points = ids.filter(id => {
+                const e = sketchEntities.get(id);
+                return e?.type === 'point';
+            });
+            const lines = ids.filter(id => {
+                const e = sketchEntities.get(id);
+                return e?.type === 'line';
+            });
+            constraintIds = [...points, ...lines];
+        }
+
+        // For concentric, extract center IDs
+        if (type === 'concentric') {
+            const centerIds = ids.map(id => {
+                const e = sketchEntities.get(id);
+                if (e?.type === 'circle') return (e as any).centerId;
+                if (e?.type === 'arc') return (e as any).centerId;
+                return id;
+            });
+            constraintIds = centerIds;
+        }
+
+        const cid = solverInstance.addConstraint(type, constraintIds, value);
         if (cid) {
             set(state => ({
                 sketchConstraints: [...state.sketchConstraints, {
-                    id: cid, type, entityIds: ids, value, driving: true
+                    id: cid, type, entityIds: constraintIds, value, driving: true
                 }]
             }));
 

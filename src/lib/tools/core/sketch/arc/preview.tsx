@@ -42,10 +42,13 @@ export function renderArcPreview(
     const color = isGhost ? "#00ffff" : "#ffff00";
     const points3D = primitive.points.map(p => to3D(p[0], p[1]));
 
+    // Include point coordinates in key to force re-render when points change
+    const pointsKey = primitive.points.map(p => `${p[0]},${p[1]}`).join('|');
+
     if (points3D.length < 2) return null;
 
     if (primitive.points.length === 2) {
-        return renderLine(`${primitive.id}-chord`, points3D, color);
+        return renderLine(`${primitive.id}-chord-${pointsKey}`, points3D, color);
     }
 
     if (primitive.points.length >= 3) {
@@ -70,7 +73,7 @@ export function renderArcPreview(
             const arcPoints = curve.getPoints(50).map(p => to3D(p.x, p.y));
 
             if (arcPoints.length >= 2) {
-                return renderLine(`${primitive.id}-arc`, arcPoints, color);
+                return renderLine(`${primitive.id}-arc-${pointsKey}`, arcPoints, color);
             }
         }
 
@@ -84,7 +87,7 @@ export function renderArcPreview(
             const y = mt * mt * start.y + 2 * mt * t * via.y + t * t * end.y;
             curvePoints.push(to3D(x, y));
         }
-        return renderLine(`${primitive.id}-bezier`, curvePoints, color);
+        return renderLine(`${primitive.id}-bezier-${pointsKey}`, curvePoints, color);
     }
 
     return null;

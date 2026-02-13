@@ -12,13 +12,16 @@ export function renderSmoothSplinePreview(
     const points = primitive.points.map(p => to3D(p[0], p[1]));
     if (points.length < 2) return null;
 
+    // Include point coordinates in key to force re-render when points change
+    const pointsKey = primitive.points.map(p => `${p[0]},${p[1]}`).join('|');
+
     const curve = new THREE.CatmullRomCurve3(points);
     const splinePoints = curve.getPoints(50);
 
-    return React.createElement('group', { key: primitive.id },
-        renderLine(`${primitive.id}-curve`, splinePoints, color),
+    return React.createElement('group', { key: `${primitive.id}-${pointsKey}` },
+        renderLine(`${primitive.id}-curve-${pointsKey}`, splinePoints, color),
         ...(isGhost ? points.map((p, i) =>
-            React.createElement('mesh', { key: `${primitive.id}-pt-${i}`, position: p },
+            React.createElement('mesh', { key: `${primitive.id}-pt-${i}-${pointsKey}`, position: p },
                 React.createElement('boxGeometry', { args: [0.3, 0.3, 0.3] }),
                 React.createElement('meshBasicMaterial', { color: '#ff00ff', depthTest: false })
             )

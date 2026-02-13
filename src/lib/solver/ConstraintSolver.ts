@@ -418,6 +418,18 @@ export class ConstraintSolver {
                 };
                 break;
 
+            case 'symmetric':
+                // Symmetric: P1, P2 are symmetric about line L
+                // entityIds: [point1Id, point2Id, lineId]
+                gcsConstraint = {
+                    id: constraint.id,
+                    type: 'symmetric_pp_l',
+                    p1_id: entityIds[0],
+                    p2_id: entityIds[1],
+                    l_id: entityIds[2],
+                };
+                break;
+
             case 'midpoint':
                 // Point at midpoint of line
                 gcsConstraint = {
@@ -435,6 +447,74 @@ export class ConstraintSolver {
                     c_id: entityIds[0],
                     value: value || 10,
                     driving: constraint.driving ?? true
+                } as any;
+                break;
+
+            case 'fixed':
+                // Fix a point in place — use p2p_coincident with its own position
+                {
+                    const entity = this.entities.get(entityIds[0]);
+                    if (entity?.type === 'point') {
+                        gcsConstraint = {
+                            id: constraint.id,
+                            type: 'p2p_coincident',
+                            p1_id: entityIds[0],
+                            p2_id: entityIds[0]
+                        };
+                        // Mark the entity as fixed
+                        (entity as any).fixed = true;
+                        this.rebuild();
+                        return; // rebuild already re-pushes
+                    }
+                    return;
+                }
+
+            case 'collinear':
+                // Two lines on the same infinite line: parallel + point on line
+                // entityIds: [line1Id, line2Id]
+                // We decompose into parallel + pointOnLine
+                {
+                    // First: parallel
+                    const parallelConstraint: Constraint = {
+                        id: constraint.id + '_par',
+                        type: 'parallel',
+                        l1_id: entityIds[0],
+                        l2_id: entityIds[1]
+                    } as any;
+                    this.wrapper.push_primitive(parallelConstraint as any);
+
+                    // Then get line2's first point and constrain it on line1
+                    const line2 = this.entities.get(entityIds[1]) as LineEntity | undefined;
+                    if (line2) {
+                        const polConstraint: Constraint = {
+                            id: constraint.id + '_pol',
+                            type: 'point_on_line_pl',
+                            p_id: line2.p1Id,
+                            l_id: entityIds[0]
+                        } as any;
+                        this.wrapper.push_primitive(polConstraint as any);
+                    }
+                    return;
+                }
+
+            case 'concentric':
+                // Two circles/arcs share same center
+                // entityIds: [circle1CenterId, circle2CenterId]
+                gcsConstraint = {
+                    id: constraint.id,
+                    type: 'p2p_coincident',
+                    p1_id: entityIds[0],
+                    p2_id: entityIds[1]
+                };
+                break;
+
+            case 'equalRadius':
+                // Two circles have equal radii
+                gcsConstraint = {
+                    id: constraint.id,
+                    type: 'equal_radius_cc',
+                    c1_id: entityIds[0],
+                    c2_id: entityIds[1]
                 } as any;
                 break;
 

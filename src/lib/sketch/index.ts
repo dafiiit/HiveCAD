@@ -39,3 +39,18 @@ export {
     snapToGridValue,
     type ArcResult,
 } from './rendering';
+
+// Sketch interaction system (handles, selection states, construction)
+export {
+    getHandlePoints,
+    getEntityColor,
+    getEntityDash,
+    getEntityLineWidth,
+    getHandleSize,
+    getHandleColor,
+    isConstructionPrimitive,
+    toggleConstruction,
+    type HandlePoint,
+    type HandlePointType,
+    type SketchEntityState,
+} from './interaction-types';
