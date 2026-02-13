@@ -7,6 +7,10 @@ import { ID } from '@/lib/utils/id-generator';
 const generateId = () => ID.generatePrefixed('ui');
 
 const BODY_FOLDER_ID = 'folder-body';
+const SKETCH_LINE_FOLDER_ID = 'folder-sketch-line';
+const SKETCH_ARC_FOLDER_ID = 'folder-sketch-arc';
+const SKETCH_SHAPE_FOLDER_ID = 'folder-sketch-shape';
+const SKETCH_SPLINE_FOLDER_ID = 'folder-sketch-spline';
 let saveTimeout: any = null;
 
 const INITIAL_TOOLBARS: CustomToolbar[] = [
@@ -21,6 +25,25 @@ const INITIAL_TOOLBARS: CustomToolbar[] = [
             { id: generateId(), label: 'CONSTRUCT', toolIds: ['plane', 'axis', 'point'] },
             { id: generateId(), label: 'INSPECT', toolIds: ['measure', 'analyze'] }
         ]
+    },
+    {
+        id: 'SKETCH',
+        name: 'SKETCH',
+        sections: [
+            {
+                id: generateId(),
+                label: 'CREATE',
+                toolIds: [
+                    `folder:${SKETCH_LINE_FOLDER_ID}`,
+                    `folder:${SKETCH_ARC_FOLDER_ID}`,
+                    `folder:${SKETCH_SHAPE_FOLDER_ID}`,
+                    `folder:${SKETCH_SPLINE_FOLDER_ID}`,
+                    'sketchPoint'
+                ]
+            },
+            { id: generateId(), label: 'MODIFY', toolIds: ['trim', 'offset', 'mirror'] },
+            { id: generateId(), label: 'CONSTRAIN', toolIds: ['equal', 'coincident', 'tangent'] }
+        ]
     }
 ];
 
@@ -30,8 +53,58 @@ const INITIAL_FOLDERS: Record<string, ToolbarFolder> = {
         label: 'Body',
         icon: 'Box',
         toolIds: ['box', 'cylinder', 'sphere', 'torus', 'coil']
+    },
+    [SKETCH_LINE_FOLDER_ID]: {
+        id: SKETCH_LINE_FOLDER_ID,
+        label: 'Line',
+        icon: 'Minus',
+        toolIds: ['line', 'constructionLine']
+    },
+    [SKETCH_ARC_FOLDER_ID]: {
+        id: SKETCH_ARC_FOLDER_ID,
+        label: 'Arc',
+        icon: 'ArrowUpRight',
+        toolIds: ['threePointsArc', 'centerPointArc', 'constructionCircle']
+    },
+    [SKETCH_SHAPE_FOLDER_ID]: {
+        id: SKETCH_SHAPE_FOLDER_ID,
+        label: 'Shape',
+        icon: 'RectangleHorizontal',
+        toolIds: ['rectangle', 'roundedRectangle', 'circle', 'ellipse', 'polygon', 'text']
+    },
+    [SKETCH_SPLINE_FOLDER_ID]: {
+        id: SKETCH_SPLINE_FOLDER_ID,
+        label: 'Spline',
+        icon: 'Spline',
+        toolIds: ['smoothSpline', 'bezier', 'quadraticBezier', 'cubicBezier']
     }
 };
+
+const ensureDefaultSketchToolbar = (toolbars: CustomToolbar[]): CustomToolbar[] => {
+    if (toolbars.some(t => t.id === 'SKETCH')) return toolbars;
+    const sketchToolbar = INITIAL_TOOLBARS.find(t => t.id === 'SKETCH');
+    if (!sketchToolbar) return toolbars;
+    return [...toolbars, sketchToolbar];
+};
+
+const migrateSketchToolbar = (toolbars: CustomToolbar[]): CustomToolbar[] => {
+    // Remove 'sketch' tool from SKETCH toolbar if present
+    return toolbars.map(toolbar => {
+        if (toolbar.id !== 'SKETCH') return toolbar;
+        return {
+            ...toolbar,
+            sections: toolbar.sections.map(section => ({
+                ...section,
+                toolIds: section.toolIds.filter(id => id !== 'sketch')
+            }))
+        };
+    });
+};
+
+const withDefaultFolders = (folders?: Record<string, ToolbarFolder>) => ({
+    ...INITIAL_FOLDERS,
+    ...(folders || {}),
+});
 
 interface UIState {
     customToolbars: CustomToolbar[];
@@ -85,9 +158,11 @@ export const useUIStore = create<UIState>((set, get) => ({
             if (remote?.isConnected()) {
                 const settings = await remote.pullUserSettings();
                 if (settings && settings.customToolbars) {
+                    const toolbars = ensureDefaultSketchToolbar(settings.customToolbars);
+                    const migratedToolbars = migrateSketchToolbar(toolbars);
                     set({
-                        customToolbars: settings.customToolbars,
-                        folders: settings.folders || INITIAL_FOLDERS,
+                        customToolbars: migratedToolbars,
+                        folders: withDefaultFolders(settings.folders),
                         activeToolbarId: settings.activeToolbarId || 'SOLID',
                         isInitialized: true,
                         theme: settings.theme || 'dark',

@@ -62,7 +62,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { IconPicker } from "../ui/IconPicker";
 import { IconResolver } from "../ui/IconResolver";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -109,23 +108,24 @@ interface ToolButtonProps {
   hasDropdown?: boolean;
   onClick?: (e?: React.MouseEvent) => void;
   disabled?: boolean;
+  isImplemented?: boolean;
 }
 
-const ToolButton = React.forwardRef<HTMLButtonElement, ToolButtonProps>(({ icon, label, isActive, hasDropdown, onClick, disabled, ...props }, ref) => (
+const ToolButton = React.forwardRef<HTMLButtonElement, ToolButtonProps>(({ icon, label, isActive, hasDropdown, onClick, disabled, isImplemented = true, ...props }, ref) => (
   <button
     type="button"
     ref={ref}
     onClick={onClick}
     disabled={disabled}
     aria-pressed={isActive}
-    className={`cad-tool-button ${isActive ? 'cad-tool-button-active' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+    className={`cad-tool-button ${isActive ? 'cad-tool-button-active' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${!isImplemented ? 'border-2 border-red-500/50' : ''}`}
     {...props}
   >
-    <div className="cad-tool-button-icon" aria-hidden="true">
+    <div className={`cad-tool-button-icon ${!isImplemented ? 'text-red-500' : ''}`} aria-hidden="true">
       {icon}
     </div>
     <div className="flex items-center gap-0.5 mt-auto">
-      <span className="cad-tool-button-label truncate max-w-[48px] leading-[1.1] text-center">{label}</span>
+      <span className={`cad-tool-button-label truncate max-w-[48px] leading-[1.1] text-center ${!isImplemented ? 'text-red-500' : ''}`}>{label}</span>
       {hasDropdown && <ChevronDown className={`w-2 h-2 opacity-50 shrink-0 transition-transform duration-200 ${isActive ? 'rotate-180' : ''}`} />}
     </div>
   </button>
@@ -135,21 +135,51 @@ ToolButton.displayName = 'ToolButton';
 
 
 /**
+ * Check if a tool has full implementation and is functional.
+ * Tools with placeholder/stub implementations are marked as not implemented.
+ */
+const isToolImplemented = (id: string): boolean => {
+  const tool = toolRegistry.get(id);
+  if (!tool) return false;
+  
+  // Navigation tools (select, pan, orbit, sketch) are implemented through UI state
+  const navigationTools = ['select', 'pan', 'orbit', 'sketch'];
+  if (navigationTools.includes(id)) return true;
+  
+  // Tools with placeholder implementations but not yet functional
+  const notImplementedTools = [
+    'move', 'rotate', 'scale',           // modify operations
+    'join', 'cut', 'intersect',          // boolean operations
+    'pattern',                            // configure operations
+    'plane', 'axis', 'point',            // construct operations
+    'measure', 'analyze',                 // inspect operations
+    'parameters',                         // configure operations
+    'trim', 'offset', 'mirror',          // sketch modify operations
+    'sketchPoint',                        // sketch construct
+  ];
+  
+  if (notImplementedTools.includes(id)) return false;
+  
+  // Check if tool has any implementation method
+  return !!(tool.execute || tool.create || tool.addToSketch || tool.createShape || tool.processPoints);
+};
+
+/**
  * Registry-driven icon resolver - replaces hardcoded idToIconMap
  * Falls back to extension registry for icons
  */
-const getToolIcon = (id: string): React.ReactNode => {
+const getToolIcon = (id: string, isImplemented: boolean = true): React.ReactNode => {
   // Check extension registry for icon
   const ext = toolRegistry.get(id);
   const iconName = ext?.metadata?.icon;
   if (iconName) {
     const IconComponent = (Icons as any)[iconName];
     if (IconComponent) {
-      return <IconComponent className="w-5 h-5" />;
+      return <IconComponent className={`w-5 h-5 ${!isImplemented ? 'opacity-50' : ''}`} />;
     }
   }
   // Fallback: show first 2 chars as text
-  return <span className="text-[10px] font-bold opacity-50">{id.substring(0, 2).toUpperCase()}</span>;
+  return <span className={`text-[10px] font-bold ${!isImplemented ? 'opacity-30' : 'opacity-50'}`}>{id.substring(0, 2).toUpperCase()}</span>;
 };
 
 /**
@@ -184,8 +214,7 @@ interface FolderEditDialogProps {
   onOpenChange: (open: boolean) => void;
   folderId: string;
   initialLabel: string;
-  initialIcon: string;
-  onSave: (label: string, icon: string) => void;
+  onSave: (label: string) => void;
   onDelete: () => void;
   toolIds: string[];
   onRemoveTool: (index: number) => void;
@@ -193,11 +222,12 @@ interface FolderEditDialogProps {
   onReorderTools: (toolIds: string[]) => void;
 }
 
-const SortableFolderTool = ({ id, toolId, label, icon, onRemove }: {
+const SortableFolderTool = ({ id, toolId, label, icon, isPrimary, onRemove }: {
   id: string,
   toolId: string,
   label: string,
   icon: React.ReactNode,
+  isPrimary: boolean,
   onRemove: () => void
 }) => {
   const {
@@ -216,20 +246,27 @@ const SortableFolderTool = ({ id, toolId, label, icon, onRemove }: {
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const implemented = isToolImplemented(toolId);
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center justify-between p-2 rounded-xl bg-background/40 hover:bg-background/60 border border-border/10 transition-colors group"
+      className={`flex items-center justify-between p-2 rounded-xl bg-background/40 hover:bg-background/60 border transition-colors group ${implemented ? 'border-border/10' : 'border-red-500/30'} ${isPrimary ? 'border-b-2 border-b-dashed border-b-primary/40' : ''}`}
     >
       <div className="flex items-center gap-3">
         <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 -ml-1 text-muted-foreground/30 hover:text-muted-foreground transition-colors">
           <GripVertical size={14} />
         </div>
-        <div className="w-8 h-8 rounded-lg bg-muted/30 flex items-center justify-center text-muted-foreground">
+        <div className={`w-8 h-8 rounded-lg bg-muted/30 flex items-center justify-center ${implemented ? 'text-muted-foreground' : 'text-red-500'}`}>
           {icon}
         </div>
-        <span className="text-sm font-medium">{label}</span>
+        <div className="flex items-center gap-2">
+          <span className={`text-sm font-medium ${!implemented ? 'text-red-500' : ''}`}>{label}</span>
+          {isPrimary && (
+            <span className="text-[9px] uppercase tracking-wider font-bold text-primary/80">Main</span>
+          )}
+        </div>
       </div>
       <button
         onClick={onRemove}
@@ -246,7 +283,6 @@ const FolderEditDialog = ({
   onOpenChange,
   folderId,
   initialLabel,
-  initialIcon,
   onSave,
   onDelete,
   toolIds,
@@ -255,15 +291,13 @@ const FolderEditDialog = ({
   onReorderTools,
 }: FolderEditDialogProps) => {
   const [label, setLabel] = React.useState(initialLabel);
-  const [icon, setIcon] = React.useState(initialIcon);
   const [addToolDialogOpen, setAddToolDialogOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (open) {
       setLabel(initialLabel);
-      setIcon(initialIcon);
     }
-  }, [open, initialLabel, initialIcon]);
+  }, [open, initialLabel]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -290,19 +324,12 @@ const FolderEditDialog = ({
             <div className="grid gap-4 p-4 rounded-3xl bg-muted/20 border border-border/20">
               <div className="grid gap-2">
                 <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-1">Folder Identity</label>
-                <div className="flex gap-3">
-                  <div className="flex-1">
-                    <Input
-                      value={label}
-                      onChange={(e) => setLabel(e.target.value)}
-                      placeholder="Folder Name"
-                      className="rounded-xl border-border/50 bg-background/50 focus-visible:ring-primary/20"
-                    />
-                  </div>
-                  <div className="w-14">
-                    <IconPicker value={icon} onChange={setIcon} />
-                  </div>
-                </div>
+                <Input
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  placeholder="Folder Name"
+                  className="rounded-xl border-border/50 bg-background/50 focus-visible:ring-primary/20"
+                />
               </div>
             </div>
 
@@ -340,7 +367,8 @@ const FolderEditDialog = ({
                                 id={toolId}
                                 toolId={toolId}
                                 label={getToolLabel(toolId)}
-                                icon={getToolIcon(toolId)}
+                                icon={getToolIcon(toolId, isToolImplemented(toolId))}
+                                isPrimary={idx === 0}
                                 onRemove={() => onRemoveTool(idx)}
                               />
                             ))}
@@ -373,7 +401,7 @@ const FolderEditDialog = ({
 
             <div className="flex gap-2">
               <Button variant="ghost" onClick={() => onOpenChange(false)} className="rounded-xl h-10 px-6 font-semibold text-xs uppercase tracking-tight">Cancel</Button>
-              <Button onClick={() => { onSave(label, icon); onOpenChange(false); }} className="rounded-xl h-10 px-8 font-bold text-xs uppercase tracking-tight shadow-lg shadow-primary/20">Save Changes</Button>
+              <Button onClick={() => { onSave(label); onOpenChange(false); }} className="rounded-xl h-10 px-8 font-bold text-xs uppercase tracking-tight shadow-lg shadow-primary/20">Save Changes</Button>
             </div>
           </div>
         </DialogContent>
@@ -394,7 +422,6 @@ const FolderEditDialog = ({
 interface ToolFolderButtonProps {
   folderId: string;
   label: string;
-  iconName: string;
   toolIds: string[];
   isEditing: boolean;
   onEdit: () => void;
@@ -407,7 +434,6 @@ interface ToolFolderButtonProps {
 const ToolFolderButton = ({
   folderId,
   label,
-  iconName,
   toolIds,
   isEditing,
   onEdit,
@@ -417,52 +443,96 @@ const ToolFolderButton = ({
   activeTool
 }: ToolFolderButtonProps) => {
   const isActive = toolIds.includes(activeTool || '');
+  const hasImplementedTools = toolIds.some(tid => isToolImplemented(tid));
+  const mainToolId = toolIds[0];
+  const mainToolImplemented = mainToolId ? isToolImplemented(mainToolId) : false;
+
+  const handleMainToolSelect = () => {
+    if (!mainToolId) return;
+    if (idToOnClickMap[mainToolId]) {
+      idToOnClickMap[mainToolId]();
+      return;
+    }
+    onSelectTool(mainToolId);
+  };
+
+  if (isEditing) {
+    return (
+      <div className="relative group/folder flex h-full">
+        <ToolButton
+          icon={mainToolId ? getToolIcon(mainToolId, mainToolImplemented) : <Icons.Package className="w-5 h-5" />}
+          label={label}
+          isActive={isActive}
+          hasDropdown
+          isImplemented={hasImplementedTools}
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="relative group/folder flex h-full">
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <ToolButton
-            icon={<IconResolver name={iconName} className="w-5 h-5" />}
-            label={label}
-            isActive={isActive}
-            hasDropdown
-            onClick={isEditing ? (e) => { e.stopPropagation(); onEdit(); } : undefined}
-          />
-        </DropdownMenuTrigger>
-        {!isEditing && (
-          <DropdownMenuContent align="start" className="w-[200px] p-2 rounded-2xl backdrop-blur-xl bg-background/90 shadow-2xl border-border/40">
-            <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2 px-2">
-              {label}
-            </DropdownMenuLabel>
-            <div className="grid grid-cols-1 gap-1">
-              {toolIds.length > 0 ? (
-                toolIds.map((toolId) => (
-                  <DropdownMenuItem
-                    key={toolId}
-                    onClick={() => {
-                      if (idToOnClickMap[toolId]) {
-                        idToOnClickMap[toolId]();
-                      } else {
-                        onSelectTool(toolId);
-                      }
-                    }}
-                    className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all duration-200 group/item ${activeTool === toolId ? 'bg-primary/20 text-primary' : 'hover:bg-muted/50'}`}
-                  >
-                    <div className={`w-8 h-8 rounded-lg bg-background border border-border/50 flex items-center justify-center transition-colors ${activeTool === toolId ? 'border-primary/30 text-primary' : 'text-muted-foreground group-hover/item:text-primary group-hover/item:border-primary/30'}`}>
-                      {getToolIcon(toolId)}
-                    </div>
-                    <span className="text-xs font-semibold">{getToolLabel(toolId)}</span>
-                  </DropdownMenuItem>
-                ))
-              ) : (
-                <div className="py-8 text-center text-muted-foreground text-[10px] italic">
-                  Empty Folder
-                </div>
-              )}
+        <div className={`cad-tool-button ${isActive ? 'cad-tool-button-active' : ''} ${!hasImplementedTools ? 'border-2 border-red-500/50' : ''}`}>
+          <button
+            type="button"
+            onClick={handleMainToolSelect}
+            disabled={!mainToolId}
+            className="w-full flex-1 flex items-center justify-center rounded-md hover:bg-secondary/60 transition-colors disabled:opacity-50"
+            title={mainToolId ? `Select ${getToolLabel(mainToolId)}` : 'No tools in folder'}
+          >
+            <div className={`cad-tool-button-icon ${!mainToolImplemented && mainToolId ? 'text-red-500' : ''}`}>
+              {mainToolId ? getToolIcon(mainToolId, mainToolImplemented) : <Icons.Package className="w-5 h-5 opacity-40" />}
             </div>
-          </DropdownMenuContent>
-        )}
+          </button>
+
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="w-full mt-auto flex items-center justify-center gap-0.5 pt-1 border-t border-border/30 rounded-b-md hover:bg-secondary/60 transition-colors"
+              title={`Open ${label} folder tools`}
+            >
+              <span className="cad-tool-button-label truncate max-w-[48px] leading-[1.1] text-center">{label}</span>
+              <ChevronDown className={`w-2 h-2 opacity-50 shrink-0 transition-transform duration-200 ${isActive ? 'rotate-180' : ''}`} />
+            </button>
+          </DropdownMenuTrigger>
+        </div>
+
+        <DropdownMenuContent align="start" className="w-[200px] p-2 rounded-2xl backdrop-blur-xl bg-background/90 shadow-2xl border-border/40">
+          <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2 px-2">
+            {label}
+          </DropdownMenuLabel>
+          <div className="grid grid-cols-1 gap-1">
+            {toolIds.length > 0 ? (
+              toolIds.map((toolId) => {
+                const implemented = isToolImplemented(toolId);
+                return (
+                <DropdownMenuItem
+                  key={toolId}
+                  onClick={() => {
+                    if (idToOnClickMap[toolId]) {
+                      idToOnClickMap[toolId]();
+                    } else {
+                      onSelectTool(toolId);
+                    }
+                  }}
+                  className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all duration-200 group/item ${activeTool === toolId ? 'bg-primary/20 text-primary' : 'hover:bg-muted/50'} ${!implemented ? 'border border-red-500/30' : ''}`}
+                >
+                  <div className={`w-8 h-8 rounded-lg bg-background border border-border/50 flex items-center justify-center transition-colors ${activeTool === toolId ? 'border-primary/30 text-primary' : !implemented ? 'border-red-500/50 text-red-500' : 'text-muted-foreground group-hover/item:text-primary group-hover/item:border-primary/30'}`}>
+                    {getToolIcon(toolId, implemented)}
+                  </div>
+                  <span className={`text-xs font-semibold ${!implemented ? 'text-red-500' : ''}`}>{getToolLabel(toolId)}</span>
+                </DropdownMenuItem>
+              );
+              })
+            ) : (
+              <div className="py-8 text-center text-muted-foreground text-[10px] italic">
+                Empty Folder
+              </div>
+            )}
+          </div>
+        </DropdownMenuContent>
       </DropdownMenu>
     </div>
   );
@@ -580,7 +650,6 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
     addFolder,
     deleteFolder,
     renameFolder,
-    updateFolderIcon,
     addToolToFolder,
     removeToolFromFolder,
     reorderToolsInFolder
@@ -597,6 +666,10 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
   const [isFolderEditDialogOpen, setIsFolderEditDialogOpen] = React.useState(false);
   const [editingFolderId, setEditingFolderId] = React.useState<string | null>(null);
   const [editingFolderSectionId, setEditingFolderSectionId] = React.useState<string | null>(null);
+  const hasSketchToolbar = customToolbars.some(t => t.id === 'SKETCH');
+  const toolbarIdForLayout = isSketchMode
+    ? (hasSketchToolbar ? 'SKETCH' : (activeToolbarId || 'SOLID'))
+    : (activeToolbarId || 'SOLID');
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -611,9 +684,9 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    if (!over || active.id === over.id || !activeToolbarId) return;
+    if (!over || active.id === over.id || !toolbarIdForLayout) return;
 
-    const currentToolbar = customToolbars.find(t => t.id === activeToolbarId);
+    const currentToolbar = customToolbars.find(t => t.id === toolbarIdForLayout);
     if (!currentToolbar) return;
 
     // Check if dragging a section
@@ -623,7 +696,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
 
       if (oldIndex !== -1 && newIndex !== -1) {
         const newSections = arrayMove(currentToolbar.sections, oldIndex, newIndex);
-        reorderSections(activeToolbarId, newSections.map(s => s.id));
+        reorderSections(toolbarIdForLayout, newSections.map(s => s.id));
       }
     }
     // Check if dragging a tool
@@ -647,7 +720,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
           const newIndex = section.toolIds.indexOf(overToolId);
           if (oldIndex !== -1 && newIndex !== -1) {
             const newToolIds = arrayMove(section.toolIds, oldIndex, newIndex);
-            reorderToolsInSection(activeToolbarId, sourceSectionId, newToolIds);
+            reorderToolsInSection(toolbarIdForLayout, sourceSectionId, newToolIds);
           }
         }
       } else {
@@ -655,7 +728,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
         const targetSection = currentToolbar.sections.find(s => s.id === targetSectionId);
         if (targetSection) {
           const newIndex = targetSection.toolIds.indexOf(overToolId);
-          moveToolBetweenSections(activeToolbarId, sourceSectionId, targetSectionId, activeToolId, newIndex === -1 ? targetSection.toolIds.length : newIndex);
+          moveToolBetweenSections(toolbarIdForLayout, sourceSectionId, targetSectionId, activeToolId, newIndex === -1 ? targetSection.toolIds.length : newIndex);
         }
       }
     }
@@ -673,11 +746,27 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
   };
 
   const handleToolSelect = (tool: ToolType) => {
+    const implemented = isToolImplemented(tool as string);
+    if (!implemented) {
+      toast.warning(
+        `"${getToolLabel(tool as string)}" is not yet implemented`,
+        {
+          description: "This tool is coming in the foreseeable future. Need it ASAP? You can create your own custom tool implementation — check out the Extension Guide in the Extensions store or see docs/extensions/EXTENSION_GUIDE.md",
+          duration: 6000,
+        }
+      );
+      return;
+    }
     setActiveTool(tool);
     toast(`Tool: ${tool}`);
   };
 
   const handleStartSketch = () => {
+    // Switch to SKETCH toolbar if available
+    const sketchToolbar = customToolbars.find(t => t.id === 'SKETCH');
+    if (sketchToolbar) {
+      setActiveToolbar('SKETCH');
+    }
     enterSketchMode();
     toast.success("Sketch mode activated");
   };
@@ -742,169 +831,9 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
     export: exportJSON,
   };
 
-  if (isSketchMode) {
-    return (
-      <div className="cad-toolbar">
-        {/* Tab bar */}
-        <div className="flex items-center border-b border-toolbar-border px-2">
-          <button
-            onClick={() => setActiveToolbar('SOLID')}
-            className={`cad-toolbar-tab ${activeToolbarId === 'SOLID' ? 'cad-toolbar-tab-active' : ''}`}
-          >
-            SOLID
-          </button>
-          {customToolbars.filter(t => t.id !== 'SOLID').map((toolbar) => (
-            <button
-              key={toolbar.id}
-              onClick={() => setActiveToolbar(toolbar.id)}
-              className={`cad-toolbar-tab ${activeToolbarId === toolbar.id ? 'cad-toolbar-tab-active' : ''}`}
-            >
-              {toolbar.name}
-            </button>
-          ))}
-          <button className="cad-toolbar-tab cad-toolbar-tab-active bg-primary/20 text-primary">
-            SKETCH
-          </button>
-        </div>
-
-        {/* Sketch Tools */}
-        <div className="flex items-center py-1 px-1">
-          <ToolGroup label="CREATE">
-            {(() => {
-              const sketchTools = toolRegistry.getByCategory('sketch');
-              // Group tools
-              const groups: Record<string, typeof sketchTools> = {};
-              const groupOrder: string[] = []; // To preserve order: Line, Arc, Shape, Spline
-
-              sketchTools.forEach(tool => {
-                const group = tool.metadata.group || 'Other';
-                if (!groups[group]) {
-                  groups[group] = [];
-                  groupOrder.push(group);
-                }
-                groups[group].push(tool);
-              });
-
-              // Custom order preference if needed, otherwise use registration/discovery order
-              // "Line", "Arc" are usually first.
-
-              return groupOrder.map(group => {
-                const tools = groups[group];
-                const firstTool = tools[0];
-                const isActive = tools.some(t => activeTool === t.metadata.id);
-
-                if (tools.length === 1) {
-                  return (
-                    <ToolButton
-                      key={firstTool.metadata.id}
-                      icon={getToolIcon(firstTool.metadata.id)}
-                      label={firstTool.metadata.label}
-                      isActive={activeTool === firstTool.metadata.id}
-                      onClick={() => handleToolSelect(firstTool.metadata.id as any)}
-                    />
-                  );
-                }
-
-                return (
-                  <DropdownMenu key={group}>
-                    <DropdownMenuTrigger asChild>
-                      <ToolButton
-                        icon={getToolIcon(firstTool.metadata.id)}
-                        label={group}
-                        isActive={isActive}
-                        hasDropdown
-                        onClick={(e) => {
-                          handleToolSelect(firstTool.metadata.id as any);
-                        }}
-                      />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      {tools.map(tool => (
-                        <DropdownMenuItem key={tool.metadata.id} onClick={() => handleToolSelect(tool.metadata.id as any)}>
-                          {tool.metadata.label}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                );
-              });
-            })()}
-
-            <ToolButton
-              icon={<Crosshair className="w-5 h-5" />}
-              label="Point"
-              isActive={activeTool === 'sketchPoint'}
-              onClick={() => handleToolSelect('sketchPoint')}
-            />
-          </ToolGroup>
-
-          <ToolGroup label="MODIFY">
-            <ToolButton
-              icon={<Scissors className="w-5 h-5" />}
-              label="Trim"
-              isActive={activeTool === 'trim'}
-              onClick={() => handleToolSelect('trim')}
-            />
-            <ToolButton
-              icon={<Move className="w-5 h-5" />}
-              label="Offset"
-              isActive={activeTool === 'offset'}
-              onClick={() => handleToolSelect('offset')}
-            />
-            <ToolButton
-              icon={<Scale className="w-5 h-5" />}
-              label="Mirror"
-              onClick={() => toast("Select objects and then a mirror line")}
-            />
-          </ToolGroup>
-
-          <ToolGroup label="CONSTRAIN">
-            <ToolButton
-              icon={<Equal className="w-5 h-5" />}
-              label="Equal"
-              onClick={() => applyConstraintToSelection('equal')}
-            />
-            <ToolButton
-              icon={<GitCommit className="w-5 h-5" />}
-              label="Point"
-              onClick={() => applyConstraintToSelection('coincident')}
-            />
-            <ToolButton
-              icon={<ArrowUpLeft className="w-5 h-5" />}
-              label="Tanget"
-              onClick={() => applyConstraintToSelection('tangent')}
-            />
-            <ToolButton
-              icon={<MoreHorizontal className="w-5 h-5" />}
-              label="More"
-              hasDropdown
-            />
-          </ToolGroup>
-
-          <div className="ml-auto flex items-center pr-4">
-            <button
-              onClick={onFinishSketch}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md shadow-lg hover:bg-primary/90 transition-all font-bold scale-105"
-            >
-              <CheckCircle2 className="w-5 h-5" />
-              <span>FINISH SKETCH</span>
-            </button>
-          </div>
-        </div>
-
-        <ExtensionStoreDialog
-          open={isExtensionStoreOpen}
-          onOpenChange={setIsExtensionStoreOpen}
-        />
-        <DeveloperFeedbackDialog
-          open={isFeedbackOpen}
-          onOpenChange={setIsFeedbackOpen}
-        />
-      </div>
-    );
-  }
-
-  const activeToolbar = customToolbars.find(t => t.id === activeToolbarId);
+  const activeToolbar = customToolbars.find(t => t.id === toolbarIdForLayout)
+    || customToolbars.find(t => t.id === 'SOLID')
+    || customToolbars[0];
 
   return (
     <div className="cad-toolbar">
@@ -923,13 +852,27 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
               />
             ) : (
               <button
-                onClick={() => isEditingToolbar ? setEditingToolbarName(toolbar.id) : setActiveToolbar(toolbar.id)}
-                className={`cad-toolbar-tab ${activeToolbarId === toolbar.id ? 'cad-toolbar-tab-active' : ''}`}
+                onClick={() => {
+                  if (isEditingToolbar) {
+                    setEditingToolbarName(toolbar.id);
+                  } else {
+                    // If in sketch mode and clicking non-SKETCH tab, finish sketch first
+                    if (isSketchMode && toolbar.id !== 'SKETCH') {
+                      onFinishSketch();
+                    }
+                    setActiveToolbar(toolbar.id);
+                    // Auto-enter sketch mode when clicking SKETCH tab
+                    if (toolbar.id === 'SKETCH' && !isSketchMode) {
+                      enterSketchMode();
+                    }
+                  }
+                }}
+                className={`cad-toolbar-tab ${toolbarIdForLayout === toolbar.id ? 'cad-toolbar-tab-active' : ''}`}
               >
                 {toolbar.name}
               </button>
             )}
-            {isEditingToolbar && activeToolbarId === toolbar.id && toolbar.id !== 'SOLID' && (
+            {isEditingToolbar && toolbarIdForLayout === toolbar.id && toolbar.id !== 'SOLID' && toolbar.id !== 'SKETCH' && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -996,7 +939,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
                         <Input
                           className="h-4 w-20 text-[8px] py-0 px-1 uppercase font-bold text-center bg-transparent border-none"
                           value={section.label}
-                          onChange={(e) => renameSection(activeToolbarId!, section.id, e.target.value)}
+                          onChange={(e) => renameSection(toolbarIdForLayout!, section.id, e.target.value)}
                           onBlur={() => setEditingSectionName(null)}
                           onKeyDown={(e) => e.key === 'Enter' && setEditingSectionName(null)}
                           autoFocus
@@ -1028,7 +971,6 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
                             <ToolFolderButton
                               folderId={folderId}
                               label={folder.label}
-                              iconName={folder.icon}
                               toolIds={folder.toolIds}
                               isEditing={isEditingToolbar}
                               onEdit={() => {
@@ -1036,7 +978,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
                                 setEditingFolderSectionId(section.id);
                                 setIsFolderEditDialogOpen(true);
                               }}
-                              onDelete={() => deleteFolder(activeToolbarId!, section.id, folderId)}
+                              onDelete={() => deleteFolder(toolbarIdForLayout!, section.id, folderId)}
                               onSelectTool={(tid) => handleToolSelect(tid as ToolType)}
                               idToOnClickMap={idToOnClickMap}
                               activeTool={activeTool}
@@ -1048,9 +990,10 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
                       return (
                         <SortableTool key={`${toolId}-${idx}`} id={`tool-${toolId}:${section.id}`} disabled={!isEditingToolbar}>
                           <ToolButton
-                            icon={getToolIcon(toolId)}
+                            icon={getToolIcon(toolId, isToolImplemented(toolId))}
                             label={getToolLabel(toolId)}
                             isActive={activeTool === toolId}
+                            isImplemented={isToolImplemented(toolId)}
                             onClick={() => {
                               if (idToOnClickMap[toolId]) {
                                 idToOnClickMap[toolId]();
@@ -1063,7 +1006,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                removeToolFromSection(activeToolbarId!, section.id, idx);
+                                removeToolFromSection(toolbarIdForLayout!, section.id, idx);
                               }}
                               className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover/tool:opacity-100 transition-opacity z-10"
                             >
@@ -1088,7 +1031,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
                         <Plus className="w-4 h-4 text-muted-foreground" />
                       </button>
                       <button
-                        onClick={() => addFolder(activeToolbarId!, section.id)}
+                        onClick={() => addFolder(toolbarIdForLayout!, section.id)}
                         className="w-8 h-8 rounded-lg border-2 border-dashed border-muted hover:border-primary transition-colors flex items-center justify-center"
                         title="Add Folder"
                       >
@@ -1099,7 +1042,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
                 </ToolGroup>
                 {isEditingToolbar && (
                   <button
-                    onClick={() => deleteSection(activeToolbarId!, section.id)}
+                    onClick={() => deleteSection(toolbarIdForLayout!, section.id)}
                     className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-muted border border-border flex items-center justify-center opacity-0 group-hover/section:opacity-100 transition-opacity hover:bg-destructive hover:text-white z-20"
                   >
                     <X className="w-2.5 h-2.5" />
@@ -1110,9 +1053,9 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
           </SortableContext>
         </DndContext>
 
-        {isEditingToolbar && activeToolbarId && (
+        {isEditingToolbar && toolbarIdForLayout && (
           <button
-            onClick={() => addSection(activeToolbarId)}
+            onClick={() => addSection(toolbarIdForLayout)}
             className="flex flex-col items-center justify-center h-12 px-4 border-2 border-dashed border-muted rounded-md hover:border-primary hover:bg-muted/30 transition-all text-muted-foreground hover:text-primary gap-1 ml-2"
           >
             <Plus className="w-4 h-4" />
@@ -1120,7 +1063,9 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
           </button>
         )}
 
-        <div className="ml-auto flex items-center pr-4">
+        <div className="ml-auto flex items-center pr-4 gap-2">
+          {!isSketchMode && (
+            <>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1154,6 +1099,8 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+            </>
+          )}
         </div>
       </div>
 
@@ -1169,8 +1116,8 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
         open={addToolDialogOpen}
         onOpenChange={setAddToolDialogOpen}
         onSelectTool={(toolId) => {
-          if (activeToolbarId && activeTargetSection) {
-            addToolToSection(activeToolbarId, activeTargetSection, toolId);
+          if (toolbarIdForLayout && activeTargetSection) {
+            addToolToSection(toolbarIdForLayout, activeTargetSection, toolId);
           }
         }}
       />
@@ -1180,15 +1127,13 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
           onOpenChange={setIsFolderEditDialogOpen}
           folderId={editingFolderId}
           initialLabel={folders[editingFolderId].label}
-          initialIcon={folders[editingFolderId].icon}
           toolIds={folders[editingFolderId].toolIds}
-          onSave={(label, icon) => {
+          onSave={(label) => {
             renameFolder(editingFolderId, label);
-            updateFolderIcon(editingFolderId, icon);
           }}
           onDelete={() => {
-            if (activeToolbarId && editingFolderSectionId) {
-              deleteFolder(activeToolbarId, editingFolderSectionId, editingFolderId);
+            if (toolbarIdForLayout && editingFolderSectionId) {
+              deleteFolder(toolbarIdForLayout, editingFolderSectionId, editingFolderId);
             }
           }}
           onAddTool={(tid) => addToolToFolder(editingFolderId, tid)}

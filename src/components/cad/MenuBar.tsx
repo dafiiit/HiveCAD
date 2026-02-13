@@ -180,29 +180,6 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
           </button>
 
           <button
-            className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover group relative"
-            onClick={handleManualSave}
-            title={!user?.pat ? "GitHub Sync Disabled - Click to link" : (isSaving ? "Saving..." : (pendingSave ? "Save Pending..." : (isSaved ? "Saved to Cloud" : "Unsaved Changes - Click to sync")))}
-          >
-            <RefreshCw className={cn(
-              "w-4 h-4 transition-all",
-              !isSaved && user?.pat && !isSaving && 'text-yellow-500 animate-pulse',
-              isSaving && 'animate-spin text-primary',
-              !user?.pat && 'text-muted-foreground/50'
-            )} />
-            {!user?.pat && (
-              <div className="absolute -top-1 -right-1">
-                <AlertCircle className="w-3 h-3 text-red-500 animate-pulse" />
-              </div>
-            )}
-            {lastSaveError && (
-              <div className="absolute -top-1 -right-1">
-                <AlertCircle className="w-3 h-3 text-red-500" />
-              </div>
-            )}
-          </button>
-
-          <button
             className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover"
             onClick={handleOpen}
             title="File Management"
@@ -248,7 +225,7 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
                 <div
                   onClick={() => switchToTab(tab.id)}
                   className={cn(
-                    "group relative flex items-center justify-center gap-2 px-4 py-1.5 min-w-[180px] h-[34px] text-[13px] cursor-pointer select-none transition-all",
+                    "group relative flex items-center justify-center gap-2 px-4 py-1.5 min-w-[120px] max-w-[240px] h-[34px] text-[13px] cursor-pointer select-none transition-all",
                     isActive
                       ? "bg-toolbar text-foreground rounded-t-2xl rounded-b-xl z-20 translate-y-[2px]"
                       : "bg-transparent text-muted-foreground hover:bg-white/5 hover:text-foreground rounded-2xl"
@@ -264,7 +241,7 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
 
                   {!isEditingName || !isActive ? (
                     <span
-                      className="truncate font-medium flex-1 text-center"
+                      className="truncate font-medium flex-1 text-center pr-7"
                       onClick={(e) => {
                         e.stopPropagation();
                         if (isActive) {
@@ -326,6 +303,29 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
             title="Search (Cmd+K)"
           >
             <Search className="w-4 h-4" />
+          </button>
+
+          <button
+            className="p-1.5 hover:bg-secondary rounded transition-colors text-icon-default hover:text-icon-hover group relative"
+            onClick={handleManualSave}
+            title={!user?.pat ? "GitHub Sync Disabled - Click to link" : (isSaving ? "Saving..." : (pendingSave ? "Save Pending..." : (isSaved ? "Saved to Cloud" : "Unsaved Changes - Click to sync")))}
+          >
+            <RefreshCw className={cn(
+              "w-4 h-4 transition-all",
+              !isSaved && user?.pat && !isSaving && 'text-yellow-500 animate-pulse',
+              isSaving && 'animate-spin text-primary',
+              !user?.pat && 'text-muted-foreground/50'
+            )} />
+            {!user?.pat && (
+              <div className="absolute -top-1 -right-1">
+                <AlertCircle className="w-3 h-3 text-red-500 animate-pulse" />
+              </div>
+            )}
+            {lastSaveError && (
+              <div className="absolute -top-1 -right-1">
+                <AlertCircle className="w-3 h-3 text-red-500" />
+              </div>
+            )}
           </button>
 
           <button

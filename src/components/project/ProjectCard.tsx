@@ -100,19 +100,29 @@ export function ProjectCard({
                     })}
                 </div>
 
-                <div className={cn(
-                    "absolute top-2 right-2 flex gap-1 transition-opacity",
-                    isStarred || showMenu ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                )}>
+                {/* Action buttons - star and menu */}
+                <div className="absolute top-2 right-2 flex gap-1">
                     <button
                         onClick={(e) => { e.stopPropagation(); onToggleStar(e, project.name); }}
-                        className={`p-1.5 rounded-md border backdrop-blur-md transition-all ${isStarred ? 'bg-primary text-primary-foreground border-primary/70' : 'bg-card/90 border-border/70 text-muted-foreground hover:bg-card'}`}
+                        className={cn(
+                            "p-1.5 rounded-md transition-all",
+                            isStarred
+                                ? "text-primary"
+                                : cn(
+                                    "border backdrop-blur-md bg-card/90 border-border/70 text-muted-foreground hover:bg-card",
+                                    showMenu ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                                )
+                        )}
                     >
-                        <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-current' : ''}`} />
+                        <Star className={cn("w-3.5 h-3.5", isStarred && "fill-current")} />
                     </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); onAction(); }}
-                        className={`p-1.5 rounded-md border backdrop-blur-md transition-all ${showMenu ? 'bg-primary text-primary-foreground border-primary/70' : 'bg-card/90 border-border/70 text-muted-foreground hover:bg-card'}`}
+                        className={cn(
+                            "p-1.5 rounded-md border backdrop-blur-md transition-all",
+                            showMenu ? 'bg-primary text-primary-foreground border-primary/70' : 'bg-card/90 border-border/70 text-muted-foreground hover:bg-card',
+                            showMenu ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                        )}
                     >
                         <MoreVertical className="w-3.5 h-3.5" />
                     </button>
