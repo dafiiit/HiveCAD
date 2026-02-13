@@ -2,8 +2,6 @@
 
 HiveCAD is a modular CAD suite built with React, Three.js, Replicad, and Tauri. It supports a desktop application via Tauri and a web build via Vite.
 
-This README is the single source of documentation for the repository.
-
 ## Table of Contents
 
 - Overview
