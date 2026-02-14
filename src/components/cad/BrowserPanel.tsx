@@ -14,10 +14,20 @@ import {
   FolderClosed,
   FolderOpen,
   Trash2,
-  Edit3
+  Edit3,
+  Link2,
+  ArrowRight,
+  ArrowDown,
+  Locate,
+  Route,
+  Equal,
+  Lock,
+  FlipHorizontal,
 } from "lucide-react";
 import { useCADStore } from "@/hooks/useCADStore";
 import { toast } from "sonner";
+import { CONSTRAINT_META } from "@/lib/solver/constraint-meta";
+import type { SketchConstraint, EntityId, SolverEntity } from "@/lib/solver";
 
 interface TreeItemProps {
   icon: React.ReactNode;
@@ -127,6 +137,10 @@ const BrowserPanel = () => {
     sketches,
     editSketch,
     deleteSketch: deleteSketchPersistent,
+    // Constraint data
+    sketchConstraints,
+    sketchEntities,
+    removeSolverConstraint,
   } = useCADStore();
 
   const planeLabels: Record<string, string> = {
@@ -371,6 +385,56 @@ const BrowserPanel = () => {
               />
             ))}
           </TreeItem>
+
+          {/* Constraints (visible during sketch mode when constraints exist) */}
+          {isSketchMode && sketchConstraints.length > 0 && (
+            <TreeItem
+              icon={expandedItems.has("constraints") ? <FolderOpen className="w-3.5 h-3.5" /> : <FolderClosed className="w-3.5 h-3.5" />}
+              label={`Constraints (${sketchConstraints.length})`}
+              level={1}
+              isExpanded={expandedItems.has("constraints")}
+              hasChildren
+              onToggleExpand={() => toggleExpand("constraints")}
+            >
+              {sketchConstraints.map((c: SketchConstraint) => {
+                const meta = CONSTRAINT_META[c.type];
+                const entityLabels = c.entityIds.map((eid: EntityId) => {
+                  const ent = sketchEntities.get(eid);
+                  if (!ent) return eid;
+                  return `${ent.type}`;
+                });
+                const summary = `${meta?.label ?? c.type}(${entityLabels.join(', ')})${c.value != null ? ` = ${Math.round(c.value * 100) / 100}` : ''}`;
+                const constraintIcon = (() => {
+                  switch (c.type) {
+                    case 'coincident': return <Locate className="w-3.5 h-3.5" />;
+                    case 'horizontal': return <ArrowRight className="w-3.5 h-3.5" />;
+                    case 'vertical': return <ArrowDown className="w-3.5 h-3.5" />;
+                    case 'tangent': return <Route className="w-3.5 h-3.5" />;
+                    case 'equal': return <Equal className="w-3.5 h-3.5" />;
+                    case 'symmetric': return <FlipHorizontal className="w-3.5 h-3.5" />;
+                    case 'fixed': return <Lock className="w-3.5 h-3.5" />;
+                    default: return <Link2 className="w-3.5 h-3.5" />;
+                  }
+                })();
+
+                return (
+                  <TreeItem
+                    key={c.id}
+                    icon={constraintIcon}
+                    label={summary}
+                    level={2}
+                    onClick={() => {
+                      toast(`${meta?.label}: ${c.entityIds.join(' ↔ ')}${c.driving ? ' (driving)' : ''}`);
+                    }}
+                    onDelete={() => {
+                      removeSolverConstraint(c.id);
+                      toast(`Removed: ${meta?.label ?? c.type}`);
+                    }}
+                  />
+                );
+              })}
+            </TreeItem>
+          )}
 
           {/* Bodies - dynamically populated */}
           <TreeItem

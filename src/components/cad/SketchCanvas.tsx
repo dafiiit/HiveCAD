@@ -35,6 +35,10 @@ const SketchCanvas = () => {
         solverInstance, sketchEntities, sketchConstraints, draggingEntityId,
         initializeSolver, setDrivingPoint, solveConstraints, setDraggingEntity,
         addSolverLineMacro, addSolverRectangleMacro, addSolverCircleMacro,
+        addSolverPoint, addSolverLine, addSolverConstraint,
+        // Constraint interaction state
+        activeConstraintType, constraintSelectionIds, constraintSelectionPrompt,
+        addEntityToConstraintSelection, cancelConstraintMode, autoApplyCoincident,
         // Snapping state and actions
         activeSnapPoint, snappingEnabled, snappingEngine,
         setSnapPoint, setSnappingEngine,
@@ -140,8 +144,13 @@ const SketchCanvas = () => {
     // Keyboard shortcuts for sketch mode
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            // Escape: cancel current drawing / exit chain
+            // Escape: cancel constraint mode, then cancel current drawing
             if (e.key === 'Escape') {
+                if (activeConstraintType) {
+                    cancelConstraintMode();
+                    e.preventDefault();
+                    return;
+                }
                 if (currentDrawingPrimitive) {
                     updateCurrentDrawingPrimitive(null);
                     e.preventDefault();
@@ -154,12 +163,10 @@ const SketchCanvas = () => {
                     e.preventDefault();
                 }
             }
-            // Delete/Backspace: delete selected primitives  
-            // (This is handled globally, but we can add sketch-specific behavior here if needed)
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [currentDrawingPrimitive, updateCurrentDrawingPrimitive, selectedPrimitiveIds, togglePrimitiveConstruction]);
+    }, [currentDrawingPrimitive, updateCurrentDrawingPrimitive, selectedPrimitiveIds, togglePrimitiveConstruction, activeConstraintType, cancelConstraintMode]);
 
     const annotationCtx = useMemo(() => sketchPlane ? createAnnotationContext(sketchPlane) : null, [sketchPlane]);
 
@@ -894,21 +901,81 @@ const SketchCanvas = () => {
                         if (storeApi) {
                             const state = storeApi.getState();
                             const newPrimitives: SketchPrimitive[] = [];
+
+                            // Find the axis line's solver entity ID for symmetric constraints
+                            const axisLineEntityId = axisPrim.properties?.solverId as string | undefined;
+                            // Also search sketchEntities for a line entity matching this axis
+                            let axisLineSolverId: string | undefined = axisLineEntityId;
+                            if (!axisLineSolverId) {
+                                // Try to find a solver line entity whose points match the axis primitive's points
+                                for (const [eid, ent] of sketchEntities) {
+                                    if (ent.type === 'line') {
+                                        axisLineSolverId = eid;
+                                        break;
+                                    }
+                                }
+                            }
+
                             for (const selId of selectedPrimitiveIds) {
                                 const selPrim = state.activeSketchPrimitives.find(p => p.id === selId);
                                 if (selPrim) {
                                     const mirroredPoints = reflectPrimitive(selPrim.points, lineP1, lineP2);
+                                    const mirroredId = Math.random().toString(36).slice(2);
+
+                                    // Register mirrored points with solver and collect point pairs
+                                    const originalPointEntityIds: string[] = [];
+                                    const mirroredPointEntityIds: string[] = [];
+
+                                    // Get original primitive's solver point IDs
+                                    const origSolverIds = (selPrim.properties?.solverEntityIds as string[] | undefined) || [];
+
+                                    for (let i = 0; i < mirroredPoints.length; i++) {
+                                        const mp = mirroredPoints[i];
+                                        const mirrorPointId = addSolverPoint(mp[0], mp[1]);
+                                        if (mirrorPointId) {
+                                            mirroredPointEntityIds.push(mirrorPointId);
+                                        }
+                                        if (origSolverIds[i]) {
+                                            originalPointEntityIds.push(origSolverIds[i]);
+                                        }
+                                    }
+
+                                    // Create solver line entity if the mirrored primitive is a line
+                                    let mirroredLineSolverId: string | undefined;
+                                    if (mirroredPointEntityIds.length >= 2 && (selPrim.type === 'line' || selPrim.type === 'constructionLine')) {
+                                        mirroredLineSolverId = addSolverLine(mirroredPointEntityIds[0], mirroredPointEntityIds[1]) ?? undefined;
+                                    }
+
                                     newPrimitives.push({
                                         ...selPrim,
-                                        id: Math.random().toString(36).slice(2),
+                                        id: mirroredId,
                                         points: mirroredPoints,
-                                        properties: { ...selPrim.properties },
+                                        properties: {
+                                            ...selPrim.properties,
+                                            solverId: mirroredLineSolverId ?? mirroredPointEntityIds[0],
+                                            solverEntityIds: mirroredPointEntityIds,
+                                            mirroredFrom: selId,
+                                        },
                                     });
+
+                                    // Apply symmetric constraints: each original point ↔ mirrored point across axis
+                                    if (axisLineSolverId) {
+                                        const pairCount = Math.min(originalPointEntityIds.length, mirroredPointEntityIds.length);
+                                        for (let i = 0; i < pairCount; i++) {
+                                            addSolverConstraint(
+                                                'symmetric',
+                                                [originalPointEntityIds[i], mirroredPointEntityIds[i], axisLineSolverId],
+                                            );
+                                        }
+                                    }
                                 }
                             }
                             storeApi.setState({
                                 activeSketchPrimitives: [...state.activeSketchPrimitives, ...newPrimitives],
                             });
+                            // Solve after adding constraints
+                            solveConstraints();
+                            toast.success(`Mirrored ${newPrimitives.length} element(s) with symmetric constraints`);
                         }
                         clearPrimitiveSelection();
                     }
@@ -936,6 +1003,13 @@ const SketchCanvas = () => {
 
         // IMPROVED: Hit test for all entity types (solver entities)
         const hitId = hitTest(p2d);
+
+        // ─── Constraint-first mode: clicking entities to satisfy constraint ───
+        if (activeConstraintType && hitId && sketchEntities.has(hitId)) {
+            addEntityToConstraintSelection(hitId);
+            return;
+        }
+
         if (hitId && (activeTool === 'select' || activeTool === 'dimension' || selectedIds.has(hitId))) {
             const multiSelect = e.ctrlKey || e.metaKey || e.shiftKey || activeTool === 'dimension';
             selectObject(hitId, multiSelect);
@@ -946,6 +1020,10 @@ const SketchCanvas = () => {
             if (activeTool === 'select' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
                 clearSelection();
                 clearPrimitiveSelection();
+                // Cancel constraint mode on background click
+                if (activeConstraintType) {
+                    cancelConstraintMode();
+                }
             }
             return;
         }
@@ -1635,6 +1713,35 @@ const SketchCanvas = () => {
                     />
                 </Html>
             )}
+
+            {/* Constraint mode prompt overlay */}
+            {activeConstraintType && constraintSelectionPrompt && (
+                <Html position={to3D(0, -20)} center>
+                    <div className="bg-background/90 border border-primary/40 rounded-md px-4 py-2 text-xs text-foreground shadow-lg pointer-events-none select-none max-w-[300px] text-center">
+                        <div className="font-semibold text-primary mb-0.5">
+                            {activeConstraintType.charAt(0).toUpperCase() + activeConstraintType.slice(1)} Constraint
+                        </div>
+                        <div className="text-muted-foreground">{constraintSelectionPrompt}</div>
+                        {constraintSelectionIds.length > 0 && (
+                            <div className="mt-1 text-[10px] text-muted-foreground/70">
+                                {constraintSelectionIds.length} selected — ESC to cancel
+                            </div>
+                        )}
+                    </div>
+                </Html>
+            )}
+
+            {/* Highlight entities selected for constraint mode */}
+            {activeConstraintType && constraintSelectionIds.map(eid => {
+                const entity = sketchEntities.get(eid);
+                if (!entity || entity.type !== 'point') return null;
+                return (
+                    <mesh key={`constraint-sel-${eid}`} position={to3D(entity.x, entity.y)}>
+                        <circleGeometry args={[0.8, 16]} />
+                        <meshBasicMaterial color="#FFD700" transparent opacity={0.6} />
+                    </mesh>
+                );
+            })}
         </group>
     );
 };

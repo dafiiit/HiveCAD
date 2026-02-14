@@ -237,15 +237,34 @@ export interface SolverSlice {
     sketchConstraints: SketchConstraint[];
     draggingEntityId: EntityId | null;
 
+    /** Active constraint mode: when a constraint button is clicked, this holds the type.
+     *  The user then clicks entities to satisfy the constraint's selection requirements.
+     *  null = no constraint mode active. */
+    activeConstraintType: ConstraintType | null;
+    /** Entities collected so far while in constraint selection mode */
+    constraintSelectionIds: EntityId[];
+    /** Current prompt to display to user during constraint selection */
+    constraintSelectionPrompt: string | null;
+
     initializeSolver: () => Promise<void>;
     addSolverPoint: (x: number, y: number, fixed?: boolean) => EntityId | null;
     addSolverLine: (p1Id: EntityId, p2Id: EntityId) => EntityId | null;
     addSolverConstraint: (type: ConstraintType, entityIds: EntityId[], value?: number) => string | null;
+    removeSolverConstraint: (constraintId: string) => void;
     setDrivingPoint: (id: EntityId, x: number, y: number) => void;
     solveConstraints: () => SolveResult | null;
     clearSolver: () => void;
     setDraggingEntity: (id: EntityId | null) => void;
+    /** Apply constraint to currently selected entities (select-first workflow) */
     applyConstraintToSelection: (type: ConstraintType) => void;
+    /** Start interactive constraint selection mode (constraint-first workflow) */
+    startConstraintMode: (type: ConstraintType) => void;
+    /** Cancel constraint selection mode */
+    cancelConstraintMode: () => void;
+    /** Add an entity to the constraint selection (during constraint-first workflow). Returns true if constraint was fully applied. */
+    addEntityToConstraintSelection: (entityId: EntityId) => boolean;
+    /** Check and auto-apply coincident constraints when a point is placed near another */
+    autoApplyCoincident: (pointId: EntityId, threshold?: number) => void;
     addSolverLineMacro: (p1: [number, number], p2: [number, number]) => { p1Id: EntityId, p2Id: EntityId, lineId: EntityId } | null;
     addSolverRectangleMacro: (p1: [number, number], p2: [number, number]) => { pointIds: EntityId[], lineIds: EntityId[] } | null;
     addSolverCircleMacro: (p1: [number, number], p2: [number, number]) => { centerId: EntityId, edgeId: EntityId, circleId: EntityId } | null;

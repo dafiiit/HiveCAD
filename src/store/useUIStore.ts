@@ -9,6 +9,7 @@ const generateId = () => ID.generatePrefixed('ui');
 const BODY_FOLDER_ID = 'folder-body';
 const SKETCH_SHAPE_FOLDER_ID = 'folder-sketch-shape';
 const SKETCH_SPLINE_FOLDER_ID = 'folder-sketch-spline';
+const OTHER_CONSTRAINTS_FOLDER_ID = 'folder-other-constraints';
 let saveTimeout: any = null;
 
 const INITIAL_TOOLBARS: CustomToolbar[] = [
@@ -40,7 +41,7 @@ const INITIAL_TOOLBARS: CustomToolbar[] = [
                 ]
             },
             { id: generateId(), label: 'MODIFY', toolIds: ['trim', 'offset', 'mirror', 'toggleConstruction', 'dimension'] },
-            { id: generateId(), label: 'CONSTRAIN', toolIds: ['horizontal', 'vertical', 'coincident', 'tangent', 'equal', 'parallel', 'perpendicular', 'fixed', 'midpoint', 'concentric', 'collinear', 'symmetric', 'pointOnLine', 'pointOnCircle', 'equalRadius'] }
+            { id: generateId(), label: 'CONSTRAIN', toolIds: ['coincident', 'horizontal', 'vertical', 'tangent', `folder:${OTHER_CONSTRAINTS_FOLDER_ID}`] }
         ]
     }
 ];
@@ -63,6 +64,12 @@ const INITIAL_FOLDERS: Record<string, ToolbarFolder> = {
         label: 'Spline',
         icon: 'Spline',
         toolIds: ['smoothSpline', 'bezier', 'quadraticBezier', 'cubicBezier']
+    },
+    [OTHER_CONSTRAINTS_FOLDER_ID]: {
+        id: OTHER_CONSTRAINTS_FOLDER_ID,
+        label: 'Other Constraints',
+        icon: 'Link2',
+        toolIds: ['symmetric', 'equal', 'parallel', 'perpendicular', 'fixed', 'midpoint', 'concentric', 'collinear', 'pointOnLine', 'pointOnCircle', 'equalRadius']
     }
 };
 

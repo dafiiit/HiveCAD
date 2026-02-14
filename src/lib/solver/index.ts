@@ -67,3 +67,14 @@ export type {
 } from './types';
 
 export { generateEntityId, generateConstraintId } from './types';
+
+// Constraint metadata system
+export {
+    CONSTRAINT_META,
+    validateConstraintSelection,
+    buildRequirementMessage,
+    getNextSelectionPrompt,
+    isEntityAcceptableAtStep,
+    getConstraintSummary,
+} from './constraint-meta';
+export type { ConstraintMeta, ConstraintSelectionStep } from './constraint-meta';

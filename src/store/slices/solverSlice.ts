@@ -1,7 +1,151 @@
 import { StateCreator } from 'zustand';
 import { toast } from 'sonner';
-import { ConstraintSolver, EntityId, SolverEntity, ConstraintType } from '../../lib/solver';
+import {
+    ConstraintSolver,
+    EntityId,
+    SolverEntity,
+    ConstraintType,
+    CONSTRAINT_META,
+    validateConstraintSelection,
+    getNextSelectionPrompt,
+} from '../../lib/solver';
 import { CADState, SolverSlice } from '../types';
+
+/**
+ * Gather all selected solver entity IDs.
+ * Merges both objectSlice.selectedIds AND sketchSlice.selectedPrimitiveIds,
+ * filtering for only IDs that exist in the solver's sketchEntities map.
+ */
+function getSelectedSolverIds(state: CADState): EntityId[] {
+    const { sketchEntities, selectedIds } = state;
+
+    // Collect from objectSlice selectedIds (solver entity IDs stored directly)
+    const fromSelected = Array.from(selectedIds).filter(id => sketchEntities.has(id));
+
+    // Also collect from sketchSlice selectedPrimitiveIds by mapping through solverId
+    const fromPrimitives: EntityId[] = [];
+    if (state.selectedPrimitiveIds && state.selectedPrimitiveIds.size > 0) {
+        for (const primId of state.selectedPrimitiveIds) {
+            // Look up the primitive to get its solver entity mapping
+            const prim = state.activeSketchPrimitives?.find(p => p.id === primId);
+            if (prim?.properties?.solverEntityIds) {
+                const entityIds = prim.properties.solverEntityIds as EntityId[];
+                for (const eid of entityIds) {
+                    if (sketchEntities.has(eid) && !fromSelected.includes(eid)) {
+                        fromPrimitives.push(eid);
+                    }
+                }
+            }
+            if (prim?.properties?.solverId) {
+                const sid = prim.properties.solverId as string;
+                if (sketchEntities.has(sid) && !fromSelected.includes(sid) && !fromPrimitives.includes(sid)) {
+                    fromPrimitives.push(sid);
+                }
+            }
+            // The primitive ID itself might be a solver entity ID
+            if (sketchEntities.has(primId) && !fromSelected.includes(primId) && !fromPrimitives.includes(primId)) {
+                fromPrimitives.push(primId);
+            }
+        }
+    }
+
+    return [...new Set([...fromSelected, ...fromPrimitives])];
+}
+
+/**
+ * Compute the default value for value-based constraints.
+ */
+function computeDefaultValue(
+    type: ConstraintType,
+    entityIds: EntityId[],
+    solver: ConstraintSolver,
+    entities: Map<EntityId, SolverEntity>,
+): number | undefined {
+    if (type === 'distance') {
+        if (entityIds.length === 2) {
+            const e1 = entities.get(entityIds[0]);
+            const e2 = entities.get(entityIds[1]);
+            if (e1?.type === 'point' && e2?.type === 'point') {
+                return Math.sqrt(Math.pow(e2.x - e1.x, 2) + Math.pow(e2.y - e1.y, 2));
+            }
+        }
+        if (entityIds.length === 1) {
+            const e = entities.get(entityIds[0]);
+            if (e?.type === 'line') {
+                const p1 = solver.getPoint(e.p1Id);
+                const p2 = solver.getPoint(e.p2Id);
+                if (p1 && p2) {
+                    return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+                }
+            }
+        }
+    }
+    if (type === 'angle') return Math.PI / 2;
+    if (type === 'radius') {
+        const e = entities.get(entityIds[0]);
+        if (e?.type === 'circle') return e.radius;
+        if (e?.type === 'arc') {
+            const center = solver.getPoint((e as any).centerId);
+            const start = solver.getPoint((e as any).startId);
+            if (center && start) {
+                return Math.sqrt(Math.pow(start.x - center.x, 2) + Math.pow(start.y - center.y, 2));
+            }
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Reorder entity IDs based on constraint type requirements.
+ */
+function reorderEntityIds(
+    type: ConstraintType,
+    entityIds: EntityId[],
+    entities: Map<EntityId, SolverEntity>,
+): EntityId[] {
+    switch (type) {
+        case 'symmetric': {
+            const points = entityIds.filter(id => entities.get(id)?.type === 'point');
+            const lines = entityIds.filter(id => entities.get(id)?.type === 'line');
+            return [...points, ...lines];
+        }
+        case 'concentric': {
+            return entityIds.map(id => {
+                const e = entities.get(id);
+                if (e?.type === 'circle') return (e as any).centerId;
+                if (e?.type === 'arc') return (e as any).centerId;
+                return id;
+            });
+        }
+        case 'pointOnLine':
+        case 'midpoint': {
+            const point = entityIds.find(id => entities.get(id)?.type === 'point');
+            const line = entityIds.find(id => entities.get(id)?.type === 'line');
+            if (point && line) return [point, line];
+            return entityIds;
+        }
+        case 'pointOnCircle': {
+            const point = entityIds.find(id => entities.get(id)?.type === 'point');
+            const circ = entityIds.find(id => {
+                const e = entities.get(id);
+                return e?.type === 'circle' || e?.type === 'arc';
+            });
+            if (point && circ) return [point, circ];
+            return entityIds;
+        }
+        case 'tangent': {
+            const line = entityIds.find(id => entities.get(id)?.type === 'line');
+            const circ = entityIds.find(id => {
+                const e = entities.get(id);
+                return e?.type === 'circle' || e?.type === 'arc';
+            });
+            if (line && circ) return [line, circ];
+            return entityIds;
+        }
+        default:
+            return entityIds;
+    }
+}
 
 export const createSolverSlice: StateCreator<
     CADState,
@@ -13,6 +157,9 @@ export const createSolverSlice: StateCreator<
     sketchEntities: new Map(),
     sketchConstraints: [],
     draggingEntityId: null,
+    activeConstraintType: null,
+    constraintSelectionIds: [],
+    constraintSelectionPrompt: null,
 
     initializeSolver: async () => {
         const state = get();
@@ -36,6 +183,8 @@ export const createSolverSlice: StateCreator<
             set(state => ({
                 sketchEntities: new Map(state.sketchEntities).set(id, entity)
             }));
+            // Auto-apply coincident if near another point
+            setTimeout(() => get().autoApplyCoincident(id), 0);
         }
         return id;
     },
@@ -68,6 +217,26 @@ export const createSolverSlice: StateCreator<
         const constraints = solverInstance.getAllConstraints();
         set({ sketchConstraints: constraints });
         return id;
+    },
+
+    removeSolverConstraint: (constraintId) => {
+        const { solverInstance } = get();
+        if (!solverInstance?.isInitialized) return;
+
+        solverInstance.removeConstraint(constraintId);
+        set(state => ({
+            sketchConstraints: state.sketchConstraints.filter(c => c.id !== constraintId)
+        }));
+
+        // Re-solve after removing constraint
+        const result = solverInstance.solve();
+        if (result.success) {
+            const entities = new Map<EntityId, SolverEntity>();
+            solverInstance.getAllEntities().forEach(entity => {
+                entities.set(entity.id, entity);
+            });
+            set({ sketchEntities: entities });
+        }
     },
 
     setDrivingPoint: (id, x, y) => {
@@ -103,7 +272,10 @@ export const createSolverSlice: StateCreator<
         set({
             sketchEntities: new Map(),
             sketchConstraints: [],
-            draggingEntityId: null
+            draggingEntityId: null,
+            activeConstraintType: null,
+            constraintSelectionIds: [],
+            constraintSelectionPrompt: null,
         });
     },
 
@@ -117,191 +289,235 @@ export const createSolverSlice: StateCreator<
         }
     },
 
+    // ─── Select-first workflow ───────────────────────────────────
     applyConstraintToSelection: (type) => {
         const state = get();
-        const { solverInstance, sketchEntities, selectedIds } = state;
+        const { solverInstance, sketchEntities } = state;
 
         if (!solverInstance?.isInitialized) {
-            toast.error("Solver not initialized");
+            toast.error('Solver not initialized');
             return;
         }
 
-        if (selectedIds.size === 0) {
-            toast.error("No entities selected");
+        const meta = CONSTRAINT_META[type];
+        if (!meta) {
+            toast.error(`Unknown constraint: ${type}`);
             return;
         }
 
-        const ids = Array.from(selectedIds).filter(id => sketchEntities.has(id));
-        const entities = ids.map(id => sketchEntities.get(id)!);
+        // Gather selected solver entities from both selection systems
+        const ids = getSelectedSolverIds(state);
 
-        let valid = false;
-        let errorMsg = "Invalid selection for this constraint";
-
-        switch (type) {
-            case 'horizontal':
-            case 'vertical':
-                if (ids.length === 1 && entities[0].type === 'line') valid = true;
-                else if (ids.length === 2 && entities.every(e => e.type === 'point')) valid = true;
-                else errorMsg = "Select 1 Line or 2 Points";
-                break;
-
-            case 'coincident':
-                if (ids.length === 2 && entities.every(e => e.type === 'point')) valid = true;
-                else errorMsg = "Select 2 Points";
-                break;
-
-            case 'parallel':
-            case 'perpendicular':
-            case 'equal':
-            case 'angle':
-            case 'collinear':
-                if (ids.length === 2 && entities.every(e => e.type === 'line')) valid = true;
-                else errorMsg = "Select 2 Lines";
-                break;
-
-            case 'tangent':
-                if (ids.length === 2) {
-                    const hasLine = entities.some(e => e.type === 'line');
-                    const hasCircle = entities.some(e => ['circle', 'arc'].includes(e.type));
-                    const allCircles = entities.every(e => ['circle', 'arc'].includes(e.type));
-
-                    if ((hasLine && hasCircle) || allCircles) valid = true;
-                    else errorMsg = "Select 1 Line + 1 Circle/Arc OR 2 Circles/Arcs";
-                }
-                break;
-
-            case 'midpoint':
-            case 'pointOnLine':
-                if (ids.length === 2) {
-                    const hasLine = entities.some(e => e.type === 'line');
-                    const hasPoint = entities.some(e => e.type === 'point');
-                    if (hasLine && hasPoint) valid = true;
-                    else errorMsg = "Select 1 Point and 1 Line";
-                }
-                break;
-
-            case 'pointOnCircle':
-                if (ids.length === 2) {
-                    const hasCircle = entities.some(e => ['circle', 'arc'].includes(e.type));
-                    const hasPoint = entities.some(e => e.type === 'point');
-                    if (hasCircle && hasPoint) valid = true;
-                    else errorMsg = "Select 1 Point and 1 Circle/Arc";
-                }
-                break;
-
-            case 'distance':
-                if (ids.length === 2 && entities.every(e => e.type === 'point')) valid = true;
-                else if (ids.length === 1 && entities[0].type === 'line') valid = true;
-                else errorMsg = "Select 2 Points or 1 Line";
-                break;
-
-            case 'fixed':
-                if (ids.length >= 1) valid = true;
-                else errorMsg = "Select at least 1 entity";
-                break;
-
-            case 'symmetric':
-                // Need 2 points + 1 line
-                if (ids.length === 3) {
-                    const points = entities.filter(e => e.type === 'point');
-                    const lines = entities.filter(e => e.type === 'line');
-                    if (points.length === 2 && lines.length === 1) valid = true;
-                    else errorMsg = "Select 2 Points and 1 Line (axis)";
-                } else {
-                    errorMsg = "Select 2 Points and 1 Line (axis)";
-                }
-                break;
-
-            case 'concentric':
-                if (ids.length === 2) {
-                    const allCircular = entities.every(e => ['circle', 'arc'].includes(e.type));
-                    if (allCircular) valid = true;
-                    else errorMsg = "Select 2 Circles or Arcs";
-                } else {
-                    errorMsg = "Select 2 Circles or Arcs";
-                }
-                break;
-
-            case 'equalRadius':
-                if (ids.length === 2) {
-                    const allCircular = entities.every(e => ['circle', 'arc'].includes(e.type));
-                    if (allCircular) valid = true;
-                    else errorMsg = "Select 2 Circles or Arcs";
-                } else {
-                    errorMsg = "Select 2 Circles or Arcs";
-                }
-                break;
-
-            default:
-                valid = true;
-        }
-
-        if (!valid) {
-            toast.error(errorMsg);
+        if (ids.length === 0) {
+            // No entities pre-selected → switch to constraint-first mode
+            state.startConstraintMode(type);
             return;
         }
 
-        let value: number | undefined = undefined;
+        // Validate selection
+        const entityTypes = ids.map(id => ({
+            id,
+            type: sketchEntities.get(id)!.type,
+        }));
+        const validation = validateConstraintSelection(type, entityTypes);
 
-        if (type === 'distance') {
-            if (entities.length === 2 && entities[0].type === 'point' && entities[1].type === 'point') {
-                const p1 = entities[0] as any;
-                const p2 = entities[1] as any;
-                value = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
-            } else if (entities.length === 1 && entities[0].type === 'line') {
-                // Distance = line length
-                const line = entities[0] as any;
-                const p1 = solverInstance.getPoint(line.p1Id);
-                const p2 = solverInstance.getPoint(line.p2Id);
-                if (p1 && p2) {
-                    value = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+        if (!validation.valid) {
+            // Not enough / wrong types → show what's needed and switch to constraint-first mode
+            toast.info(validation.errorMessage);
+            state.startConstraintMode(type);
+            return;
+        }
+
+        // Reorder IDs based on constraint type
+        const orderedIds = reorderEntityIds(type, ids, sketchEntities);
+
+        // Compute value for value-based constraints
+        const value = computeDefaultValue(type, orderedIds, solverInstance, sketchEntities);
+
+        // Add constraint to solver
+        const cid = solverInstance.addConstraint(type, orderedIds, value);
+        if (!cid) {
+            toast.error('Failed to create constraint');
+            return;
+        }
+
+        // Update store
+        set(s => ({
+            sketchConstraints: [...s.sketchConstraints, {
+                id: cid, type, entityIds: orderedIds, value, driving: true,
+            }],
+        }));
+
+        // Solve
+        const result = state.solveConstraints();
+        if (result?.success) {
+            toast.success(`Applied ${meta.label} constraint`);
+        } else {
+            toast.error(`Constraint failed: ${result?.error || 'solver did not converge'}`);
+            solverInstance.removeConstraint(cid);
+            set(s => ({
+                sketchConstraints: s.sketchConstraints.filter(c => c.id !== cid),
+            }));
+        }
+    },
+
+    // ─── Constraint-first workflow ───────────────────────────────
+    startConstraintMode: (type) => {
+        const meta = CONSTRAINT_META[type];
+        if (!meta) {
+            toast.error(`Unknown constraint: ${type}`);
+            return;
+        }
+
+        const prompt = getNextSelectionPrompt(type, 0);
+        set({
+            activeConstraintType: type,
+            constraintSelectionIds: [],
+            constraintSelectionPrompt: prompt || meta.description,
+        });
+
+        toast.info(`${meta.label}: ${meta.selectionSteps[0]?.prompt || meta.description}`);
+    },
+
+    cancelConstraintMode: () => {
+        set({
+            activeConstraintType: null,
+            constraintSelectionIds: [],
+            constraintSelectionPrompt: null,
+        });
+    },
+
+    addEntityToConstraintSelection: (entityId) => {
+        const state = get();
+        const { activeConstraintType, constraintSelectionIds, sketchEntities, solverInstance } = state;
+
+        if (!activeConstraintType || !solverInstance?.isInitialized) return false;
+
+        const meta = CONSTRAINT_META[activeConstraintType];
+        if (!meta) return false;
+
+        const entity = sketchEntities.get(entityId);
+        if (!entity) return false;
+
+        // Don't add duplicates
+        if (constraintSelectionIds.includes(entityId)) return false;
+
+        const newIds = [...constraintSelectionIds, entityId];
+
+        // Check if this entity is acceptable at the current step index
+        const stepIndex = constraintSelectionIds.length;
+        const step = meta.selectionSteps[stepIndex];
+        if (step && !step.allowedTypes.includes(entity.type)) {
+            toast.error(`Expected ${step.allowedTypes.join(' or ')}, got ${entity.type}`);
+            return false;
+        }
+
+        // Validate the full selection
+        const entityTypes = newIds.map(id => ({
+            id,
+            type: sketchEntities.get(id)!.type,
+        }));
+        const validation = validateConstraintSelection(activeConstraintType, entityTypes);
+
+        if (validation.valid && newIds.length >= meta.minEntities) {
+            // Valid and complete — apply the constraint
+            const orderedIds = reorderEntityIds(activeConstraintType, newIds, sketchEntities);
+            const value = computeDefaultValue(activeConstraintType, orderedIds, solverInstance, sketchEntities);
+
+            const cid = solverInstance.addConstraint(activeConstraintType, orderedIds, value);
+            if (cid) {
+                set(s => ({
+                    sketchConstraints: [...s.sketchConstraints, {
+                        id: cid,
+                        type: activeConstraintType,
+                        entityIds: orderedIds,
+                        value,
+                        driving: true,
+                    }],
+                    activeConstraintType: null,
+                    constraintSelectionIds: [],
+                    constraintSelectionPrompt: null,
+                }));
+
+                const result = state.solveConstraints();
+                if (result?.success) {
+                    toast.success(`Applied ${meta.label} constraint`);
+                } else {
+                    toast.error(`Constraint failed: ${result?.error || 'solver did not converge'}`);
+                    solverInstance.removeConstraint(cid);
+                    set(s => ({
+                        sketchConstraints: s.sketchConstraints.filter(c => c.id !== cid),
+                    }));
                 }
+                return true;
+            }
+        } else {
+            // Not complete yet — update prompt
+            const nextPrompt = getNextSelectionPrompt(activeConstraintType, newIds.length);
+            set({
+                constraintSelectionIds: newIds,
+                constraintSelectionPrompt: nextPrompt || meta.description,
+            });
+            if (nextPrompt) {
+                toast.info(`${meta.label}: ${nextPrompt}`);
             }
         }
 
-        if (type === 'angle') {
-            // Default angle = current angle between lines
-            value = value ?? (Math.PI / 2); // 90 degrees default
+        return false;
+    },
+
+    // ─── Auto-coincident ─────────────────────────────────────────
+    autoApplyCoincident: (pointId, threshold = 0.5) => {
+        const state = get();
+        const { solverInstance, sketchEntities } = state;
+        if (!solverInstance?.isInitialized) return;
+
+        const point = sketchEntities.get(pointId);
+        if (!point || point.type !== 'point') return;
+
+        // Find nearest other point within threshold
+        let nearestId: EntityId | null = null;
+        let nearestDist = threshold;
+
+        for (const [otherId, otherEntity] of sketchEntities) {
+            if (otherId === pointId) continue;
+            if (otherEntity.type !== 'point') continue;
+
+            const dx = point.x - otherEntity.x;
+            const dy = point.y - otherEntity.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < nearestDist) {
+                nearestDist = dist;
+                nearestId = otherId;
+            }
         }
 
-        // For symmetric constraint, reorder entityIds: [point1, point2, line]
-        let constraintIds = ids;
-        if (type === 'symmetric') {
-            const points = ids.filter(id => {
-                const e = sketchEntities.get(id);
-                return e?.type === 'point';
-            });
-            const lines = ids.filter(id => {
-                const e = sketchEntities.get(id);
-                return e?.type === 'line';
-            });
-            constraintIds = [...points, ...lines];
-        }
+        if (nearestId) {
+            // Check if coincident already exists
+            const exists = state.sketchConstraints.some(c =>
+                c.type === 'coincident' &&
+                c.entityIds.includes(pointId) &&
+                c.entityIds.includes(nearestId!)
+            );
 
-        // For concentric, extract center IDs
-        if (type === 'concentric') {
-            const centerIds = ids.map(id => {
-                const e = sketchEntities.get(id);
-                if (e?.type === 'circle') return (e as any).centerId;
-                if (e?.type === 'arc') return (e as any).centerId;
-                return id;
-            });
-            constraintIds = centerIds;
-        }
+            if (!exists) {
+                const cid = solverInstance.addConstraint('coincident', [pointId, nearestId]);
+                if (cid) {
+                    set(s => ({
+                        sketchConstraints: [...s.sketchConstraints, {
+                            id: cid,
+                            type: 'coincident' as ConstraintType,
+                            entityIds: [pointId, nearestId!],
+                            driving: true,
+                        }],
+                    }));
 
-        const cid = solverInstance.addConstraint(type, constraintIds, value);
-        if (cid) {
-            set(state => ({
-                sketchConstraints: [...state.sketchConstraints, {
-                    id: cid, type, entityIds: constraintIds, value, driving: true
-                }]
-            }));
-
-            const result = state.solveConstraints();
-            if (result?.success) {
-                toast.success(`Applied ${type} constraint`);
-            } else {
-                toast.error("Constraint invalid or redundant");
+                    const result = state.solveConstraints();
+                    if (result?.success) {
+                        toast.success('Auto-applied coincident constraint', { duration: 1500 });
+                    }
+                }
             }
         }
     },
