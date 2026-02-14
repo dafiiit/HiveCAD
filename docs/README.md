@@ -68,6 +68,23 @@ npm run dev
 npm run tauri:dev
 ```
 
+### Run (Desktop - Offline Mode)
+
+For development without requiring GitHub authentication, use offline mode:
+
+```sh
+npm run tauri:dev:offline
+```
+
+This mode:
+- Bypasses GitHub OAuth login
+- Creates a mock user (`offline@dev.local`)
+- Uses only local storage (no remote sync)
+- Perfect for quick debugging and testing
+- **Note:** Projects created in offline mode won't sync to GitHub
+
+The offline configuration is stored in [.env.offline](./.env.offline).
+
 ### Environment Variables
 
 Auth features use Supabase and expect the following variables at build time:
@@ -92,6 +109,7 @@ Common scripts from `package.json`:
 - `npm run build`: Build the default Vite bundle.
 - `npm run build:web`: Build the web bundle explicitly.
 - `npm run tauri:dev`: Run the desktop app in dev mode.
+- `npm run tauri:dev:offline`: Run the desktop app in offline mode (no authentication required).
 - `npm run tauri:build`: Build the desktop app.
 - `npm run test`: Run the test suite once.
 - `npm run lint`: Run ESLint.

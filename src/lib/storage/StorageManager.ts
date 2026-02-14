@@ -21,6 +21,9 @@ import { GitHubRemoteStore } from './remote/GitHubRemoteStore';
 import { SupabaseMetaService } from './supabase/SupabaseMetaService';
 import { SyncEngine } from './sync/SyncEngine';
 
+// Check if offline mode is enabled
+const isOfflineMode = import.meta.env.VITE_OFFLINE_MODE === 'true';
+
 export class StorageManager {
     private static instance: StorageManager;
 
@@ -65,6 +68,13 @@ export class StorageManager {
             this._quick = new IdbQuickStore();
         }
         await this._quick.init();
+
+        // Skip remote/meta/sync initialization in offline mode
+        if (isOfflineMode) {
+            this._initialized = true;
+            console.log(`[StorageManager] Initialized in OFFLINE mode (${isDesktop() ? 'desktop' : 'web'}) - no remote sync`);
+            return;
+        }
 
         // 2. Create RemoteStore (currently always GitHub, but pluggable)
         this._remote = new GitHubRemoteStore();

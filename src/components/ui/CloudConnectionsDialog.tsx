@@ -2,7 +2,7 @@ import { StorageManager } from '@/lib/storage/StorageManager';
 import { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './dialog';
 import { toast } from 'sonner';
-import { Check, Github } from 'lucide-react';
+import { Check, Github, ExternalLink } from 'lucide-react';
 
 interface CloudConnectionsDialogProps {
     open: boolean;
@@ -53,6 +53,18 @@ export function CloudConnectionsDialog({ open, onOpenChange }: CloudConnectionsD
         }
     };
 
+    const handleGetToken = async () => {
+        const url = "https://github.com/settings/tokens/new?description=HiveCAD%20Storage&scopes=repo,user";
+        try {
+            const { getPlatformApi } = await import('@/lib/platform');
+            const platform = await getPlatformApi();
+            await platform.openUrl(url);
+        } catch (error) {
+            // Fallback to window.open for web
+            window.open(url, '_blank');
+        }
+    };
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-md">
@@ -66,9 +78,8 @@ export function CloudConnectionsDialog({ open, onOpenChange }: CloudConnectionsD
                 <div className="space-y-4 py-2">
                     <div className="space-y-3">
                         <div
-                            className={`flex items-center justify-between p-3 rounded-lg border ${
-                                isConnected ? 'border-primary bg-primary/5' : 'border-border'
-                            }`}
+                            className={`flex items-center justify-between p-3 rounded-lg border ${isConnected ? 'border-primary bg-primary/5' : 'border-border'
+                                }`}
                         >
                             <div className="flex items-center gap-3">
                                 <div className={`p-2 rounded-full ${isConnected ? 'bg-primary text-primary-foreground' : 'bg-secondary'}`}>
@@ -108,6 +119,14 @@ export function CloudConnectionsDialog({ open, onOpenChange }: CloudConnectionsD
 
                         {!isConnected && (
                             <div className="p-3 rounded-lg border border-dashed border-primary/50 bg-primary/5 space-y-3 animate-in fade-in slide-in-from-top-2">
+                                <button
+                                    className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity mb-2"
+                                    onClick={handleGetToken}
+                                >
+                                    <Github className="w-4 h-4" />
+                                    Get GitHub Token
+                                    <ExternalLink className="w-3 h-3 opacity-50" />
+                                </button>
                                 <div className="text-xs font-medium text-primary">Enter GitHub Personal Access Token</div>
                                 <div className="flex gap-2">
                                     <input
