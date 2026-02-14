@@ -765,11 +765,8 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
   };
 
   const handleStartSketch = () => {
-    // Switch to SKETCH toolbar if available
-    const sketchToolbar = customToolbars.find(t => t.id === 'SKETCH');
-    if (sketchToolbar) {
-      setActiveToolbar('SKETCH');
-    }
+    // Toolbar will automatically switch to SKETCH when isSketchMode becomes true
+    // No need to persist activeToolbarId change
     enterSketchMode();
     toast.success("Sketch mode activated");
   };

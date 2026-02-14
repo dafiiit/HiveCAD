@@ -950,6 +950,17 @@ const SketchCanvas = () => {
             return;
         }
 
+        // Tools that don't create primitives should return early on empty click
+        const nonDrawingTools = ['trim', 'offset', 'mirror', 'toggleConstruction', 'dimension'];
+        if (!primHit && nonDrawingTools.includes(activeTool as string)) {
+            // For offset tool, clear selection on background click (like 3D view)
+            if (activeTool === 'offset') {
+                clearPrimitiveSelection();
+                offsetDragOriginRef.current = null;
+            }
+            return;
+        }
+
         // Check if this tool requires a dialog
         if (!currentDrawingPrimitive && DIALOG_REQUIRED_TOOLS.includes(activeTool as ToolType)) {
             setPendingStartPoint(p2d);
@@ -1119,8 +1130,12 @@ const SketchCanvas = () => {
 
         const toolDef = toolRegistry.get(prim.type);
 
+        // For construction primitives, use fallback renderer to get proper dashed lines
+        // because tool renderers use lineBasicMaterial which doesn't support dashing
+        const useToolRenderer = toolDef?.renderPreview && !isConst;
+
         // Use tool registry renderer if available
-        if (toolDef?.renderPreview) {
+        if (useToolRenderer) {
             const rendered = toolDef.renderPreview(prim as any, to3D, isGhost);
             if (!isGhost && rendered) {
                 // Clone the rendered element and apply our state-based styling + handlers

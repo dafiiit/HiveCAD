@@ -326,9 +326,14 @@ export const createSketchSlice: StateCreator<
 
     selectPrimitive: (id, multiSelect = false) => {
         set(state => {
+            // If single-select mode and clicking the only selected item, deselect it
+            if (!multiSelect && state.selectedPrimitiveIds.size === 1 && state.selectedPrimitiveIds.has(id)) {
+                return { selectedPrimitiveIds: new Set() };
+            }
+            
             const newSelection = new Set(multiSelect ? state.selectedPrimitiveIds : []);
             if (newSelection.has(id)) {
-                newSelection.delete(id); // Toggle off
+                newSelection.delete(id); // Toggle off in multi-select mode
             } else {
                 newSelection.add(id);
             }
