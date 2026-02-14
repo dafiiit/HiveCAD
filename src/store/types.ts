@@ -295,6 +295,8 @@ export interface SketchSlice {
     draggingHandle: HandlePoint | null;
     /** Set of selected sketch primitive IDs (distinct from solver entity selection) */
     selectedPrimitiveIds: Set<string>;
+    /** Set of selected handle IDs (format: "primitiveId:pointIndex") */
+    selectedHandleIds: Set<string>;
 
     addSketchPoint: (point: [number, number]) => void;
     setSketchPlane: (plane: 'XY' | 'XZ' | 'YZ') => void;
@@ -323,6 +325,10 @@ export interface SketchSlice {
     selectPrimitive: (id: string, multiSelect?: boolean) => void;
     /** Clear sketch primitive selection */
     clearPrimitiveSelection: () => void;
+    /** Select a handle point (adds to or replaces selection) */
+    selectHandle: (handleId: string, multiSelect?: boolean) => void;
+    /** Clear handle selection */
+    clearHandleSelection: () => void;
     /** Update a committed primitive's point at a given index */
     updatePrimitivePoint: (primitiveId: string, pointIndex: number, newPoint: [number, number]) => void;
     /** Toggle construction mode on a primitive */

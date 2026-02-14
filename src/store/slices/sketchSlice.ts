@@ -99,6 +99,7 @@ export const createSketchSlice: StateCreator<
     hoveredPrimitiveId: null,
     draggingHandle: null,
     selectedPrimitiveIds: new Set<string>(),
+    selectedHandleIds: new Set<string>(),
 
     setSketchPlane: (plane) => set({ sketchPlane: plane, sketchStep: 'drawing' }),
     addSketchPoint: (point) => set(state => ({ sketchPoints: [...state.sketchPoints, point] })),
@@ -342,6 +343,25 @@ export const createSketchSlice: StateCreator<
     },
 
     clearPrimitiveSelection: () => set({ selectedPrimitiveIds: new Set() }),
+
+    selectHandle: (handleId, multiSelect = false) => {
+        set(state => {
+            // If single-select mode and clicking the only selected handle, deselect it
+            if (!multiSelect && state.selectedHandleIds.size === 1 && state.selectedHandleIds.has(handleId)) {
+                return { selectedHandleIds: new Set() };
+            }
+            
+            const newSelection = new Set(multiSelect ? state.selectedHandleIds : []);
+            if (newSelection.has(handleId)) {
+                newSelection.delete(handleId); // Toggle off in multi-select mode
+            } else {
+                newSelection.add(handleId);
+            }
+            return { selectedHandleIds: newSelection };
+        });
+    },
+
+    clearHandleSelection: () => set({ selectedHandleIds: new Set() }),
 
     updatePrimitivePoint: (primitiveId, pointIndex, newPoint) => {
         set(state => ({

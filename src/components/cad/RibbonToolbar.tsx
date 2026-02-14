@@ -155,6 +155,8 @@ const isToolImplemented = (id: string): boolean => {
     'measure', 'analyze',                 // inspect operations
     'parameters',                         // configure operations
     'sketchPoint',                        // sketch construct
+    'circle', 'ellipse', 'text', 'polygon', 'rectangle', 'roundedRectangle',  // shape tools
+    'bezier', 'cubicBezier', 'smoothSpline', 'quadraticBezier',  // spline tools
   ];
   
   if (notImplementedTools.includes(id)) return false;

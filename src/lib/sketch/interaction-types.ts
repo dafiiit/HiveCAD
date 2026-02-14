@@ -337,14 +337,17 @@ export function getEntityDash(state: SketchEntityState, isConstruction: boolean)
 /**
  * Get the line width for a sketch entity based on its visual state.
  */
+
+//for testing if this is used I will increase the line width for hovered and selected states to make it more visually obvious.
 export function getEntityLineWidth(state: SketchEntityState): number {
     switch (state) {
-        case 'hovered':   return 4;
-        case 'selected':  return 4;
-        case 'drawing':   return 3;
-        default:          return 2;
+        case 'hovered':   return 50; 
+        case 'selected':  return 50;
+        case 'drawing':   return 8;
+        default:          return 6;
     }
 }
+
 
 // ──────────────────────────────────────────────────────────────
 // Handle Rendering Config
@@ -355,24 +358,25 @@ export function getEntityLineWidth(state: SketchEntityState): number {
  */
 export function getHandleSize(type: HandlePointType): number {
     switch (type) {
-        case 'endpoint':  return 1.0;
-        case 'control':   return 0.85;
-        case 'center':    return 0.85;
-        case 'midpoint':  return 0.7;
-        default:          return 0.85;
+        case 'endpoint':  return 2.0;
+        case 'control':   return 1.7;
+        case 'center':    return 1.7;
+        case 'midpoint':  return 1.4;
+        default:          return 1.7;
     }
 }
 
 /**
- * Get the color of a handle point based on its type and whether it's being dragged.
+ * Get the color of a handle point based on its type, drag state, hover state, and selection state.
  */
-export function getHandleColor(type: HandlePointType, isDragging: boolean, isHovered: boolean): string {
+export function getHandleColor(type: HandlePointType, isDragging: boolean, isHovered: boolean, isSelected: boolean = false): string {
     if (isDragging) return '#FFFF00';  // Yellow while dragging
-    if (isHovered)  return '#66B2FF';  // Blue on hover
+    if (isSelected) return '#3399FF';  // Selection blue when parent primitive is selected
+    if (isHovered)  return '#66B2FF';  // Light blue on hover
     switch (type) {
         case 'endpoint':  return '#FFFFFF';  // White
-        case 'control':   return '#FF9933';  // Orange for control points
-        case 'center':    return '#FF9933';  // Orange for centers
+        case 'control':   return '#FFFFFF';  // White (consistent with endpoints)
+        case 'center':    return '#FFFFFF';  // White (consistent with endpoints)
         case 'midpoint':  return '#AAAAAA';  // Gray for midpoints
         default:          return '#FFFFFF';
     }

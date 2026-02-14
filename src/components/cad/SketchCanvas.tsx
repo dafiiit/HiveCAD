@@ -45,9 +45,9 @@ const SketchCanvas = () => {
         // New sketch features
         chainMode, gridSnapSize,
         // Sketch interaction state
-        hoveredPrimitiveId, draggingHandle, selectedPrimitiveIds,
-        setHoveredPrimitive, setDraggingHandle, selectPrimitive,
-        clearPrimitiveSelection, updatePrimitivePoint, togglePrimitiveConstruction,
+        hoveredPrimitiveId, draggingHandle, selectedPrimitiveIds, selectedHandleIds,
+        setHoveredPrimitive, setDraggingHandle, selectPrimitive, selectHandle,
+        clearPrimitiveSelection, clearHandleSelection, updatePrimitivePoint, togglePrimitiveConstruction,
         // View controls
         setCameraControlsDisabled,
     } = useCADStore();
@@ -81,6 +81,9 @@ const SketchCanvas = () => {
     // Drag detection state
     const dragStartRef = useRef<{ x: number, y: number, time: number } | null>(null);
     const IS_CLICK_THRESHOLD = 5; // Pixels
+
+    // Handle interaction state: tracks handle press before drag starts
+    const handlePressedRef = useRef<HandlePoint | null>(null);
 
     // Offset drag state: tracks the 2D origin point for offset dragging
     const offsetDragOriginRef = useRef<[number, number] | null>(null);
@@ -230,6 +233,19 @@ const SketchCanvas = () => {
             const p2d = to2D(localPoint);
             let finalP2d = [...p2d] as [number, number];
             let currentSnapResult: SnapResult | null = null;
+
+            // Check if we should start dragging a pressed handle
+            if (handlePressedRef.current && !draggingHandle && dragStartRef.current) {
+                const dx = e.clientX - dragStartRef.current.x;
+                const dy = e.clientY - dragStartRef.current.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > IS_CLICK_THRESHOLD) {
+                    // Movement detected - start dragging
+                    setDraggingHandle(handlePressedRef.current);
+                    setCameraControlsDisabled(true);
+                    handlePressedRef.current = null;
+                }
+            }
 
             // NEW: If dragging a handle point on a committed primitive, update it in real-time
             if (draggingHandle) {
@@ -517,7 +533,9 @@ const SketchCanvas = () => {
      * Returns the closest HandlePoint if within threshold, else null.
      */
     const hitTestHandles = (p: [number, number]): HandlePoint | null => {
-        const threshold = 1.5 * pixelScale;
+        // Threshold must match the largest hit target mesh size (size * 2.5)
+        // Largest handle size is 2.0, so threshold = 2.0 * 2.5 = 5.0
+        const threshold = 5.0 * pixelScale;
         let bestHandle: HandlePoint | null = null;
         let bestDist = threshold;
 
@@ -583,6 +601,33 @@ const SketchCanvas = () => {
                 for (let i = 0; i < 4; i++) {
                     const d = pointToSegmentDist(p, corners[i], corners[(i + 1) % 4]);
                     distance = Math.min(distance, d);
+                }
+            }
+
+            // Check arcs - threePointsArc and centerPointArc
+            if (['threePointsArc', 'arc', 'centerPointArc'].includes(prim.type)) {
+                if (prim.type === 'threePointsArc' && prim.points.length >= 3) {
+                    // Three-point arc: approximate by checking multiple points along the arc
+                    const [start, end, via] = prim.points;
+                    // Compute center from three points
+                    const ax = start[0], ay = start[1];
+                    const bx = end[0], by = end[1];
+                    const cx = via[0], cy = via[1];
+                    const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+                    if (Math.abs(d) > 1e-10) {
+                        const ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d;
+                        const uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d;
+                        const center: [number, number] = [ux, uy];
+                        const radius = Math.sqrt((start[0] - center[0]) ** 2 + (start[1] - center[1]) ** 2);
+                        const distToCenter = Math.sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2);
+                        distance = Math.abs(distToCenter - radius);
+                    }
+                } else if (prim.type === 'centerPointArc' && prim.points.length >= 3) {
+                    // Center-point arc: [center, start, end]
+                    const center = prim.points[0];
+                    const radius = Math.sqrt((prim.points[1][0] - center[0]) ** 2 + (prim.points[1][1] - center[1]) ** 2);
+                    const distToCenter = Math.sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2);
+                    distance = Math.abs(distToCenter - radius);
                 }
             }
 
@@ -800,12 +845,13 @@ const SketchCanvas = () => {
                 time: Date.now()
             };
 
-            // Check if we're clicking a handle to start dragging
+            // Note: Handle pointerDown is now handled by individual handle meshes
+            // This fallback is for legacy compatibility only
             if (hoverPoint && activeTool === 'select' && !currentDrawingPrimitive) {
                 const handleHit = hitTestHandles(hoverPoint);
                 if (handleHit) {
-                    setDraggingHandle(handleHit);
-                    setCameraControlsDisabled(true);
+                    // Don't start dragging immediately - just record the press
+                    handlePressedRef.current = handleHit;
                     e.stopPropagation();
                 }
             }
@@ -825,10 +871,22 @@ const SketchCanvas = () => {
     const handlePointerUp = (e: ThreeEvent<PointerEvent>) => {
         if (e.button !== 0 || !hoverPoint || showDialog) return;
 
-        // Finalize handle drag
+        // Finalize handle drag or handle click-to-select
         if (draggingHandle) {
             setDraggingHandle(null);
             setCameraControlsDisabled(false);
+            handlePressedRef.current = null;
+            return;
+        }
+        
+        // Handle was pressed but not dragged - treat as selection click
+        if (handlePressedRef.current) {
+            const multiSelect = e.ctrlKey || e.metaKey || e.shiftKey;
+            selectHandle(handlePressedRef.current.id, multiSelect);
+            if (!multiSelect) {
+                clearPrimitiveSelection();
+            }
+            handlePressedRef.current = null;
             return;
         }
 
@@ -855,14 +913,8 @@ const SketchCanvas = () => {
             clearSketchInputLocks();
         }
 
-        // NEW: Check handle hit first (for starting handle drags)
-        const handleHit = hitTestHandles(p2d);
-        if (handleHit && (activeTool === 'select')) {
-            // Select the parent primitive, don't start drag on a click (drag starts on pointerDown+move)
-            const primId = handleHit.id.split(':')[0];
-            selectPrimitive(primId, e.ctrlKey || e.metaKey || e.shiftKey);
-            return;
-        }
+        // NOTE: Handle selection is now handled directly by handle meshes via handlePressedRef
+        // No need for canvas-level handle hit test fallback
 
         // NEW: Check primitive hit for selection
         const primHit = hitTestPrimitives(p2d);
@@ -990,6 +1042,10 @@ const SketchCanvas = () => {
         if (primHit && (activeTool === 'select' || activeTool === 'dimension' || activeTool === 'offset')) {
             const multiSelect = e.ctrlKey || e.metaKey || e.shiftKey;
             selectPrimitive(primHit, multiSelect);
+            // Clear handle selection when selecting primitives
+            if (!multiSelect) {
+                clearHandleSelection();
+            }
 
             // Dimension tool: apply dimension directly on sketch primitives
             if (activeTool === 'dimension') {
@@ -1020,6 +1076,7 @@ const SketchCanvas = () => {
             if (activeTool === 'select' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
                 clearSelection();
                 clearPrimitiveSelection();
+                clearHandleSelection();
                 // Cancel constraint mode on background click
                 if (activeConstraintType) {
                     cancelConstraintMode();
@@ -1279,8 +1336,44 @@ const SketchCanvas = () => {
         return handles.map(h => {
             const isDrag = draggingHandle?.id === h.id;
             const isHover = false; // TODO: per-handle hover
+            const isHandleSelected = selectedHandleIds.has(h.id);
             const size = getHandleSize(h.type) * pixelScale;
-            const handleColor = getHandleColor(h.type, isDrag, isHover);
+            const handleColor = getHandleColor(h.type, isDrag, isHover, isHandleSelected);
+
+            // Dedicated handler for handle pointer up
+            const handleHandlePointerUp = (e: any) => {
+                if (e.button !== 0) return;
+                e.stopPropagation();
+
+                // Finalize handle drag
+                if (draggingHandle?.id === h.id) {
+                    setDraggingHandle(null);
+                    setCameraControlsDisabled(false);
+                    handlePressedRef.current = null;
+                    return;
+                }
+                
+                // Handle was pressed but not dragged - treat as selection click
+                if (handlePressedRef.current?.id === h.id) {
+                    // Check if this was a drag or a click
+                    if (dragStartRef.current) {
+                        const dx = e.clientX - dragStartRef.current.x;
+                        const dy = e.clientY - dragStartRef.current.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (dist <= IS_CLICK_THRESHOLD) {
+                            // It's a click - select the handle
+                            const multiSelect = e.ctrlKey || e.metaKey || e.shiftKey;
+                            selectHandle(h.id, multiSelect);
+                            if (!multiSelect) {
+                                clearPrimitiveSelection();
+                            }
+                        }
+                    }
+                    handlePressedRef.current = null;
+                    dragStartRef.current = null;
+                }
+            };
 
             return (
                 <group key={h.id} position={to3D(h.position[0], h.position[1])}>
@@ -1291,10 +1384,21 @@ const SketchCanvas = () => {
                     </mesh>
                     {/* Invisible larger hit target */}
                     <mesh visible={false}
-                        onPointerDown={handlePointerDown as any}
-                        onPointerUp={handlePointerUp as any}
+                        onPointerDown={(e: any) => {
+                            if (e.button === 0 && activeTool === 'select') {
+                                e.stopPropagation();
+                                // Record handle press - don't start dragging yet
+                                handlePressedRef.current = h;
+                                dragStartRef.current = {
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    time: Date.now()
+                                };
+                            }
+                        }}
+                        onPointerUp={handleHandlePointerUp}
                     >
-                        <sphereGeometry args={[size * 2.5, 8, 8]} />
+                        <sphereGeometry args={[size * 3.5, 8, 8]} />
                         <meshBasicMaterial color="red" />
                     </mesh>
                 </group>
