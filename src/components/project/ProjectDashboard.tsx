@@ -665,14 +665,17 @@ export function ProjectDashboard() {
 
     // ─── Star ─────────────────────────────────────────────────────────────
 
-    const handleToggleStar = (e: React.MouseEvent, projectName: string) => {
+    const handleToggleStar = (e: React.MouseEvent, projectId: string) => {
         e.stopPropagation();
         setStarredProjects(prev =>
-            prev.includes(projectName)
-                ? prev.filter(p => p !== projectName)
-                : [...prev, projectName]
+            prev.includes(projectId)
+                ? prev.filter(id => id !== projectId)
+                : [...prev, projectId]
         );
-        toast.success(starredProjects.includes(projectName) ? `Removed from Starred` : `Added to Starred`);
+        // We can't easily get the name here without a lookup, but that's fine for the toast
+        // check if star is added or removed
+        const isAdded = !starredProjects.includes(projectId);
+        toast.success(isAdded ? `Added to Starred` : `Removed from Starred`);
     };
 
     const handleDashboardSync = async () => {
@@ -1032,7 +1035,7 @@ export function ProjectDashboard() {
                                             if (activeTags.length > 0) {
                                                 return activeTags.every(t => projectTags.includes(t));
                                             }
-                                            const isStarred = starredProjects.includes(p.name);
+                                            const isStarred = starredProjects.includes(p.id);
                                             if (activeNav === 'Starred') return isStarred;
                                             if (activeNav === 'Created by me') return p.type === 'user' || (p as any).ownerId === 'Example Project';
                                             if (activeNav === 'Shared with me') return false;
@@ -1050,8 +1053,8 @@ export function ProjectDashboard() {
                                                 key={`filtered-${project.id}`}
                                                 project={project}
                                                 onOpen={() => project.type === 'example' ? handleOpenExample(project) : handleOpenProject(project)}
-                                                onToggleStar={(e) => handleToggleStar(e, project.name)}
-                                                isStarred={starredProjects.includes(project.name)}
+                                                onToggleStar={(e) => handleToggleStar(e, project.id)}
+                                                isStarred={starredProjects.includes(project.id)}
                                                 onAction={() => setContextMenuProject(project.id === contextMenuProject ? null : project.id)}
                                                 showMenu={contextMenuProject === project.id}
                                                 onDelete={() => handleDeleteProject(project.id)}

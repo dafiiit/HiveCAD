@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 export interface ProjectCardProps {
     project: any;
     onOpen: () => void;
-    onToggleStar: (e: React.MouseEvent, name: string) => void;
+    onToggleStar: (e: React.MouseEvent, id: string) => void;
     isStarred: boolean;
     onAction: () => void;
     showMenu: boolean;
@@ -103,7 +103,7 @@ export function ProjectCard({
                 {/* Action buttons - star and menu */}
                 <div className="absolute top-2 right-2 flex gap-1">
                     <button
-                        onClick={(e) => { e.stopPropagation(); onToggleStar(e, project.name); }}
+                        onClick={(e) => { e.stopPropagation(); onToggleStar(e, project.id); }}
                         className={cn(
                             "p-1.5 rounded-md transition-all",
                             isStarred
