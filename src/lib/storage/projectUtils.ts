@@ -46,14 +46,17 @@ export function createBlankMeta(overrides: Partial<ProjectMeta> = {}): ProjectMe
     };
 }
 
-/** Create a blank ProjectData. */
-export function createBlankProject(overrides: Partial<ProjectMeta> = {}): ProjectData {
+/** Create a blank 3D Model (ProjectData). */
+export function createBlank3DModel(overrides: Partial<ProjectMeta> = {}): ProjectData {
     return {
         meta: createBlankMeta(overrides),
         snapshot: { code: DEFAULT_CODE, objects: [] },
         namespaces: {},
     };
 }
+
+/** @deprecated Use createBlank3DModel instead */
+export const createBlankProject = createBlank3DModel;
 
 /** Strip THREE.js geometry from objects for serialization. */
 export function serializeObjects(objects: any[]): SerializedCADObject[] {

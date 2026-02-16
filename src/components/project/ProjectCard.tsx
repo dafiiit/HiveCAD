@@ -140,7 +140,7 @@ export function ProjectCard({
             <div className="p-3 bg-card border-t border-border relative rounded-b-xl">
                 <div className="font-bold text-foreground truncate text-sm tracking-tight">{project.name}</div>
                 <div className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-tighter font-black opacity-60 flex items-center justify-between">
-                    <span>{isExample ? 'Example Project' : (project.ownerId || 'My Project')}</span>
+                    <span>{isExample ? 'Example' : (project.ownerId || 'My 3D Model')}</span>
                     {!isExample && !project.deletedAt && project.sha && <span className="text-green-500/80">Cloud</span>}
                     {project.folder && <span className="ml-2 text-primary opacity-80 flex items-center gap-1"><Folder className="w-2 h-2" /> {project.folder}</span>}
                 </div>
@@ -151,14 +151,14 @@ export function ProjectCard({
             {showMenu && (
                 <div className="absolute top-9 right-2 w-52 bg-popover border border-border rounded-lg shadow-2xl z-50 py-1.5 animate-in slide-in-from-top-2 duration-150">
                     <button onClick={(e) => { e.stopPropagation(); onRename(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3">
-                        <Info className="w-3.5 h-3.5" /> RENAME PROJECT
+                        <Info className="w-3.5 h-3.5" /> RENAME 3D MODEL
                     </button>
                     <button onClick={(e) => { e.stopPropagation(); onManageTags(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3">
                         <Tag className="w-3.5 h-3.5 text-primary" /> MANAGE TAGS
                     </button>
                     {!isExample && (
                         <button onClick={(e) => { e.stopPropagation(); onShare(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3">
-                            <Share2 className="w-3.5 h-3.5 text-blue-400" /> SHARE PROJECT
+                            <Share2 className="w-3.5 h-3.5 text-blue-400" /> SHARE 3D MODEL
                         </button>
                     )}
                     {hasPAT && (
@@ -171,7 +171,7 @@ export function ProjectCard({
                         <div className="relative group/folder">
                             <button className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3 justify-between">
                                 <div className="flex items-center gap-3">
-                                    <Folder className="w-3.5 h-3.5 text-orange-400" /> MOVE TO...
+                                    <Folder className="w-3.5 h-3.5 text-orange-400" /> MOVE TO PROJECT...
                                 </div>
                                 <div className="text-[9px] text-muted-foreground/50">▶</div>
                             </button>
@@ -192,7 +192,7 @@ export function ProjectCard({
                                     onClick={(e) => { e.stopPropagation(); onMoveToFolder(undefined); onAction(); }}
                                     className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground/60 hover:bg-muted hover:text-foreground italic"
                                 >
-                                    Remove from folder
+                                    Remove from project
                                 </button>
                             </div>
                         </div>
@@ -200,7 +200,7 @@ export function ProjectCard({
 
                     <div className="h-px bg-border my-1.5" />
                     <button onClick={(e) => { e.stopPropagation(); onDelete(); onAction(); }} className="w-full text-left px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-500/10 flex items-center gap-3">
-                        <Trash2 className="w-3.5 h-3.5" /> DELETE PROJECT
+                        <Trash2 className="w-3.5 h-3.5" /> DELETE 3D MODEL
                     </button>
                 </div>
             )}

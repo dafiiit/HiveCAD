@@ -291,18 +291,18 @@ export const TabManager = () => {
                 <AlertDialog open={!!tabToDelete} onOpenChange={(open) => !open && setTabToDelete(null)}>
                     <AlertDialogContent>
                         <AlertDialogHeader>
-                            <AlertDialogTitle>Delete empty project?</AlertDialogTitle>
+                            <AlertDialogTitle>Delete empty 3D model?</AlertDialogTitle>
                             <AlertDialogDescription>
-                                This project is empty and doesn't contain any CAD models. It will be permanently deleted from your workspace.
+                                This 3D model is empty and doesn't contain any geometry. It will be permanently deleted from your workspace.
                             </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                            <AlertDialogCancel>Keep Project</AlertDialogCancel>
+                            <AlertDialogCancel>Keep 3D Model</AlertDialogCancel>
                             <AlertDialogAction
                                 onClick={handleConfirmDelete}
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                             >
-                                Delete Project
+                                Delete 3D Model
                             </AlertDialogAction>
                         </AlertDialogFooter>
                     </AlertDialogContent>

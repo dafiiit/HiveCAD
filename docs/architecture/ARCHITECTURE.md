@@ -791,12 +791,14 @@ User code (string)
 
 ### 9.1 Overview
 
-HiveCAD persists project data across three storage layers and synchronises them via a background `SyncEngine`. The design must satisfy two requirements simultaneously:
+HiveCAD persists 3D model data across three storage layers and synchronises them via a background `SyncEngine`. The design must satisfy two requirements simultaneously:
 
-1. **Auto-create**: new or modified projects push to GitHub/Supabase automatically.
-2. **Permanent delete**: deleted projects must not reappear after a sync cycle.
+1. **Auto-create**: new or modified 3D models push to GitHub/Supabase automatically.
+2. **Permanent delete**: deleted 3D models must not reappear after a sync cycle.
 
-A **tombstone** system resolves this conflict — deletions leave a short-lived marker that tells the sync engine "do not re-pull this project."
+A **tombstone** system resolves this conflict — deletions leave a short-lived marker that tells the sync engine "do not re-pull this 3D model."
+
+> **Project vs 3D Model hierarchy**: A **Project** (UI-level concept, stored as `FolderEntry`) is the top-level container that groups related 3D Models, documentation, and images. A **3D Model** (stored as `ProjectData`/`ProjectMeta`) is a CAD workspace with code and geometry. The `ProjectMeta.folder` field maps a 3D Model to its parent Project. This reuses the existing `FolderEntry` storage mechanism for backward compatibility.
 
 ### 9.2 Storage Layers
 
@@ -922,14 +924,14 @@ try { await mgr.supabaseMeta?.deleteProjectMeta(id); } catch (e) { /* logged */ 
 
 | Operation | Handler | Storage Calls |
 |---|---|---|
-| Create project | `ProjectDashboard.handleCreateProject` | `quickStore.save` → `markDirty` |
-| Delete project | `ProjectDashboard.handleConfirmDelete` | `quickStore.delete` → `remote.delete` → `supabase.delete` |
-| Rename project | `ProjectDashboard.handleRenameProject` | `quickStore.save` → `markDirty` |
-| Fork project | `ProjectDashboard.handleForkProject` | `quickStore.save` → `markDirty` |
+| Create 3D model | `ProjectDashboard.handleCreate3DModel` | `quickStore.save` → `markDirty` |
+| Delete 3D model | `ProjectDashboard.handleConfirmDelete` | `quickStore.delete` → `remote.delete` → `supabase.delete` |
+| Rename 3D model | `ProjectDashboard.handleRenameProject` | `quickStore.save` → `markDirty` |
+| Fork 3D model | `ProjectDashboard.handleForkProject` | `quickStore.save` → `markDirty` |
 | Update tags | `ProjectDashboard.handleUpdateTags` | `quickStore.save` → `markDirty` |
-| Move to folder | `ProjectDashboard.handleMoveProjectToFolder` | `quickStore.save` → `markDirty` |
-| Rename folder | `ProjectDashboard.handleRenameFolder` | `quickStore.save` (each project) → `markDirty` |
-| Delete folder | `ProjectDashboard.handleDeleteFolder` | `quickStore.save` (each project) → `markDirty` |
+| Move to project | `ProjectDashboard.handleMoveProjectToFolder` | `quickStore.save` → `markDirty` |
+| Rename project | `ProjectDashboard.handleRenameFolder` | `quickStore.save` (each 3D model) → `markDirty` |
+| Delete project | `ProjectDashboard.handleDeleteFolder` | `quickStore.save` (each 3D model) → `markDirty` |
 | Save from editor | `versioningSlice.saveToLocal` | `quickStore.save` → `markDirty` |
 | Sync to cloud | `versioningSlice.syncToCloud` | `syncEngine.syncNow()` |
 | Delete tab (empty) | `TabManager.handleConfirmDelete` | `quickStore.delete` → `remote.delete` → `supabase.delete` |

@@ -12,14 +12,15 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import type { ProjectMeta, ProjectData, TagEntry, FolderEntry } from '@/lib/storage/types';
-import { createBlankProject, uuid, DEFAULT_CODE } from '@/lib/storage/projectUtils';
+import type { ProjectMeta, ProjectData, TagEntry, FolderEntry, CollaboratorRole } from '@/lib/storage/types';
+import { createBlank3DModel, uuid, DEFAULT_CODE } from '@/lib/storage/projectUtils';
 import { StorageManager } from '@/lib/storage/StorageManager';
 import { LoadingScreen } from '../ui/LoadingScreen';
 import { ProjectHistoryView } from './ProjectHistoryView';
 import { GitBranch } from 'lucide-react';
 import { SettingsDialog } from '@/components/ui/SettingsDialog';
 import { ProjectCard } from './ProjectCard';
+import { ProjectDetailView } from './ProjectDetailView';
 import { EXAMPLES } from '@/lib/data/examples';
 
 type DashboardMode = 'workspace' | 'discover';
@@ -50,6 +51,8 @@ export function ProjectDashboard() {
     const [showFolderDialog, setShowFolderDialog] = useState(false);
     const [folderNameInput, setFolderNameInput] = useState("");
     const [folderColorInput, setFolderColorInput] = useState("#3b82f6");
+    const [folderDescriptionInput, setFolderDescriptionInput] = useState("");
+    const [selectedProject, setSelectedProject] = useState<FolderEntry | null>(null);
     const [showSettingsMenu, setShowSettingsMenu] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
@@ -195,7 +198,7 @@ export function ProjectDashboard() {
 
     // ─── Create Project ───────────────────────────────────────────────────
 
-    const handleCreateProject = async () => {
+    const handleCreate3DModel = async (targetFolder?: string) => {
         const existingNames = userProjects.map(p => p.name);
         let name = 'Unnamed';
         let counter = 1;
@@ -205,13 +208,14 @@ export function ProjectDashboard() {
         }
 
         const projectId = uuid();
-        console.log(`[ProjectDashboard] Creating project with ID: ${projectId}`);
+        console.log(`[ProjectDashboard] Creating 3D model with ID: ${projectId}`);
 
-        const newProject = createBlankProject({
+        const newProject = createBlank3DModel({
             id: projectId,
             name,
             ownerId: user?.id || 'anon',
             ownerEmail: user?.email || '',
+            folder: targetFolder || '',
         });
 
         // Save to QuickStore and mark sync dirty
@@ -219,7 +223,7 @@ export function ProjectDashboard() {
             await mgr.quickStore.saveProject(newProject);
             mgr.syncEngine?.markDirty();
         } catch (e) {
-            console.error("Failed to save new project", e);
+            console.error("Failed to save new 3D model", e);
         }
 
         // Set default thumbnail
@@ -233,7 +237,7 @@ export function ProjectDashboard() {
         }
 
         openProjectInNewTab(newProject);
-        toast.success(`Started new project: ${name}`);
+        toast.success(`Started new 3D model: ${name}`);
         refreshProjects();
     };
 
@@ -506,22 +510,23 @@ export function ProjectDashboard() {
     const handleAddFolder = () => {
         setFolderNameInput("");
         setFolderColorInput("#3b82f6");
+        setFolderDescriptionInput("");
         setShowFolderDialog(true);
     };
 
     const handleCreateFolder = async () => {
         if (!folderNameInput.trim()) return;
-        const newFolders: FolderEntry[] = [...folders, { name: folderNameInput.trim(), color: folderColorInput }];
+        const newFolders: FolderEntry[] = [...folders, { name: folderNameInput.trim(), color: folderColorInput, description: folderDescriptionInput.trim() || undefined }];
         try {
             const userId = user?.id;
             if (userId && mgr.supabaseMeta) {
                 await mgr.supabaseMeta.saveUserFolders(userId, newFolders);
             }
             setFolders(newFolders);
-            toast.success(`Folder "${folderNameInput}" created`);
+            toast.success(`Project "${folderNameInput}" created`);
             setShowFolderDialog(false);
         } catch (error) {
-            toast.error("Failed to save folder");
+            toast.error("Failed to create project");
         }
     };
 
@@ -563,10 +568,10 @@ export function ProjectDashboard() {
     };
 
     const handleDeleteFolder = async (folderName: string) => {
-        const confirm = window.confirm(`Are you sure you want to delete folder "${folderName}"? Projects inside will be moved to root.`);
+        const confirm = window.confirm(`Are you sure you want to delete project "${folderName}"? 3D models inside will be moved to root.`);
         if (!confirm) return;
 
-        setLoadingMessage(`Deleting folder...`);
+        setLoadingMessage(`Deleting project...`);
         try {
             const newFolders = folders.filter(f => f.name !== folderName);
             const userId = user?.id;
@@ -840,11 +845,11 @@ export function ProjectDashboard() {
                 {dashboardMode === 'workspace' ? (
                     <>
                         <div className="max-w-7xl mx-auto w-full space-y-10">
-                            {/* ROW 1: Folders */}
+                            {/* ROW 1: Projects (formerly Folders) */}
                             <section className="space-y-6">
-                                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">Folders</h3>
+                                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">Projects</h3>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-                                    {/* New Folder Card */}
+                                    {/* New Project Card */}
                                     <button
                                         onClick={handleAddFolder}
                                         className="aspect-[4/3] bg-card border-2 border-dashed border-border hover:border-primary/50 hover:bg-secondary/50 rounded-2xl flex flex-col items-center justify-center gap-3 text-muted-foreground hover:text-foreground transition-all group"
@@ -852,20 +857,17 @@ export function ProjectDashboard() {
                                         <div className="w-14 h-14 rounded-full bg-secondary flex items-center justify-center group-hover:scale-110 transition-transform shadow-inner">
                                             <Folder className="w-7 h-7" />
                                         </div>
-                                        <span className="font-bold text-sm">New Folder</span>
+                                        <span className="font-bold text-sm">New Project</span>
                                     </button>
 
-                                    {/* Existing Folders */}
+                                    {/* Existing Projects */}
                                     {folders.map((folder, i) => (
                                         <div
                                             key={i}
                                             onClick={() => {
-                                                if (selectedFolder === folder.name) {
-                                                    setSelectedFolder(null);
-                                                } else {
-                                                    setSelectedFolder(folder.name);
-                                                    setActiveNav('Tags');
-                                                }
+                                                setSelectedProject(folder);
+                                                setSelectedFolder(folder.name);
+                                                setActiveNav('Tags');
                                             }}
                                             className={`aspect-[4/3] bg-card border rounded-2xl p-5 flex flex-col justify-between text-left group transition-all relative overflow-visible cursor-pointer shadow-sm hover:shadow-lg ${selectedFolder === folder.name ? 'border-primary ring-2 ring-primary/20 bg-primary/5' : 'border-border hover:border-primary/30'
                                                 }`}
@@ -921,13 +923,57 @@ export function ProjectDashboard() {
                                             <div>
                                                 <h4 className="font-bold text-zinc-200 group-hover:text-primary transition-colors truncate">{folder.name}</h4>
                                                 <p className="text-[10px] text-zinc-500 font-medium">
-                                                    {userProjects.filter(p => p.folder === folder.name).length} projects
+                                                    {userProjects.filter(p => p.folder === folder.name).length} 3D models
                                                 </p>
+                                                {folder.description && (
+                                                    <p className="text-[10px] text-zinc-500 truncate mt-0.5">{folder.description}</p>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
                                 </div>
                             </section>
+
+                            {/* ProjectDetailView (when a project is selected) */}
+                            {selectedProject && (
+                                <ProjectDetailView
+                                    project={selectedProject}
+                                    models={userProjects.filter(p => p.folder === selectedProject.name)}
+                                    onBack={() => { setSelectedProject(null); setSelectedFolder(null); }}
+                                    onCreate3DModel={() => handleCreate3DModel(selectedProject.name)}
+                                    onOpen3DModel={handleOpenProject}
+                                    onDelete3DModel={(id) => handleDeleteProject(id)}
+                                    onRename3DModel={(meta) => { setShowRenameDialog(meta); setRenameInput(meta.name); }}
+                                    onUpdateProject={async (updated) => {
+                                        const newFolders = folders.map(f => f.name === selectedProject.name ? updated : f);
+                                        try {
+                                            const userId = user?.id;
+                                            if (userId && mgr.supabaseMeta) {
+                                                await mgr.supabaseMeta.saveUserFolders(userId, newFolders);
+                                            }
+                                            // If name changed, update all models in this project
+                                            if (updated.name !== selectedProject.name) {
+                                                const modelsInProject = userProjects.filter(p => p.folder === selectedProject.name);
+                                                for (const meta of modelsInProject) {
+                                                    const data = await mgr.quickStore.loadProject(meta.id);
+                                                    if (data) {
+                                                        data.meta.folder = updated.name;
+                                                        await mgr.quickStore.saveProject(data);
+                                                    }
+                                                }
+                                                mgr.syncEngine?.markDirty();
+                                            }
+                                            setFolders(newFolders);
+                                            setSelectedProject(updated);
+                                            setSelectedFolder(updated.name);
+                                            await refreshProjects();
+                                        } catch (error) {
+                                            toast.error('Failed to update project');
+                                        }
+                                    }}
+                                    projectThumbnails={projectThumbnails}
+                                />
+                            )}
 
                             {/* ROW 2: Search */}
                             <div className="max-w-2xl mx-auto w-full relative group">
@@ -1004,16 +1050,16 @@ export function ProjectDashboard() {
                                     )}
                                 </h3>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                                    {/* New Project Card */}
+                                    {/* New 3D Model Card */}
                                     {activeNav !== 'Trash' && (
                                         <button
-                                            onClick={handleCreateProject}
+                                            onClick={() => handleCreate3DModel(selectedFolder || undefined)}
                                             className="aspect-[4/3] bg-primary/10 border-2 border-dashed border-primary/30 hover:border-primary hover:bg-primary/20 rounded-xl flex flex-col items-center justify-center gap-3 text-primary transition-all group shadow-lg shadow-primary/5"
                                         >
                                             <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center group-hover:scale-110 transition-transform">
                                                 <Plus className="w-7 h-7" />
                                             </div>
-                                            <span className="font-bold text-lg">New Project</span>
+                                            <span className="font-bold text-lg">New 3D Model</span>
                                         </button>
                                     )}
 
@@ -1133,7 +1179,7 @@ export function ProjectDashboard() {
                                                 }}
                                                 className="w-full bg-primary text-white font-bold rounded-full shadow-2xl scale-90 group-hover:scale-100 transition-transform"
                                             >
-                                                OPEN PROJECT
+                                                OPEN 3D MODEL
                                             </Button>
                                             <Button
                                                 onClick={(e) => {
@@ -1174,10 +1220,10 @@ export function ProjectDashboard() {
             {showFolderDialog && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-popover border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
-                        <h4 className="text-xl font-bold text-popover-foreground mb-4">Create New Folder</h4>
+                        <h4 className="text-xl font-bold text-popover-foreground mb-4">Create New Project</h4>
                         <div className="space-y-4">
                             <div>
-                                <label className="text-xs text-muted-foreground font-bold uppercase tracking-wider mb-1.5 block">Folder Name</label>
+                                <label className="text-xs text-muted-foreground font-bold uppercase tracking-wider mb-1.5 block">Project Name</label>
                                 <input
                                     value={folderNameInput}
                                     onChange={(e) => setFolderNameInput(e.target.value)}
@@ -1191,7 +1237,17 @@ export function ProjectDashboard() {
                                 />
                             </div>
                             <div>
-                                <label className="text-xs text-muted-foreground font-bold uppercase tracking-wider mb-1.5 block">Folder Color</label>
+                                <label className="text-xs text-muted-foreground font-bold uppercase tracking-wider mb-1.5 block">Description</label>
+                                <textarea
+                                    value={folderDescriptionInput}
+                                    onChange={(e) => setFolderDescriptionInput(e.target.value)}
+                                    placeholder="Describe your project..."
+                                    rows={3}
+                                    className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/30 resize-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-muted-foreground font-bold uppercase tracking-wider mb-1.5 block">Project Color</label>
                                 <UnifiedColorPicker
                                     color={folderColorInput}
                                     onChange={setFolderColorInput}
@@ -1200,7 +1256,7 @@ export function ProjectDashboard() {
                             <div className="flex justify-end gap-3 pt-4">
                                 <Button variant="ghost" onClick={() => setShowFolderDialog(false)}>Cancel</Button>
                                 <Button onClick={handleCreateFolder} className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-full px-6">
-                                    Create Folder
+                                    Create Project
                                 </Button>
                             </div>
                         </div>
@@ -1211,10 +1267,10 @@ export function ProjectDashboard() {
             {renameFolderDialog && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-popover border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
-                        <h4 className="text-xl font-bold text-popover-foreground mb-4">Rename Folder</h4>
+                        <h4 className="text-xl font-bold text-popover-foreground mb-4">Rename Project</h4>
                         <div className="space-y-4">
                             <div>
-                                <label className="text-xs text-muted-foreground font-bold uppercase tracking-wider mb-1.5 block">New Folder Name</label>
+                                <label className="text-xs text-muted-foreground font-bold uppercase tracking-wider mb-1.5 block">New Project Name</label>
                                 <input
                                     value={renameFolderInput}
                                     onChange={(e) => setRenameFolderInput(e.target.value)}
@@ -1240,7 +1296,7 @@ export function ProjectDashboard() {
             {showRenameDialog && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-popover border border-border rounded-xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
-                        <h4 className="text-xl font-bold text-foreground mb-4">Rename Project</h4>
+                        <h4 className="text-xl font-bold text-foreground mb-4">Rename 3D Model</h4>
                         <input
                             value={renameInput}
                             onChange={(e) => setRenameInput(e.target.value)}
