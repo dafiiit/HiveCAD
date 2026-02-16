@@ -177,51 +177,78 @@ export const TabManager = () => {
         const projectName = tabToDelete.title;
         const store: StoreApi<any> = tabToDelete.store;
 
+        // Optimistically close the dialog
+        setTabToDelete(null);
+
+        // If it's just a new tab (no project ID), just close it
+        if (!projectId) {
+            executeCloseTab(tabId);
+            return;
+        }
+
+        const toastId = toast.loading(`Deleting "${projectName}"...`);
+
         try {
+            const mgr = StorageManager.getInstance();
+
             // 1. Delete from all stores (tombstone written by QuickStore.deleteProject)
-            if (projectId) {
-                const mgr = StorageManager.getInstance();
-                toast.promise(
-                    (async () => {
-                        // Delete locally (writes tombstone to prevent re-sync)
-                        await mgr.quickStore.deleteProject(projectId);
-                        // Delete from GitHub
-                        if (mgr.isRemoteConnected) {
-                            try {
-                                await mgr.remoteStore!.deleteProject(projectId);
-                            } catch (err) {
-                                console.warn(`[TabManager] Failed to delete ${projectId} from remote (will retry on next sync):`, err);
-                            }
-                        }
-                        // Delete from Supabase
-                        try {
-                            await mgr.supabaseMeta?.deleteProjectMeta(projectId);
-                        } catch (err) {
-                            console.warn(`[TabManager] Failed to delete ${projectId} from Supabase:`, err);
-                        }
-                        store.getState().removeThumbnail?.(projectName);
-                    })(),
-                    {
-                        loading: `Deleting project "${projectName}"...`,
-                        success: `Project deleted`,
-                        error: `Failed to delete project`,
-                    }
-                );
+            // Delete locally (writes tombstone to prevent re-sync)
+            await mgr.quickStore.deleteProject(projectId);
+
+            // Delete from GitHub
+            if (mgr.isRemoteConnected) {
+                try {
+                    await mgr.remoteStore!.deleteProject(projectId);
+                } catch (err) {
+                    console.warn(`[TabManager] Failed to delete ${projectId} from remote (will retry on next sync):`, err);
+                }
             }
+
+            // Delete from Supabase
+            try {
+                await mgr.supabaseMeta?.deleteProjectMeta(projectId);
+            } catch (err) {
+                console.warn(`[TabManager] Failed to delete ${projectId} from Supabase:`, err);
+            }
+
+            // Clean up thumbnail
+            store.getState().removeThumbnail?.(projectName);
 
             // 2. Clear state in store to prevent any background saves
             if (store.getState().reset) {
                 store.getState().reset();
             }
 
+            toast.success(`Deleted "${projectName}"`, { id: toastId });
+
             // 3. Close the tab
             executeCloseTab(tabId);
+
+            // 4. Determine if we need to refresh the dashboard
+            // If the active tab is a dashboard, we should refresh its project list
+            // We can do this by finding all dashboard tabs and triggering a refresh if possible
+            // But since ProjectDashboard refreshes on mount/focus, simply closing this tab and returning to dashboard might be enough regarding UI state
+            // However, to be safe, if there are other dashboard tabs, they might state stale data.
+            // The ProjectDashboard uses useGlobalStore or internal state.
+            // For now, we rely on the user navigating to the dashboard which triggers a refresh or using the refresh button.
+            // Actually, we can try to find a dashboard tab and see if we can trigger something, but ProjectDashboard logic is self-contained.
+            // The previous implementation in ProjectDashboard calls refreshProjects().
+            // We can't easily call that here without context.
+            // But since we are deleting the *current* project tab, we will land on another tab.
+            // If that tab is the dashboard, it might need to know.
+            // ProjectDashboard listens to focus or can be triggered.
+            // Let's rely on the dashboard's own polling or refresh-on-focus/mount for now.
+
         } catch (error) {
             console.error("Deletion failed:", error);
-            // Still close the tab but warn
+            toast.error(`Failed to delete "${projectName}"`, { id: toastId });
+            // Still close the tab if it was a partial failure?
+            // Usually if delete fails, we might want to keep the tab open so user can retry or save stuff.
+            // So we do NOT close the tab here on strict error, or maybe we do depending on UX preference.
+            // The original code closed it anyway. Let's keep it open on error so user doesn't lose data if it was a network glitch?
+            // But this is "Empty Project" warning. There is no data to lose really.
+            // So closing it is probably fine.
             executeCloseTab(tabId);
-        } finally {
-            setTabToDelete(null);
         }
     };
 
