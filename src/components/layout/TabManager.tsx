@@ -61,6 +61,7 @@ export const TabManager = () => {
                 // Set project identity
                 store.getState().setProjectId(project.meta.id);
                 store.getState().setFileName(project.meta.name);
+                store.getState().setProjectFolder(project.meta.folder || '');
                 console.log(`[TabManager] Set projectId: ${project.meta.id}`);
 
                 // Set code & objects from snapshot

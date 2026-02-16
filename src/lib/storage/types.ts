@@ -145,7 +145,13 @@ export interface ExtensionEntry {
 // ─── Tags / Folders ────────────────────────────────────────────────────────
 
 export interface TagEntry { name: string; color: string }
-export interface FolderEntry { name: string; color: string; description?: string }
+export interface FolderEntry {
+    id: string;          // UUID — unique identifier for the project/folder
+    name: string;
+    color: string;
+    description?: string;
+    parentId?: string;   // if set, this is a sub-project of the parent with this id
+}
 
 // ─── Collaborators ─────────────────────────────────────────────────────
 

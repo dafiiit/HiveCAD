@@ -180,7 +180,7 @@ export function ProjectCard({
                                 {folders.map((f: any) => (
                                     <button
                                         key={f.name}
-                                        onClick={(e) => { e.stopPropagation(); onMoveToFolder(f.name); onAction(); }}
+                                        onClick={(e) => { e.stopPropagation(); onMoveToFolder(f.id); onAction(); }}
                                         className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-2"
                                     >
                                         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: f.color }} />

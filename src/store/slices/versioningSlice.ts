@@ -27,7 +27,7 @@ function buildProjectData(state: CADState): ProjectData {
             description: '',
             visibility: 'private',
             tags: [],
-            folder: '',
+            folder: state.projectFolder,
             thumbnail: state.projectThumbnails[state.fileName] ?? '',
             lastModified: Date.now(),
             createdAt: Date.now(),
@@ -67,6 +67,7 @@ export const createVersioningSlice: StateCreator<
     // ─── Project Info ───────────────────────────────────────────────────────
     fileName: 'Untitled',
     projectId: null,
+    projectFolder: '',
     isSaved: true,
     hasUnpushedChanges: false,
     syncStatus: 'idle',
@@ -255,6 +256,8 @@ export const createVersioningSlice: StateCreator<
 
     setProjectId: (id) => set({ projectId: id }),
 
+    setProjectFolder: (folder) => set({ projectFolder: folder }),
+
     // ─── VCS / Versioning ───────────────────────────────────────────────────
 
     createVersion: (message: string) => {
@@ -390,6 +393,7 @@ export const createVersioningSlice: StateCreator<
         set({
             fileName: 'Untitled',
             projectId: null,
+            projectFolder: '',
             code: DEFAULT_CODE,
             history: [],
             historyIndex: -1,

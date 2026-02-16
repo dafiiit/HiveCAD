@@ -53,6 +53,7 @@ export function ProjectDashboard() {
     const [folderColorInput, setFolderColorInput] = useState("#3b82f6");
     const [folderDescriptionInput, setFolderDescriptionInput] = useState("");
     const [selectedProject, setSelectedProject] = useState<FolderEntry | null>(null);
+    const [folderParentId, setFolderParentId] = useState<string | undefined>(undefined);
     const [showSettingsMenu, setShowSettingsMenu] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
@@ -74,6 +75,53 @@ export function ProjectDashboard() {
 
     // ─── Refresh Projects ─────────────────────────────────────────────────
 
+    // ─── Folder Persistence Helper ─────────────────────────────────────
+    const FOLDERS_STORAGE_KEY = 'hivecad_folders';
+
+    const persistFolders = useCallback(async (newFolders: FolderEntry[]) => {
+        // Always save to localStorage as primary local persistence
+        try {
+            localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(newFolders));
+        } catch (e) {
+            console.warn('[Folders] Failed to save to localStorage', e);
+        }
+        // Also sync to Supabase if available
+        const userId = user?.id;
+        if (userId && mgr.supabaseMeta) {
+            try {
+                await mgr.supabaseMeta.saveUserFolders(userId, newFolders);
+            } catch (e) {
+                console.warn('[Folders] Failed to save to Supabase', e);
+            }
+        }
+        setFolders(newFolders);
+    }, [user?.id, mgr.supabaseMeta]);
+
+    const loadFolders = useCallback(async (): Promise<FolderEntry[]> => {
+        // Try Supabase first
+        const userId = user?.id;
+        if (userId && mgr.supabaseMeta) {
+            try {
+                const remote = await mgr.supabaseMeta.getUserFolders(userId);
+                if (remote.length > 0) {
+                    // Sync to localStorage
+                    localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(remote));
+                    return remote;
+                }
+            } catch (e) {
+                console.warn('[Folders] Failed to load from Supabase', e);
+            }
+        }
+        // Fallback to localStorage
+        try {
+            const raw = localStorage.getItem(FOLDERS_STORAGE_KEY);
+            if (raw) return JSON.parse(raw);
+        } catch (e) {
+            console.warn('[Folders] Failed to load from localStorage', e);
+        }
+        return [];
+    }, [user?.id, mgr.supabaseMeta]);
+
     const refreshProjects = useCallback(async () => {
         if (user?.pat && !isStorageConnected) {
             console.log('[ProjectDashboard] Waiting for cloud connection...');
@@ -87,20 +135,18 @@ export function ProjectDashboard() {
                 const metas = await mgr.quickStore.listProjects();
                 setUserProjects(metas.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0)));
 
-                // Load tags & folders from Supabase
+                // Load tags & folders
                 const userId = user?.id;
                 if (userId && mgr.supabaseMeta) {
                     try {
-                        const [fetchedTags, fetchedFolders] = await Promise.all([
-                            mgr.supabaseMeta.getUserTags(userId),
-                            mgr.supabaseMeta.getUserFolders(userId),
-                        ]);
+                        const fetchedTags = await mgr.supabaseMeta.getUserTags(userId);
                         setTags(fetchedTags);
-                        setFolders(fetchedFolders);
                     } catch (e) {
-                        console.warn('Failed to fetch tags/folders', e);
+                        console.warn('Failed to fetch tags', e);
                     }
                 }
+                const fetchedFolders = await loadFolders();
+                setFolders(fetchedFolders);
             } catch (error) {
                 console.error("Failed to fetch projects:", error);
             } finally {
@@ -508,21 +554,25 @@ export function ProjectDashboard() {
     // ─── Folders ──────────────────────────────────────────────────────────
 
     const handleAddFolder = () => {
+        setFolderParentId(undefined);
         setFolderNameInput("");
         setFolderColorInput("#3b82f6");
         setFolderDescriptionInput("");
         setShowFolderDialog(true);
     };
 
-    const handleCreateFolder = async () => {
+    const handleCreateFolder = async (parentId?: string) => {
         if (!folderNameInput.trim()) return;
-        const newFolders: FolderEntry[] = [...folders, { name: folderNameInput.trim(), color: folderColorInput, description: folderDescriptionInput.trim() || undefined }];
+        const newFolder: FolderEntry = {
+            id: uuid(),
+            name: folderNameInput.trim(),
+            color: folderColorInput,
+            description: folderDescriptionInput.trim() || undefined,
+            parentId: parentId || undefined,
+        };
+        const newFolders: FolderEntry[] = [...folders, newFolder];
         try {
-            const userId = user?.id;
-            if (userId && mgr.supabaseMeta) {
-                await mgr.supabaseMeta.saveUserFolders(userId, newFolders);
-            }
-            setFolders(newFolders);
+            await persistFolders(newFolders);
             toast.success(`Project "${folderNameInput}" created`);
             setShowFolderDialog(false);
         } catch (error) {
@@ -532,57 +582,51 @@ export function ProjectDashboard() {
 
     const handleRenameFolder = async () => {
         if (!renameFolderDialog || !renameFolderInput.trim()) return;
-        const oldName = renameFolderDialog.name;
+        const folderId = renameFolderDialog.id;
         const newName = renameFolderInput.trim();
 
-        const newFolders = folders.map(f => f.name === oldName ? { ...f, name: newName } : f);
+        const newFolders = folders.map(f => f.id === folderId ? { ...f, name: newName } : f);
 
-        setLoadingMessage(`Renaming folder...`);
+        setLoadingMessage(`Renaming project...`);
         try {
-            const userId = user?.id;
-            if (userId && mgr.supabaseMeta) {
-                await mgr.supabaseMeta.saveUserFolders(userId, newFolders);
-            }
-            setFolders(newFolders);
+            await persistFolders(newFolders);
 
-            // Update all projects in this folder
-            const projectsInFolder = userProjects.filter(p => p.folder === oldName);
-            for (const meta of projectsInFolder) {
-                const data = await mgr.quickStore.loadProject(meta.id);
-                if (data) {
-                    data.meta.folder = newName;
-                    await mgr.quickStore.saveProject(data);
-                }
+            // No need to update 3D models — they reference folder by id, not name
+            if (selectedProject?.id === folderId) {
+                setSelectedProject({ ...selectedProject, name: newName });
             }
-            mgr.syncEngine?.markDirty();
-
-            if (selectedFolder === oldName) setSelectedFolder(newName);
-            toast.success("Folder renamed");
+            toast.success("Project renamed");
             setRenameFolderDialog(null);
             await refreshProjects();
         } catch (error) {
-            toast.error("Failed to rename folder");
+            toast.error("Failed to rename project");
         } finally {
             setLoadingMessage(null);
         }
     };
 
-    const handleDeleteFolder = async (folderName: string) => {
-        const confirm = window.confirm(`Are you sure you want to delete project "${folderName}"? 3D models inside will be moved to root.`);
+    const handleDeleteFolder = async (folderId: string) => {
+        const folder = folders.find(f => f.id === folderId);
+        if (!folder) return;
+        const confirm = window.confirm(`Are you sure you want to delete project "${folder.name}"? 3D models inside will be moved to root.`);
         if (!confirm) return;
 
         setLoadingMessage(`Deleting project...`);
         try {
-            const newFolders = folders.filter(f => f.name !== folderName);
-            const userId = user?.id;
-            if (userId && mgr.supabaseMeta) {
-                await mgr.supabaseMeta.saveUserFolders(userId, newFolders);
-            }
-            setFolders(newFolders);
+            // Remove the folder and any sub-projects
+            const idsToRemove = new Set<string>();
+            const collectChildren = (parentId: string) => {
+                idsToRemove.add(parentId);
+                folders.filter(f => f.parentId === parentId).forEach(f => collectChildren(f.id));
+            };
+            collectChildren(folderId);
 
-            // Unassign projects
-            const projectsInFolder = userProjects.filter(p => p.folder === folderName);
-            for (const meta of projectsInFolder) {
+            const newFolders = folders.filter(f => !idsToRemove.has(f.id));
+            await persistFolders(newFolders);
+
+            // Unassign 3D models in deleted folders
+            const modelsInDeleted = userProjects.filter(p => idsToRemove.has(p.folder));
+            for (const meta of modelsInDeleted) {
                 const data = await mgr.quickStore.loadProject(meta.id);
                 if (data) {
                     data.meta.folder = '';
@@ -591,38 +635,38 @@ export function ProjectDashboard() {
             }
             mgr.syncEngine?.markDirty();
 
-            if (selectedFolder === folderName) setSelectedFolder(null);
-            toast.success("Folder deleted");
+            if (selectedProject && idsToRemove.has(selectedProject.id)) {
+                setSelectedProject(null);
+                setSelectedFolder(null);
+            }
+            toast.success("Project deleted");
             await refreshProjects();
         } catch (error) {
-            toast.error("Failed to delete folder");
+            toast.error("Failed to delete project");
         } finally {
             setLoadingMessage(null);
         }
     };
 
-    const handleFolderColorChange = async (folderName: string, newColor: string) => {
-        const newFolders = folders.map(f => f.name === folderName ? { ...f, color: newColor } : f);
+    const handleFolderColorChange = async (folderId: string, newColor: string) => {
+        const newFolders = folders.map(f => f.id === folderId ? { ...f, color: newColor } : f);
         try {
-            const userId = user?.id;
-            if (userId && mgr.supabaseMeta) {
-                await mgr.supabaseMeta.saveUserFolders(userId, newFolders);
-            }
-            setFolders(newFolders);
+            await persistFolders(newFolders);
         } catch (error) {
             toast.error("Failed to update folder color");
         }
     };
 
-    const handleMoveProjectToFolder = async (projectId: string, folderName: string | undefined) => {
+    const handleMoveProjectToFolder = async (projectId: string, folderId: string | undefined) => {
         try {
             const data = await mgr.quickStore.loadProject(projectId);
             if (data) {
-                data.meta.folder = folderName || '';
+                data.meta.folder = folderId || '';
                 await mgr.quickStore.saveProject(data);
                 mgr.syncEngine?.markDirty();
             }
-            toast.success(folderName ? `Moved to ${folderName}` : `Removed from folder`);
+            const folderName = folderId ? folders.find(f => f.id === folderId)?.name : undefined;
+            toast.success(folderName ? `Moved to ${folderName}` : `Removed from project`);
             refreshProjects();
         } catch (error) {
             toast.error("Failed to move project");
@@ -845,137 +889,8 @@ export function ProjectDashboard() {
                 {dashboardMode === 'workspace' ? (
                     <>
                         <div className="max-w-7xl mx-auto w-full space-y-10">
-                            {/* ROW 1: Projects (formerly Folders) */}
-                            <section className="space-y-6">
-                                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">Projects</h3>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-                                    {/* New Project Card */}
-                                    <button
-                                        onClick={handleAddFolder}
-                                        className="aspect-[4/3] bg-card border-2 border-dashed border-border hover:border-primary/50 hover:bg-secondary/50 rounded-2xl flex flex-col items-center justify-center gap-3 text-muted-foreground hover:text-foreground transition-all group"
-                                    >
-                                        <div className="w-14 h-14 rounded-full bg-secondary flex items-center justify-center group-hover:scale-110 transition-transform shadow-inner">
-                                            <Folder className="w-7 h-7" />
-                                        </div>
-                                        <span className="font-bold text-sm">New Project</span>
-                                    </button>
 
-                                    {/* Existing Projects */}
-                                    {folders.map((folder, i) => (
-                                        <div
-                                            key={i}
-                                            onClick={() => {
-                                                setSelectedProject(folder);
-                                                setSelectedFolder(folder.name);
-                                                setActiveNav('Tags');
-                                            }}
-                                            className={`aspect-[4/3] bg-card border rounded-2xl p-5 flex flex-col justify-between text-left group transition-all relative overflow-visible cursor-pointer shadow-sm hover:shadow-lg ${selectedFolder === folder.name ? 'border-primary ring-2 ring-primary/20 bg-primary/5' : 'border-border hover:border-primary/30'
-                                                }`}
-                                        >
-                                            <div className="flex justify-between items-start relative z-10">
-                                                <Folder className="w-8 h-8" style={{ color: folder.color }} />
-                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setContextMenuFolder(contextMenuFolder === folder.name ? null : folder.name);
-                                                        }}
-                                                        className="p-1 hover:bg-zinc-700 rounded-md transition-colors"
-                                                    >
-                                                        <MoreVertical className="w-4 h-4 text-zinc-500 hover:text-white" />
-                                                    </button>
-                                                </div>
-
-                                                {/* Folder Context Menu */}
-                                                {contextMenuFolder === folder.name && (
-                                                    <div className="absolute top-8 right-0 w-56 bg-popover border border-border rounded-xl shadow-2xl z-50 py-2 animate-in slide-in-from-top-2 duration-150 ring-1 ring-black/5">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setContextMenuFolder(null);
-                                                                setRenameFolderDialog(folder);
-                                                                setRenameFolderInput(folder.name);
-                                                            }}
-                                                            className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3"
-                                                        >
-                                                            <div className="w-3" /> RENAME
-                                                        </button>
-                                                        <div className="px-4 py-2">
-                                                            <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-2">Color</label>
-                                                            <UnifiedColorPicker
-                                                                color={folder.color}
-                                                                onChange={(c) => handleFolderColorChange(folder.name, c)}
-                                                            />
-                                                        </div>
-                                                        <div className="h-px bg-border my-1.5" />
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleDeleteFolder(folder.name);
-                                                            }}
-                                                            className="w-full text-left px-4 py-2 text-xs font-bold text-destructive hover:bg-destructive/10 flex items-center gap-3"
-                                                        >
-                                                            <Trash2 className="w-3.5 h-3.5" /> DELETE
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div>
-                                                <h4 className="font-bold text-zinc-200 group-hover:text-primary transition-colors truncate">{folder.name}</h4>
-                                                <p className="text-[10px] text-zinc-500 font-medium">
-                                                    {userProjects.filter(p => p.folder === folder.name).length} 3D models
-                                                </p>
-                                                {folder.description && (
-                                                    <p className="text-[10px] text-zinc-500 truncate mt-0.5">{folder.description}</p>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </section>
-
-                            {/* ProjectDetailView (when a project is selected) */}
-                            {selectedProject && (
-                                <ProjectDetailView
-                                    project={selectedProject}
-                                    models={userProjects.filter(p => p.folder === selectedProject.name)}
-                                    onBack={() => { setSelectedProject(null); setSelectedFolder(null); }}
-                                    onCreate3DModel={() => handleCreate3DModel(selectedProject.name)}
-                                    onOpen3DModel={handleOpenProject}
-                                    onDelete3DModel={(id) => handleDeleteProject(id)}
-                                    onRename3DModel={(meta) => { setShowRenameDialog(meta); setRenameInput(meta.name); }}
-                                    onUpdateProject={async (updated) => {
-                                        const newFolders = folders.map(f => f.name === selectedProject.name ? updated : f);
-                                        try {
-                                            const userId = user?.id;
-                                            if (userId && mgr.supabaseMeta) {
-                                                await mgr.supabaseMeta.saveUserFolders(userId, newFolders);
-                                            }
-                                            // If name changed, update all models in this project
-                                            if (updated.name !== selectedProject.name) {
-                                                const modelsInProject = userProjects.filter(p => p.folder === selectedProject.name);
-                                                for (const meta of modelsInProject) {
-                                                    const data = await mgr.quickStore.loadProject(meta.id);
-                                                    if (data) {
-                                                        data.meta.folder = updated.name;
-                                                        await mgr.quickStore.saveProject(data);
-                                                    }
-                                                }
-                                                mgr.syncEngine?.markDirty();
-                                            }
-                                            setFolders(newFolders);
-                                            setSelectedProject(updated);
-                                            setSelectedFolder(updated.name);
-                                            await refreshProjects();
-                                        } catch (error) {
-                                            toast.error('Failed to update project');
-                                        }
-                                    }}
-                                    projectThumbnails={projectThumbnails}
-                                />
-                            )}
-
-                            {/* ROW 2: Search */}
+                            {/* Search — always at top */}
                             <div className="max-w-2xl mx-auto w-full relative group">
                                 <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
                                 <Input
@@ -986,7 +901,7 @@ export function ProjectDashboard() {
                                 />
                             </div>
 
-                            {/* ROW 3: Tags (Single Line) */}
+                            {/* Tags — always at top */}
                             <div className="flex flex-wrap gap-2 justify-center items-center">
                                 {navItems.map((item) => (
                                     <button
@@ -995,6 +910,7 @@ export function ProjectDashboard() {
                                             setActiveNav(item.label);
                                             setActiveTags([]);
                                             setSelectedFolder(null);
+                                            setSelectedProject(null);
                                         }}
                                         className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all border ${activeNav === item.label && activeTags.length === 0 && !selectedFolder
                                             ? 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.2)]'
@@ -1031,107 +947,258 @@ export function ProjectDashboard() {
                                 })}
                             </div>
 
-                            {/* ROW 4: Filtered Grid Section */}
-                            <section>
-                                <h3 className="text-sm font-semibold flex items-center gap-2 mb-4 text-zinc-400 uppercase tracking-wider px-1">
-                                    {activeNav === 'Last Opened' && !selectedFolder && activeTags.length === 0 ? <Clock className="w-4 h-4" /> : <ListIcon className="w-4 h-4" />}
-                                    {selectedFolder
-                                        ? `FOLDER: ${selectedFolder}`
-                                        : activeTags.length > 0
-                                            ? `TAGS: ${activeTags.join(' + ')}`
-                                            : activeNav === 'Last Opened'
-                                                ? 'Last Opened'
-                                                : activeNav
-                                    }
-                                    {selectedFolder && (
-                                        <button onClick={() => setSelectedFolder(null)} className="ml-2 text-[10px] text-primary hover:underline">
-                                            (Clear)
-                                        </button>
-                                    )}
-                                </h3>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                                    {/* New 3D Model Card */}
-                                    {activeNav !== 'Trash' && (
-                                        <button
-                                            onClick={() => handleCreate3DModel(selectedFolder || undefined)}
-                                            className="aspect-[4/3] bg-primary/10 border-2 border-dashed border-primary/30 hover:border-primary hover:bg-primary/20 rounded-xl flex flex-col items-center justify-center gap-3 text-primary transition-all group shadow-lg shadow-primary/5"
-                                        >
-                                            <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                                <Plus className="w-7 h-7" />
-                                            </div>
-                                            <span className="font-bold text-lg">New 3D Model</span>
-                                        </button>
-                                    )}
-
-                                    {!loading && [
-                                        ...userProjects.map(p => ({ ...p, type: 'user' as const })),
-                                        ...EXAMPLES
-                                            .filter(e => !userProjects.some(up => up.id === e.id))
-                                            .map(e => ({ ...e, type: 'example' as const, ownerId: 'Example Project', tags: [] as string[], folder: '', lastModified: Date.parse(e.modified) }))
-                                    ]
-                                        .filter(p => (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
-                                        .filter(p => {
-                                            // Folder Filter
-                                            if (selectedFolder) {
-                                                if ((p as any).folder !== selectedFolder) return false;
+                            {/* === WHEN A PROJECT IS SELECTED: show ProjectDetailView only === */}
+                            {selectedProject ? (
+                                <ProjectDetailView
+                                    breadcrumb={(() => {
+                                        // Build the full breadcrumb path from root to selected project
+                                        const path: FolderEntry[] = [];
+                                        let current: FolderEntry | undefined = selectedProject;
+                                        while (current) {
+                                            path.unshift(current);
+                                            current = current.parentId ? folders.find(f => f.id === current!.parentId) : undefined;
+                                        }
+                                        return path;
+                                    })()}
+                                    project={selectedProject}
+                                    allFolders={folders}
+                                    models={userProjects.filter(p => p.folder === selectedProject.id)}
+                                    onNavigateBreadcrumb={(index) => {
+                                        const path: FolderEntry[] = [];
+                                        let current: FolderEntry | undefined = selectedProject;
+                                        while (current) {
+                                            path.unshift(current);
+                                            current = current.parentId ? folders.find(f => f.id === current!.parentId) : undefined;
+                                        }
+                                        if (index < path.length) {
+                                            setSelectedProject(path[index]);
+                                            setSelectedFolder(path[index].id);
+                                        }
+                                    }}
+                                    onBack={() => {
+                                        // Navigate to parent if exists, else back to dashboard
+                                        if (selectedProject.parentId) {
+                                            const parent = folders.find(f => f.id === selectedProject.parentId);
+                                            if (parent) {
+                                                setSelectedProject(parent);
+                                                setSelectedFolder(parent.id);
+                                                return;
                                             }
+                                        }
+                                        setSelectedProject(null);
+                                        setSelectedFolder(null);
+                                    }}
+                                    onCreate3DModel={() => handleCreate3DModel(selectedProject.id)}
+                                    onCreateSubProject={() => {
+                                        setFolderParentId(selectedProject.id);
+                                        setFolderNameInput('');
+                                        setFolderColorInput('#3b82f6');
+                                        setFolderDescriptionInput('');
+                                        setShowFolderDialog(true);
+                                    }}
+                                    onOpenSubProject={(sub) => {
+                                        setSelectedProject(sub);
+                                        setSelectedFolder(sub.id);
+                                    }}
+                                    onOpen3DModel={handleOpenProject}
+                                    onDelete3DModel={(id) => handleDeleteProject(id)}
+                                    onRename3DModel={(meta) => { setShowRenameDialog(meta); setRenameInput(meta.name); }}
+                                    onUpdateProject={async (updated) => {
+                                        const newFolders = folders.map(f => f.id === selectedProject.id ? updated : f);
+                                        try {
+                                            await persistFolders(newFolders);
+                                            setSelectedProject(updated);
+                                            setSelectedFolder(updated.id);
+                                            await refreshProjects();
+                                        } catch (error) {
+                                            toast.error('Failed to update project');
+                                        }
+                                    }}
+                                    projectThumbnails={projectThumbnails}
+                                />
+                            ) : (
+                                /* === DEFAULT VIEW: Projects grid + 3D Models grid === */
+                                <>
 
-                                            // Tag filter
-                                            const projectTags = (p as any).tags || [];
-                                            if (activeTags.length > 0) {
-                                                return activeTags.every(t => projectTags.includes(t));
-                                            }
-                                            const isStarred = starredProjects.includes(p.id);
-                                            if (activeNav === 'Starred') return isStarred;
-                                            if (activeNav === 'Created by me') return p.type === 'user' || (p as any).ownerId === 'Example Project';
-                                            if (activeNav === 'Shared with me') return false;
-                                            if (activeNav === 'Public by me') return p.type === 'user' && (p as any).visibility === 'public';
-                                            if (activeNav === 'Last Opened') return true;
-                                            if (activeNav === 'Tags') return projectTags.length > 0;
-                                            if (activeNav === 'Trash') return false;
-                                            return true;
-                                        })
-                                        .sort((a: any, b: any) => {
-                                            return (b.lastModified || 0) - (a.lastModified || 0);
-                                        })
-                                        .map((project: any) => (
-                                            <ProjectCard
-                                                key={`filtered-${project.id}`}
-                                                project={project}
-                                                onOpen={() => project.type === 'example' ? handleOpenExample(project) : handleOpenProject(project)}
-                                                onToggleStar={(e) => handleToggleStar(e, project.id)}
-                                                isStarred={starredProjects.includes(project.id)}
-                                                onAction={() => setContextMenuProject(project.id === contextMenuProject ? null : project.id)}
-                                                showMenu={contextMenuProject === project.id}
-                                                onDelete={() => handleDeleteProject(project.id)}
-                                                onRename={() => {
-                                                    setShowRenameDialog(project);
-                                                    setRenameInput(project.name);
-                                                }}
-                                                onManageTags={() => {
-                                                    setShowTagDialog(project);
-                                                    setTagNameInput("");
-                                                }}
-                                                onShare={() => handleShareProject(project.id)}
-                                                onViewHistory={() => setShowHistoryDialog(project.id)}
-                                                tags={tags}
-                                                projectThumbnails={projectThumbnails}
-                                                hasPAT={!!user?.pat}
-                                                folders={folders}
-                                                onMoveToFolder={(folderName: string) => handleMoveProjectToFolder(project.id, folderName)}
-                                            />
-                                        ))}
-                                    {userProjects.length === 0 && EXAMPLES.length === 0 && (
-                                        <div className="col-span-full py-20 text-center space-y-3">
-                                            <div className="w-16 h-16 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto text-zinc-600">
-                                                <Search className="w-8 h-8" />
-                                            </div>
-                                            <div className="text-zinc-500 font-medium">No projects found in {activeNav}</div>
-                                            <p className="text-zinc-600 text-sm">Try exploring the community in Discover mode or create a new project.</p>
+                                    {/* Projects Section */}
+                                    <section className="space-y-6">
+                                        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">Projects</h3>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+                                            {/* New Project Card */}
+                                            <button
+                                                onClick={handleAddFolder}
+                                                className="aspect-[4/3] bg-card border-2 border-dashed border-border hover:border-primary/50 hover:bg-secondary/50 rounded-2xl flex flex-col items-center justify-center gap-3 text-muted-foreground hover:text-foreground transition-all group"
+                                            >
+                                                <div className="w-14 h-14 rounded-full bg-secondary flex items-center justify-center group-hover:scale-110 transition-transform shadow-inner">
+                                                    <Folder className="w-7 h-7" />
+                                                </div>
+                                                <span className="font-bold text-sm">New Project</span>
+                                            </button>
+
+                                            {/* Existing Projects — filtered by search */}
+                                            {folders
+                                                .filter(f => !f.parentId && f.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                                                .map((folder) => (
+                                                    <div
+                                                        key={folder.id}
+                                                        onClick={() => {
+                                                            setSelectedProject(folder);
+                                                            setSelectedFolder(folder.id);
+                                                        }}
+                                                        className="aspect-[4/3] bg-card border border-border rounded-2xl p-5 flex flex-col justify-between text-left group transition-all relative overflow-visible cursor-pointer shadow-sm hover:shadow-lg hover:border-primary/30"
+                                                    >
+                                                        <div className="flex justify-between items-start relative z-10">
+                                                            <Folder className="w-8 h-8" style={{ color: folder.color }} />
+                                                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setContextMenuFolder(contextMenuFolder === folder.id ? null : folder.id);
+                                                                    }}
+                                                                    className="p-1 hover:bg-zinc-700 rounded-md transition-colors"
+                                                                >
+                                                                    <MoreVertical className="w-4 h-4 text-zinc-500 hover:text-white" />
+                                                                </button>
+                                                            </div>
+
+                                                            {contextMenuFolder === folder.id && (
+                                                                <div className="absolute top-8 right-0 w-56 bg-popover border border-border rounded-xl shadow-2xl z-50 py-2 animate-in slide-in-from-top-2 duration-150 ring-1 ring-black/5">
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setContextMenuFolder(null);
+                                                                            setRenameFolderDialog(folder);
+                                                                            setRenameFolderInput(folder.name);
+                                                                        }}
+                                                                        className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3"
+                                                                    >
+                                                                        <div className="w-3" /> RENAME
+                                                                    </button>
+                                                                    <div className="px-4 py-2">
+                                                                        <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-2">Color</label>
+                                                                        <UnifiedColorPicker
+                                                                            color={folder.color}
+                                                                            onChange={(c) => handleFolderColorChange(folder.id, c)}
+                                                                        />
+                                                                    </div>
+                                                                    <div className="h-px bg-border my-1.5" />
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleDeleteFolder(folder.id);
+                                                                        }}
+                                                                        className="w-full text-left px-4 py-2 text-xs font-bold text-destructive hover:bg-destructive/10 flex items-center gap-3"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" /> DELETE
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="font-bold text-zinc-200 group-hover:text-primary transition-colors truncate">{folder.name}</h4>
+                                                            <p className="text-[10px] text-zinc-500 font-medium">
+                                                                {userProjects.filter(p => p.folder === folder.id).length} 3D models
+                                                            </p>
+                                                            {folder.description && (
+                                                                <p className="text-[10px] text-zinc-500 truncate mt-0.5">{folder.description}</p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
                                         </div>
-                                    )}
-                                </div>
-                            </section>
+                                    </section>
+
+                                    {/* 3D Models Grid */}
+                                    <section>
+                                        <h3 className="text-sm font-semibold flex items-center gap-2 mb-4 text-zinc-400 uppercase tracking-wider px-1">
+                                            {activeNav === 'Last Opened' && activeTags.length === 0 ? <Clock className="w-4 h-4" /> : <ListIcon className="w-4 h-4" />}
+                                            {activeTags.length > 0
+                                                ? `TAGS: ${activeTags.join(' + ')}`
+                                                : activeNav === 'Last Opened'
+                                                    ? '3D Models'
+                                                    : `3D Models · ${activeNav}`
+                                            }
+                                        </h3>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                                            {/* New 3D Model Card */}
+                                            {activeNav !== 'Trash' && (
+                                                <button
+                                                    onClick={() => handleCreate3DModel(undefined)}
+                                                    className="aspect-[4/3] bg-primary/10 border-2 border-dashed border-primary/30 hover:border-primary hover:bg-primary/20 rounded-xl flex flex-col items-center justify-center gap-3 text-primary transition-all group shadow-lg shadow-primary/5"
+                                                >
+                                                    <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                                        <Plus className="w-7 h-7" />
+                                                    </div>
+                                                    <span className="font-bold text-lg">New 3D Model</span>
+                                                </button>
+                                            )}
+
+                                            {!loading && [
+                                                ...userProjects.map(p => ({ ...p, type: 'user' as const })),
+                                                ...EXAMPLES
+                                                    .filter(e => !userProjects.some(up => up.id === e.id))
+                                                    .map(e => ({ ...e, type: 'example' as const, ownerId: 'Example Project', tags: [] as string[], folder: '', lastModified: Date.parse(e.modified) }))
+                                            ]
+                                                .filter(p => (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
+                                                .filter(p => {
+                                                    // Tag filter
+                                                    const projectTags = (p as any).tags || [];
+                                                    if (activeTags.length > 0) {
+                                                        return activeTags.every(t => projectTags.includes(t));
+                                                    }
+                                                    const isStarred = starredProjects.includes(p.id);
+                                                    if (activeNav === 'Starred') return isStarred;
+                                                    if (activeNav === 'Created by me') return p.type === 'user' || (p as any).ownerId === 'Example Project';
+                                                    if (activeNav === 'Shared with me') return false;
+                                                    if (activeNav === 'Public by me') return p.type === 'user' && (p as any).visibility === 'public';
+                                                    if (activeNav === 'Last Opened') return true;
+                                                    if (activeNav === 'Tags') return projectTags.length > 0;
+                                                    if (activeNav === 'Trash') return false;
+                                                    return true;
+                                                })
+                                                .sort((a: any, b: any) => {
+                                                    return (b.lastModified || 0) - (a.lastModified || 0);
+                                                })
+                                                .map((project: any) => (
+                                                    <ProjectCard
+                                                        key={`filtered-${project.id}`}
+                                                        project={project}
+                                                        onOpen={() => project.type === 'example' ? handleOpenExample(project) : handleOpenProject(project)}
+                                                        onToggleStar={(e) => handleToggleStar(e, project.id)}
+                                                        isStarred={starredProjects.includes(project.id)}
+                                                        onAction={() => setContextMenuProject(project.id === contextMenuProject ? null : project.id)}
+                                                        showMenu={contextMenuProject === project.id}
+                                                        onDelete={() => handleDeleteProject(project.id)}
+                                                        onRename={() => {
+                                                            setShowRenameDialog(project);
+                                                            setRenameInput(project.name);
+                                                        }}
+                                                        onManageTags={() => {
+                                                            setShowTagDialog(project);
+                                                            setTagNameInput("");
+                                                        }}
+                                                        onShare={() => handleShareProject(project.id)}
+                                                        onViewHistory={() => setShowHistoryDialog(project.id)}
+                                                        tags={tags}
+                                                        projectThumbnails={projectThumbnails}
+                                                        hasPAT={!!user?.pat}
+                                                        folders={folders}
+                                                        onMoveToFolder={(folderName: string) => handleMoveProjectToFolder(project.id, folderName)}
+                                                    />
+                                                ))}
+                                            {userProjects.length === 0 && EXAMPLES.length === 0 && (
+                                                <div className="col-span-full py-20 text-center space-y-3">
+                                                    <div className="w-16 h-16 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto text-zinc-600">
+                                                        <Search className="w-8 h-8" />
+                                                    </div>
+                                                    <div className="text-zinc-500 font-medium">No projects found in {activeNav}</div>
+                                                    <p className="text-zinc-600 text-sm">Try exploring the community in Discover mode or create a new project.</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </section>
+                                </>
+                            )}
                         </div>
                     </>
                 ) : (
@@ -1228,8 +1295,8 @@ export function ProjectDashboard() {
                                     value={folderNameInput}
                                     onChange={(e) => setFolderNameInput(e.target.value)}
                                     onKeyDown={e => {
-                                        if (e.key === 'Enter') handleCreateFolder();
-                                        if (e.key === 'Escape') setShowFolderDialog(false);
+                                        if (e.key === 'Enter') handleCreateFolder(folderParentId);
+                                        if (e.key === 'Escape') { setShowFolderDialog(false); setFolderParentId(undefined); }
                                     }}
                                     autoFocus
                                     placeholder="e.g. Mechanical Parts"
@@ -1254,9 +1321,9 @@ export function ProjectDashboard() {
                                 />
                             </div>
                             <div className="flex justify-end gap-3 pt-4">
-                                <Button variant="ghost" onClick={() => setShowFolderDialog(false)}>Cancel</Button>
-                                <Button onClick={handleCreateFolder} className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-full px-6">
-                                    Create Project
+                                <Button variant="ghost" onClick={() => { setShowFolderDialog(false); setFolderParentId(undefined); }}>Cancel</Button>
+                                <Button onClick={() => handleCreateFolder(folderParentId)} className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-full px-6">
+                                    {folderParentId ? 'Create Sub-Project' : 'Create Project'}
                                 </Button>
                             </div>
                         </div>

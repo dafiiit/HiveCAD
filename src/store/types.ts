@@ -167,6 +167,7 @@ export interface VersioningSlice {
     historyIndex: number;
     fileName: string;
     projectId: string | null;
+    projectFolder: string;
     isSaved: boolean;
     comments: Comment[];
     commentsExpanded: boolean;
@@ -210,6 +211,7 @@ export interface VersioningSlice {
     loadState: (fixture: Record<string, any>) => void;
     setFileName: (name: string) => void;
     setProjectId: (id: string | null) => void;
+    setProjectFolder: (folder: string) => void;
     closeProject: () => void;
     updateThumbnail: (name: string, thumbnail: string) => void;
     removeThumbnail: (name: string) => void;
