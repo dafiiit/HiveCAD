@@ -150,13 +150,22 @@ export interface Tool {
      * @param primitive - The sketch primitive being annotated
      * @param plane - The sketch plane for coordinate context
      * @param lockedValues - Any locked dimension values from UI
+     * @param dimMode - Dimensioning mode
+     * @param inputCallbacks - Optional callbacks for editable dimension inputs
      * @returns React/Three.js nodes to render as overlays
      */
     renderAnnotation?(
         primitive: SketchPrimitive,
         plane: SketchPlane,
         lockedValues?: Record<string, number | null>,
-        dimMode?: 'aligned' | 'horizontal' | 'vertical'
+        dimMode?: 'aligned' | 'horizontal' | 'vertical',
+        inputCallbacks?: {
+            focusedField?: 'length' | 'angle' | null;
+            onLengthChange?: (value: number) => void;
+            onAngleChange?: (value: number) => void;
+            onFocusChange?: (field: 'length' | 'angle') => void;
+            onEnter?: () => void;
+        }
     ): ReactNode;
 
     /**

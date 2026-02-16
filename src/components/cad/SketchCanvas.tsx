@@ -58,6 +58,9 @@ const SketchCanvas = () => {
     const [pendingStartPoint, setPendingStartPoint] = useState<[number, number] | null>(null);
     const [dialogParams, setDialogParams] = useState<Record<string, any>>({});
 
+    // Editable dimension input focus state
+    const [dimFocusedField, setDimFocusedField] = useState<'length' | 'angle' | null>('length');
+
     // Dimension annotations: lightweight local state for sketch dimensions
     interface SketchDimension {
         id: string;
@@ -156,6 +159,8 @@ const SketchCanvas = () => {
                 }
                 if (currentDrawingPrimitive) {
                     updateCurrentDrawingPrimitive(null);
+                    clearSketchInputLocks();
+                    setDimFocusedField('length');
                     e.preventDefault();
                 }
             }
@@ -166,12 +171,97 @@ const SketchCanvas = () => {
                     e.preventDefault();
                 }
             }
+            // Tab key: switch between dimension input fields during line drawing
+            if (e.key === 'Tab' && currentDrawingPrimitive && currentDrawingPrimitive.type === 'line') {
+                e.preventDefault();
+                setDimFocusedField(prev => prev === 'length' ? 'angle' : 'length');
+            }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [currentDrawingPrimitive, updateCurrentDrawingPrimitive, selectedPrimitiveIds, togglePrimitiveConstruction, activeConstraintType, cancelConstraintMode]);
+    }, [currentDrawingPrimitive, updateCurrentDrawingPrimitive, selectedPrimitiveIds, togglePrimitiveConstruction, activeConstraintType, cancelConstraintMode, clearSketchInputLocks]);
+
+    // Reset dimension focus when starting a new drawing primitive
+    useEffect(() => {
+        if (currentDrawingPrimitive && currentDrawingPrimitive.points.length >= 2) {
+            setDimFocusedField('length');
+        } else if (!currentDrawingPrimitive) {
+            setDimFocusedField(null);
+        }
+    }, [currentDrawingPrimitive?.id]);
 
     const annotationCtx = useMemo(() => sketchPlane ? createAnnotationContext(sketchPlane) : null, [sketchPlane]);
+
+    // Callbacks for editable dimension inputs - MUST be before early return to avoid hook order issues
+    const handleDimLengthChange = useCallback((value: number) => {
+        setSketchInputLock('length', value);
+        // Immediately recalculate the endpoint so the line updates without waiting for mouse move
+        const state = storeApiRef.current.getState();
+        const prim = state.currentDrawingPrimitive;
+        if (prim && prim.type === 'line' && prim.points.length >= 2) {
+            const start = prim.points[0];
+            const currentEnd = prim.points[prim.points.length - 1];
+            const dxRaw = currentEnd[0] - start[0];
+            const dyRaw = currentEnd[1] - start[1];
+            const currentAngle = state.lockedValues.angle != null
+                ? (state.lockedValues.angle * Math.PI) / 180
+                : Math.atan2(dyRaw, dxRaw);
+            const newEnd: [number, number] = [
+                start[0] + Math.cos(currentAngle) * value,
+                start[1] + Math.sin(currentAngle) * value,
+            ];
+            const newPoints = [...prim.points];
+            newPoints[newPoints.length - 1] = newEnd;
+            state.updateCurrentDrawingPrimitive({ ...prim, points: newPoints });
+        }
+    }, [setSketchInputLock]);
+
+    const handleDimAngleChange = useCallback((value: number) => {
+        setSketchInputLock('angle', value);
+        // Immediately recalculate the endpoint so the line updates without waiting for mouse move
+        const state = storeApiRef.current.getState();
+        const prim = state.currentDrawingPrimitive;
+        if (prim && prim.type === 'line' && prim.points.length >= 2) {
+            const start = prim.points[0];
+            const currentEnd = prim.points[prim.points.length - 1];
+            const dxRaw = currentEnd[0] - start[0];
+            const dyRaw = currentEnd[1] - start[1];
+            const currentLength = state.lockedValues.length != null
+                ? state.lockedValues.length
+                : Math.sqrt(dxRaw * dxRaw + dyRaw * dyRaw);
+            const newAngle = (value * Math.PI) / 180;
+            const newEnd: [number, number] = [
+                start[0] + Math.cos(newAngle) * currentLength,
+                start[1] + Math.sin(newAngle) * currentLength,
+            ];
+            const newPoints = [...prim.points];
+            newPoints[newPoints.length - 1] = newEnd;
+            state.updateCurrentDrawingPrimitive({ ...prim, points: newPoints });
+        }
+    }, [setSketchInputLock]);
+
+    const handleDimFocusChange = useCallback((field: 'length' | 'angle') => {
+        setDimFocusedField(field);
+    }, []);
+
+    const handleDimEnter = useCallback(() => {
+        // Finish the line when Enter is pressed in a dimension input
+        // Get the current primitive from the store to ensure we have the latest updated endpoint
+        const state = storeApiRef.current.getState();
+        const prim = state.currentDrawingPrimitive;
+        if (prim && prim.type === 'line' && prim.points.length >= 2) {
+            // Use the current endpoint from the primitive (which has locked values applied)
+            // rather than hoverPoint (which might not be updated if mouse hasn't moved)
+            const finalPoints = [prim.points[0], prim.points[prim.points.length - 1]];
+            addSketchPrimitive({
+                ...prim,
+                points: finalPoints
+            });
+            clearSketchInputLocks();
+            setDimFocusedField('length');
+            updateCurrentDrawingPrimitive(null);
+        }
+    }, [addSketchPrimitive, clearSketchInputLocks, updateCurrentDrawingPrimitive]);
 
     // Only active in sketch mode drawing step
     if (!isSketchMode || sketchStep !== 'drawing' || !sketchPlane) return null;
@@ -359,6 +449,31 @@ const SketchCanvas = () => {
                 currentSnapResult = null;
             }
 
+            // Apply locked constraints for line tool (length and/or angle)
+            if (currentDrawingPrimitive && currentDrawingPrimitive.type === 'line' && currentDrawingPrimitive.points.length >= 2) {
+                const start = currentDrawingPrimitive.points[0];
+                const hasLockedLength = lockedValues['length'] !== undefined && lockedValues['length'] !== null;
+                const hasLockedAngle = lockedValues['angle'] !== undefined && lockedValues['angle'] !== null;
+
+                if (hasLockedLength || hasLockedAngle) {
+                    const dxRaw = finalP2d[0] - start[0];
+                    const dyRaw = finalP2d[1] - start[1];
+                    let currentAngle = Math.atan2(dyRaw, dxRaw);
+                    let currentLength = Math.sqrt(dxRaw * dxRaw + dyRaw * dyRaw);
+
+                    if (hasLockedAngle) {
+                        currentAngle = (lockedValues['angle']! * Math.PI) / 180;
+                    }
+                    if (hasLockedLength) {
+                        currentLength = lockedValues['length']!;
+                    }
+
+                    finalP2d[0] = start[0] + Math.cos(currentAngle) * currentLength;
+                    finalP2d[1] = start[1] + Math.sin(currentAngle) * currentLength;
+                    currentSnapResult = null;
+                }
+            }
+
             setHoverPoint(finalP2d);
             setSnapResult(currentSnapResult);
             setSnapPoint(currentSnapResult?.snapPoint || null); // Update global store
@@ -373,22 +488,9 @@ const SketchCanvas = () => {
                 const newPoints = [...currentDrawingPrimitive.points];
                 newPoints[newPoints.length - 1] = finalP2d;
 
-                // NEW: Calculate dimension mode for lines
-                let dimMode: 'aligned' | 'horizontal' | 'vertical' = 'aligned';
-                if (currentDrawingPrimitive.type === 'line' && currentDrawingPrimitive.points.length >= 2) {
-                    const start = currentDrawingPrimitive.points[0];
-                    const distH = Math.abs(p2d[1] - start[1]);
-                    const distV = Math.abs(p2d[0] - start[0]);
-
-                    // If mouse is significantly further away in one axis than the other 
-                    // and also far from the aligned path, switch mode
-                    const threshold = 15;
-                    if (distH > threshold && distH > distV * 1.5) {
-                        dimMode = 'horizontal';
-                    } else if (distV > threshold && distV > distH * 1.5) {
-                        dimMode = 'vertical';
-                    }
-                }
+                // For line tool, always use aligned dimension mode (shows angle + length with CAD-style dimension line)
+                const dimMode: 'aligned' | 'horizontal' | 'vertical' = 
+                    currentDrawingPrimitive.type === 'line' ? 'aligned' : 'aligned';
 
                 updateCurrentDrawingPrimitive({
                     ...currentDrawingPrimitive,
@@ -1171,6 +1273,10 @@ const SketchCanvas = () => {
                 points: finalPoints
             });
 
+            // Clear locked dimension values and reset focus for next line
+            clearSketchInputLocks();
+            setDimFocusedField('length');
+
             // Always clear after finishing — user must click twice for each line
             updateCurrentDrawingPrimitive(null);
             return;
@@ -1414,7 +1520,14 @@ const SketchCanvas = () => {
                 prim as any,
                 sketchPlane!,
                 lockedValues as any,
-                (prim.properties as any)?.dimMode
+                (prim.properties as any)?.dimMode,
+                prim.type === 'line' ? {
+                    focusedField: dimFocusedField,
+                    onLengthChange: handleDimLengthChange,
+                    onAngleChange: handleDimAngleChange,
+                    onFocusChange: handleDimFocusChange,
+                    onEnter: handleDimEnter,
+                } : undefined
             );
         }
         return null;

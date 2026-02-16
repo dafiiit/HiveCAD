@@ -5,7 +5,7 @@
  * Works on any sketch plane (XY, XZ, YZ) with automatic coordinate transformation.
  */
 
-import { useMemo } from "react";
+import { useMemo, useRef, useEffect, useCallback, useState } from "react";
 import { Html, Line } from "@react-three/drei";
 import * as THREE from "three";
 
@@ -212,6 +212,310 @@ export const DimensionBadge = ({
     );
 };
 
+// ============================================================================
+// EDITABLE DIMENSION INPUT
+// ============================================================================
+
+interface EditableDimensionInputProps {
+    /** Position in 2D sketch coordinates */
+    position: Point2D;
+    /** Annotation context */
+    ctx: AnnotationContext;
+    /** Current measured value */
+    value: number;
+    /** Unit label */
+    unit: string;
+    /** Number of decimal places */
+    decimals?: number;
+    /** Badge style variant */
+    variant?: 'primary' | 'secondary';
+    /** Whether this input is currently focused */
+    isFocused?: boolean;
+    /** Callback when value is committed */
+    onValueChange?: (value: number) => void;
+    /** Callback when focus is requested */
+    onFocus?: () => void;
+    /** Callback when Tab is pressed (switch to next field) */
+    onTab?: () => void;
+    /** Callback when Enter is pressed after committing value */
+    onEnter?: () => void;
+    /** Input field id for external focus management */
+    inputId?: string;
+}
+
+/**
+ * An editable dimension input that shows a measurement value.
+ * When focused, allows typing a value. Otherwise displays the measured value.
+ * While the user hasn't typed, the input shows the live measured value with
+ * all text selected so typing immediately replaces it. Once the user starts
+ * typing, the live value stops overwriting the input.
+ */
+export const EditableDimensionInput = ({
+    position,
+    ctx,
+    value,
+    unit,
+    decimals = 3,
+    variant = 'primary',
+    isFocused = false,
+    onValueChange,
+    onFocus,
+    onTab,
+    onEnter,
+    inputId,
+}: EditableDimensionInputProps) => {
+    const pos3D = ctx.to3D(position);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const [localValue, setLocalValue] = useState('');
+    const [isEditing, setIsEditing] = useState(false);
+    // Track whether the user has started typing (to stop overwriting with measured value)
+    const hasUserTypedRef = useRef(false);
+
+    const baseStyles = variant === 'primary'
+        ? "bg-[#1a4a5e] text-[#00e5ff] border-[#00e5ff]/50"
+        : "bg-[#2a2a2a] text-white border-slate-500";
+
+    const focusStyles = isFocused
+        ? "ring-1 ring-[#00e5ff] border-[#00e5ff]"
+        : "";
+
+    // Focus management: run only when isFocused changes
+    useEffect(() => {
+        if (isFocused && inputRef.current) {
+            inputRef.current.focus();
+            hasUserTypedRef.current = false;
+            setIsEditing(true);
+            setLocalValue(value.toFixed(decimals));
+            // Use requestAnimationFrame to ensure DOM is ready before selecting
+            requestAnimationFrame(() => inputRef.current?.select());
+        } else if (!isFocused) {
+            setIsEditing(false);
+            hasUserTypedRef.current = false;
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isFocused]);
+
+    // Keep showing the live measured value and maintain selection while user hasn't typed
+    useEffect(() => {
+        if (isFocused && !hasUserTypedRef.current && inputRef.current) {
+            setLocalValue(value.toFixed(decimals));
+            // Re-select so the entire value stays highlighted
+            requestAnimationFrame(() => inputRef.current?.select());
+        }
+    }, [value, isFocused, decimals]);
+
+    // Commit the current typed value (if user actually typed something)
+    const commitValue = useCallback(() => {
+        if (hasUserTypedRef.current) {
+            const num = parseFloat(localValue);
+            if (!isNaN(num) && num > 0) {
+                onValueChange?.(num);
+            }
+        }
+    }, [localValue, onValueChange]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        hasUserTypedRef.current = true;
+        setLocalValue(e.target.value);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            e.stopPropagation();
+            // Commit whatever was typed before switching fields
+            commitValue();
+            onTab?.();
+            return;
+        }
+        // Prevent other keys from bubbling to window/canvas handlers
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+            commitValue();
+            // Reset so the input resumes tracking the live value
+            hasUserTypedRef.current = false;
+            setLocalValue(value.toFixed(decimals));
+            requestAnimationFrame(() => inputRef.current?.select());
+            // Notify parent that Enter was pressed (e.g., to finish drawing)
+            onEnter?.();
+        }
+    };
+
+    const handleBlur = () => {
+        commitValue();
+    };
+
+    const handleFocus = () => {
+        setIsEditing(true);
+        hasUserTypedRef.current = false;
+        setLocalValue(value.toFixed(decimals));
+        onFocus?.();
+        if (inputRef.current) {
+            requestAnimationFrame(() => inputRef.current?.select());
+        }
+    };
+
+    const handleClick = () => {
+        if (inputRef.current) {
+            inputRef.current.select();
+        }
+    };
+
+    // Display the user's typed value when editing, otherwise the live measured value
+    const displayValue = isEditing
+        ? (hasUserTypedRef.current ? localValue : value.toFixed(decimals))
+        : value.toFixed(decimals);
+
+    return (
+        <Html position={pos3D.toArray()} center className="select-none" style={{ pointerEvents: 'auto' }} zIndexRange={[100, 0]}>
+            <div
+                className={`${baseStyles} ${focusStyles} text-xs rounded border shadow-lg font-mono whitespace-nowrap backdrop-blur-sm flex items-center gap-1 px-1 py-0.5`}
+                onClick={(e) => { e.stopPropagation(); onFocus?.(); }}
+                onPointerDown={(e) => e.stopPropagation()}
+            >
+                <input
+                    ref={inputRef}
+                    id={inputId}
+                    type="text"
+                    inputMode="decimal"
+                    value={displayValue}
+                    onChange={handleChange}
+                    onKeyDown={handleKeyDown}
+                    onFocus={handleFocus}
+                    onBlur={handleBlur}
+                    onClick={handleClick}
+                    className="bg-transparent border-none outline-none text-inherit font-mono text-xs w-16 text-center"
+                    style={{ caretColor: variant === 'primary' ? '#00e5ff' : '#ffffff' }}
+                />
+                <span className="text-[10px] opacity-70">{unit}</span>
+            </div>
+        </Html>
+    );
+};
+
+// ============================================================================
+// CAD-STYLE DIMENSION LINE
+// ============================================================================
+
+interface CadDimensionLineProps {
+    /** Start point of the measured line */
+    from: Point2D;
+    /** End point of the measured line */
+    to: Point2D;
+    /** Annotation context */
+    ctx: AnnotationContext;
+    /** Offset distance for the dimension line from the measured line */
+    offset?: number;
+    /** Color of the dimension elements */
+    color?: string;
+    /** Arrow size */
+    arrowSize?: number;
+}
+
+/**
+ * A proper CAD-style dimension line with:
+ * - Extension lines perpendicular from the endpoints
+ * - A dimension line parallel to the measured line with outward-pointing arrows
+ */
+export const CadDimensionLine = ({
+    from,
+    to,
+    ctx,
+    offset = 6,
+    color = "#00e5ff",
+    arrowSize = 1.5,
+}: CadDimensionLineProps) => {
+    const { extStart, extEnd, dimStart, dimEnd, arrow1a, arrow1b, arrow2a, arrow2b, extLineStartFrom, extLineEndFrom } = useMemo(() => {
+        const angle = Math.atan2(to.y - from.y, to.x - from.x);
+        const perpAngle = angle + Math.PI / 2;
+        const perpDx = Math.cos(perpAngle) * offset;
+        const perpDy = Math.sin(perpAngle) * offset;
+
+        // Extension line gap (small gap from the actual endpoint)
+        const gapDx = Math.cos(perpAngle) * 1.5;
+        const gapDy = Math.sin(perpAngle) * 1.5;
+        // Extension line overshoot past dimension line
+        const overshootDx = Math.cos(perpAngle) * 2;
+        const overshootDy = Math.sin(perpAngle) * 2;
+
+        // Dimension line endpoints (parallel to measured line, offset perpendicularly)
+        const dimStart: Point2D = { x: from.x + perpDx, y: from.y + perpDy };
+        const dimEnd: Point2D = { x: to.x + perpDx, y: to.y + perpDy };
+
+        // Extension lines: from near the actual point to past the dimension line
+        const extLineStartFrom: Point2D = { x: from.x + gapDx, y: from.y + gapDy };
+        const extStart: Point2D = { x: from.x + perpDx + overshootDx, y: from.y + perpDy + overshootDy };
+        const extLineEndFrom: Point2D = { x: to.x + gapDx, y: to.y + gapDy };
+        const extEnd: Point2D = { x: to.x + perpDx + overshootDx, y: to.y + perpDy + overshootDy };
+
+        // Arrow directions (pointing outward from the dimension line)
+        const lineAngle = angle;
+        const aSz = arrowSize;
+
+        // Arrows at dimStart pointing outward (away from dimEnd)
+        const arrow1a: Point2D = {
+            x: dimStart.x + Math.cos(lineAngle + Math.PI - Math.PI / 6) * aSz,
+            y: dimStart.y + Math.sin(lineAngle + Math.PI - Math.PI / 6) * aSz,
+        };
+        const arrow1b: Point2D = {
+            x: dimStart.x + Math.cos(lineAngle + Math.PI + Math.PI / 6) * aSz,
+            y: dimStart.y + Math.sin(lineAngle + Math.PI + Math.PI / 6) * aSz,
+        };
+
+        // Arrows at dimEnd pointing outward (away from dimStart)
+        const arrow2a: Point2D = {
+            x: dimEnd.x + Math.cos(lineAngle - Math.PI / 6) * aSz,
+            y: dimEnd.y + Math.sin(lineAngle - Math.PI / 6) * aSz,
+        };
+        const arrow2b: Point2D = {
+            x: dimEnd.x + Math.cos(lineAngle + Math.PI / 6) * aSz,
+            y: dimEnd.y + Math.sin(lineAngle + Math.PI / 6) * aSz,
+        };
+
+        return { extStart, extEnd, dimStart, dimEnd, arrow1a, arrow1b, arrow2a, arrow2b, extLineStartFrom, extLineEndFrom };
+    }, [from.x, from.y, to.x, to.y, offset, arrowSize]);
+
+    return (
+        <group>
+            {/* Extension line from start point */}
+            <Line
+                points={[ctx.to3D(extLineStartFrom), ctx.to3D(extStart)]}
+                color={color}
+                lineWidth={1}
+                depthTest={false}
+            />
+            {/* Extension line from end point */}
+            <Line
+                points={[ctx.to3D(extLineEndFrom), ctx.to3D(extEnd)]}
+                color={color}
+                lineWidth={1}
+                depthTest={false}
+            />
+            {/* Dimension line (parallel to measured line) */}
+            <Line
+                points={[ctx.to3D(dimStart), ctx.to3D(dimEnd)]}
+                color={color}
+                lineWidth={1}
+                depthTest={false}
+            />
+            {/* Arrow at start (pointing outward) */}
+            <Line
+                points={[ctx.to3D(arrow1a), ctx.to3D(dimStart), ctx.to3D(arrow1b)]}
+                color={color}
+                lineWidth={1.5}
+                depthTest={false}
+            />
+            {/* Arrow at end (pointing outward) */}
+            <Line
+                points={[ctx.to3D(arrow2a), ctx.to3D(dimEnd), ctx.to3D(arrow2b)]}
+                color={color}
+                lineWidth={1.5}
+                depthTest={false}
+            />
+        </group>
+    );
+};
+
 interface ReferenceLineProps {
     /** Start point in 2D sketch coordinates */
     from: Point2D;
@@ -389,11 +693,22 @@ interface LineAnnotationProps {
     lockedAngle?: number | null;
     /** Dimensioning mode: 'aligned' | 'horizontal' | 'vertical' */
     dimMode?: 'aligned' | 'horizontal' | 'vertical';
+    /** Which input field is currently focused: 'length' | 'angle' | null */
+    focusedField?: 'length' | 'angle' | null;
+    /** Callback when length value is changed by typing */
+    onLengthChange?: (value: number) => void;
+    /** Callback when angle value is changed by typing */
+    onAngleChange?: (value: number) => void;
+    /** Callback when focus field changes */
+    onFocusChange?: (field: 'length' | 'angle') => void;
+    /** Callback when Enter is pressed in an input (to finish drawing) */
+    onEnter?: () => void;
 }
 
 /**
  * Complete annotation overlay for line drawing.
- * Shows endpoints, length, angle, reference line, and angle arc.
+ * Shows endpoints, CAD-style dimension line with extension lines and arrows,
+ * angle arc (always visible), and editable input fields for length and angle.
  */
 export const LineAnnotation = ({
     start,
@@ -401,7 +716,12 @@ export const LineAnnotation = ({
     plane,
     lockedLength,
     lockedAngle,
-    dimMode = 'aligned'
+    dimMode = 'aligned',
+    focusedField = 'length',
+    onLengthChange,
+    onAngleChange,
+    onFocusChange,
+    onEnter,
 }: LineAnnotationProps) => {
     const ctx = useMemo(() => createAnnotationContext(plane), [plane]);
 
@@ -414,12 +734,23 @@ export const LineAnnotation = ({
     // Don't render for very short lines
     if (length < 0.1) return null;
 
-    // Aligned Dimension badge positions
+    // Dimension line offset
+    const dimOffset = 6;
     const perpAngle = angleRad + Math.PI / 2;
-    const lengthBadgeOffset = 3;
+
+    // Length badge: positioned at the midpoint of the dimension line (offset from actual line)
     const lengthBadgePos: Point2D = {
-        x: (start.x + end.x) / 2 + Math.cos(perpAngle) * lengthBadgeOffset,
-        y: (start.y + end.y) / 2 + Math.sin(perpAngle) * lengthBadgeOffset
+        x: (start.x + end.x) / 2 + Math.cos(perpAngle) * dimOffset,
+        y: (start.y + end.y) / 2 + Math.sin(perpAngle) * dimOffset
+    };
+
+    // Angle arc radius - always visible
+    const arcRadius = Math.min(length * 0.35, 12);
+
+    // Angle badge position: at the bisector of the angle arc, outside the arc
+    const angleBadgePos: Point2D = {
+        x: start.x + Math.cos(angleRad / 2) * (arcRadius + 8),
+        y: start.y + Math.sin(angleRad / 2) * (arcRadius + 8)
     };
 
     // Horizontal Dimension
@@ -448,32 +779,56 @@ export const LineAnnotation = ({
             {/* Aligned Dimension */}
             {dimMode === 'aligned' && (
                 <>
+                    {/* Horizontal reference line from start point */}
                     <ReferenceLine from={start} to={{ x: start.x + Math.max(length * 1.1, 15), y: start.y }} ctx={ctx} />
-                    {length > 1 && (
-                        <AngleArc
-                            center={start}
-                            startAngle={0}
-                            endAngle={angleRad}
-                            radius={Math.min(length * 0.35, 12)}
-                            ctx={ctx}
-                        />
-                    )}
-                    <DimensionBadge
+
+                    {/* Angle arc — always visible */}
+                    <AngleArc
+                        center={start}
+                        startAngle={0}
+                        endAngle={angleRad}
+                        radius={arcRadius}
+                        ctx={ctx}
+                    />
+
+                    {/* CAD-style dimension line with extension lines and arrows */}
+                    <CadDimensionLine
+                        from={start}
+                        to={end}
+                        ctx={ctx}
+                        offset={dimOffset}
+                    />
+
+                    {/* Editable length input */}
+                    <EditableDimensionInput
                         position={lengthBadgePos}
                         ctx={ctx}
                         value={lockedLength ?? length}
                         unit="mm"
+                        decimals={3}
+                        variant="primary"
+                        isFocused={focusedField === 'length'}
+                        onValueChange={onLengthChange}
+                        onFocus={() => onFocusChange?.('length')}
+                        onTab={() => onFocusChange?.('angle')}
+                        onEnter={onEnter}
+                        inputId="sketch-dim-length"
                     />
-                    <DimensionBadge
-                        position={{
-                            x: start.x + Math.cos(angleRad / 2) * (Math.min(length * 0.35, 12) + 8),
-                            y: start.y + Math.sin(angleRad / 2) * (Math.min(length * 0.35, 12) + 8)
-                        }}
+
+                    {/* Editable angle input */}
+                    <EditableDimensionInput
+                        position={angleBadgePos}
                         ctx={ctx}
                         value={lockedAngle ?? angleDeg}
                         unit="deg"
                         decimals={1}
                         variant="secondary"
+                        isFocused={focusedField === 'angle'}
+                        onValueChange={onAngleChange}
+                        onFocus={() => onFocusChange?.('angle')}
+                        onTab={() => onFocusChange?.('length')}
+                        onEnter={onEnter}
+                        inputId="sketch-dim-angle"
                     />
                 </>
             )}
@@ -722,6 +1077,8 @@ export const RectangleAnnotation = ({
 export default {
     PointMarker,
     DimensionBadge,
+    EditableDimensionInput,
+    CadDimensionLine,
     ReferenceLine,
     AngleArc,
     DrawingLine,

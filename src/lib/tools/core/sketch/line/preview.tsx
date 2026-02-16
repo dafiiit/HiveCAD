@@ -33,7 +33,14 @@ export function renderLineAnnotation(
     primitive: SketchPrimitive,
     plane: SketchPlane,
     lockedValues?: Record<string, number | null>,
-    dimMode?: 'aligned' | 'horizontal' | 'vertical'
+    dimMode?: 'aligned' | 'horizontal' | 'vertical',
+    inputCallbacks?: {
+        focusedField?: 'length' | 'angle' | null;
+        onLengthChange?: (value: number) => void;
+        onAngleChange?: (value: number) => void;
+        onFocusChange?: (field: 'length' | 'angle') => void;
+        onEnter?: () => void;
+    }
 ) {
     if (primitive.points.length < 2) return null;
     const start = { x: primitive.points[0][0], y: primitive.points[0][1] };
@@ -45,6 +52,11 @@ export function renderLineAnnotation(
         plane,
         lockedLength: lockedValues?.length ?? null,
         lockedAngle: lockedValues?.angle ?? null,
-        dimMode
+        dimMode,
+        focusedField: inputCallbacks?.focusedField ?? 'length',
+        onLengthChange: inputCallbacks?.onLengthChange,
+        onAngleChange: inputCallbacks?.onAngleChange,
+        onFocusChange: inputCallbacks?.onFocusChange,
+        onEnter: inputCallbacks?.onEnter,
     });
 }
