@@ -434,6 +434,7 @@ interface ToolFolderButtonProps {
   onSelectTool: (toolId: string) => void;
   idToOnClickMap: Record<string, () => void>;
   activeTool: string | null;
+  activeConstraintType: string | null;
 }
 
 const ToolFolderButton = ({
@@ -445,9 +446,10 @@ const ToolFolderButton = ({
   onDelete,
   onSelectTool,
   idToOnClickMap,
-  activeTool
+  activeTool,
+  activeConstraintType
 }: ToolFolderButtonProps) => {
-  const isActive = toolIds.includes(activeTool || '');
+  const isActive = toolIds.includes(activeTool || '') || toolIds.includes(activeConstraintType || '');
   const hasImplementedTools = toolIds.some(tid => isToolImplemented(tid));
   const mainToolId = toolIds[0];
   const mainToolImplemented = mainToolId ? isToolImplemented(mainToolId) : false;
@@ -522,9 +524,9 @@ const ToolFolderButton = ({
                       onSelectTool(toolId);
                     }
                   }}
-                  className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all duration-200 group/item ${activeTool === toolId ? 'bg-primary/20 text-primary' : 'hover:bg-muted/50'} ${!implemented ? 'border border-red-500/30' : ''}`}
+                  className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all duration-200 group/item ${(activeTool === toolId || activeConstraintType === toolId) ? 'bg-primary/20 text-primary' : 'hover:bg-muted/50'} ${!implemented ? 'border border-red-500/30' : ''}`}
                 >
-                  <div className={`w-8 h-8 rounded-lg bg-background border border-border/50 flex items-center justify-center transition-colors ${activeTool === toolId ? 'border-primary/30 text-primary' : !implemented ? 'border-red-500/50 text-red-500' : 'text-muted-foreground group-hover/item:text-primary group-hover/item:border-primary/30'}`}>
+                  <div className={`w-8 h-8 rounded-lg bg-background border border-border/50 flex items-center justify-center transition-colors ${(activeTool === toolId || activeConstraintType === toolId) ? 'border-primary/30 text-primary' : !implemented ? 'border-red-500/50 text-red-500' : 'text-muted-foreground group-hover/item:text-primary group-hover/item:border-primary/30'}`}>
                     {getToolIcon(toolId, implemented)}
                   </div>
                   <span className={`text-xs font-semibold ${!implemented ? 'text-red-500' : ''}`}>{getToolLabel(toolId)}</span>
@@ -629,6 +631,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
     startOperation,
     objects,
     applyConstraintToSelection,
+    activeConstraintType,
     exportSTL,
     exportSTEP,
     exportJSON,
@@ -1006,6 +1009,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
                               onSelectTool={(tid) => handleToolSelect(tid as ToolType)}
                               idToOnClickMap={idToOnClickMap}
                               activeTool={activeTool}
+                              activeConstraintType={activeConstraintType}
                             />
                           </SortableTool>
                         );
@@ -1016,7 +1020,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
                           <ToolButton
                             icon={getToolIcon(toolId, isToolImplemented(toolId))}
                             label={getToolLabel(toolId)}
-                            isActive={activeTool === toolId}
+                            isActive={activeTool === toolId || activeConstraintType === toolId}
                             isImplemented={isToolImplemented(toolId)}
                             onClick={() => {
                               if (idToOnClickMap[toolId]) {

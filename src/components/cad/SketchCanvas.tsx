@@ -1141,7 +1141,7 @@ const SketchCanvas = () => {
             return;
         }
 
-        if (primHit && (activeTool === 'select' || activeTool === 'dimension' || activeTool === 'offset')) {
+        if (primHit && (activeTool === 'select' || activeTool === 'dimension' || activeTool === 'offset' || activeConstraintType !== null)) {
             const multiSelect = e.ctrlKey || e.metaKey || e.shiftKey;
             selectPrimitive(primHit, multiSelect);
             // Clear handle selection when selecting primitives
