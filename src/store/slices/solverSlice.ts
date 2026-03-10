@@ -28,19 +28,24 @@ function getSelectedSolverIds(state: CADState): EntityId[] {
         for (const primId of state.selectedPrimitiveIds) {
             // Look up the primitive to get its solver entity mapping
             const prim = state.activeSketchPrimitives?.find(p => p.id === primId);
-            if (prim?.properties?.solverEntityIds) {
-                const entityIds = prim.properties.solverEntityIds as EntityId[];
-                for (const eid of entityIds) {
-                    if (sketchEntities.has(eid) && !fromSelected.includes(eid)) {
-                        fromPrimitives.push(eid);
-                    }
-                }
-            }
+            // Prefer the top-level solver entity (line/circle/arc) via solverId,
+            // as that is the entity constraints operate on.
             if (prim?.properties?.solverId) {
                 const sid = prim.properties.solverId as string;
                 if (sketchEntities.has(sid) && !fromSelected.includes(sid) && !fromPrimitives.includes(sid)) {
                     fromPrimitives.push(sid);
+                    continue;
                 }
+            }
+            // Fallback: individual solver entity IDs (e.g. endpoints)
+            if (prim?.properties?.solverEntityIds) {
+                const entityIds = prim.properties.solverEntityIds as EntityId[];
+                for (const eid of entityIds) {
+                    if (sketchEntities.has(eid) && !fromSelected.includes(eid) && !fromPrimitives.includes(eid)) {
+                        fromPrimitives.push(eid);
+                    }
+                }
+                continue;
             }
             // The primitive ID itself might be a solver entity ID
             if (sketchEntities.has(primId) && !fromSelected.includes(primId) && !fromPrimitives.includes(primId)) {
@@ -303,6 +308,40 @@ export const createSolverSlice: StateCreator<
         if (!meta) {
             toast.error(`Unknown constraint: ${type}`);
             return;
+        }
+
+        // ─── Direct path for horizontal / vertical on line primitives ────────
+        if (type === 'horizontal' || type === 'vertical') {
+            const selectedPrimIds = Array.from(state.selectedPrimitiveIds ?? new Set<string>());
+            const linePrims = selectedPrimIds
+                .map(id => state.activeSketchPrimitives?.find(p => p.id === id))
+                .filter((p): p is NonNullable<typeof p> =>
+                    !!p && (p.type === 'line' || p.type === 'constructionLine') && p.points.length >= 2
+                );
+
+            if (linePrims.length > 0) {
+                for (const prim of linePrims) {
+                    const [p1, p2] = prim.points;
+                    let newPts: [number, number][];
+                    if (type === 'horizontal') {
+                        const avgY = (p1[1] + p2[1]) / 2;
+                        newPts = [[p1[0], avgY], [p2[0], avgY]];
+                    } else {
+                        const avgX = (p1[0] + p2[0]) / 2;
+                        newPts = [[avgX, p1[1]], [avgX, p2[1]]];
+                    }
+                    const primId = prim.id;
+                    set(s => ({
+                        activeSketchPrimitives: s.activeSketchPrimitives.map(p =>
+                            p.id === primId ? { ...p, points: newPts } : p
+                        ),
+                    }));
+                }
+                toast.success(`Applied ${meta.label} constraint`);
+                return;
+            }
+
+            // No line primitives selected — fall through to solver path or start constraint mode
         }
 
         // Gather selected solver entities from both selection systems

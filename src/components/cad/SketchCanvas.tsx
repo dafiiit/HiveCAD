@@ -39,6 +39,7 @@ const SketchCanvas = () => {
         // Constraint interaction state
         activeConstraintType, constraintSelectionIds, constraintSelectionPrompt,
         addEntityToConstraintSelection, cancelConstraintMode, autoApplyCoincident,
+        applyConstraintToSelection,
         // Snapping state and actions
         activeSnapPoint, snappingEnabled, snappingEngine,
         setSnapPoint, setSnappingEngine,
@@ -1154,6 +1155,23 @@ const SketchCanvas = () => {
                 const prim = activeSketchPrimitives.find(p => p.id === primHit);
                 if (prim) {
                     applyDimensionToPrimitive(prim);
+                }
+            }
+
+            // Constraint-first mode: apply constraint to this primitive
+            if (activeConstraintType !== null) {
+                const prim = activeSketchPrimitives.find(p => p.id === primHit);
+                if (prim && (activeConstraintType === 'horizontal' || activeConstraintType === 'vertical') &&
+                    (prim.type === 'line' || prim.type === 'constructionLine')) {
+                    // H/V: direct primitive manipulation — the primitive is now selected
+                    applyConstraintToSelection(activeConstraintType);
+                    cancelConstraintMode();
+                } else {
+                    // Other constraints: forward to solver entity path
+                    const solverLineId = prim?.properties?.solverId as string | undefined;
+                    if (solverLineId && sketchEntities.has(solverLineId)) {
+                        addEntityToConstraintSelection(solverLineId);
+                    }
                 }
             }
             return;

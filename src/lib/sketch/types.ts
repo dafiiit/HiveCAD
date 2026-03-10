@@ -77,6 +77,7 @@ export interface SketchEntityProperties {
     controlPoints?: Point2D[];
     // Solver integration
     solverId?: string;
+    solverEntityIds?: string[];
     // Dimension lock values recorded at creation
     lockedLength?: number;
     lockedAngle?: number;

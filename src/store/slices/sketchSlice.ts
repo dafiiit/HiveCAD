@@ -114,6 +114,7 @@ export const createSketchSlice: StateCreator<
 
     enterSketchMode: (sketchId?: string) => {
         const state = get();
+        state.clearSolver();
         state.initializeSolver();
 
         if (sketchId) {
