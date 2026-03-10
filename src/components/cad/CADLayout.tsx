@@ -14,6 +14,7 @@ import { Maximize2, Minimize2 } from "lucide-react";
 import { ImportWarningModal } from "./ImportWarningModal";
 import { MeshingProgress } from "./MeshingProgress";
 import { ErrorBoundary } from "../ErrorBoundary";
+import { useTabManager } from "@/components/layout/TabContext";
 
 
 const CADLayout = () => {
@@ -38,6 +39,8 @@ const CADLayout = () => {
     isFullscreen,
     toggleFullscreen,
   } = useCADStore();
+
+  const { tabs, activeTabId, closeTab, switchToTab } = useTabManager();
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -81,17 +84,25 @@ const CADLayout = () => {
           toast("Exited fullscreen");
         } else if (activeTool !== 'select') {
           setActiveTool('select');
-          toast("Tool: select");
+          toast("Tool deselected");
         } else if (isSketchMode) {
-          exitSketchMode();
-          toast("Exited sketch mode");
+          finishSketch();
+          toast("Sketch finished");
+        } else {
+          // In 3D view with no active tool — go back to workspace
+          const dashboardTab = tabs.find(t => t.type === 'dashboard');
+          if (dashboardTab) {
+            switchToTab(dashboardTab.id);
+          } else {
+            closeTab(activeTabId);
+          }
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo, undoLastPrimitive, redoLastPrimitive, save, duplicateSelected, deleteObject, selectedIds, isSketchMode, exitSketchMode, isFullscreen, toggleFullscreen, activeTool, setActiveTool]);
+  }, [undo, redo, undoLastPrimitive, redoLastPrimitive, save, duplicateSelected, deleteObject, selectedIds, isSketchMode, finishSketch, isFullscreen, toggleFullscreen, activeTool, setActiveTool, tabs, activeTabId, closeTab, switchToTab]);
 
   if (isFullscreen) {
     return (

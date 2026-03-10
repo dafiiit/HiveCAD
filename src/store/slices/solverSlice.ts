@@ -374,6 +374,7 @@ export const createSolverSlice: StateCreator<
             activeConstraintType: type,
             constraintSelectionIds: [],
             constraintSelectionPrompt: prompt || meta.description,
+            activeTool: 'select',
         });
 
         toast.info(`${meta.label}: ${meta.selectionSteps[0]?.prompt || meta.description}`);

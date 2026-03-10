@@ -1018,6 +1018,7 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
                       return (
                         <SortableTool key={`${toolId}-${idx}`} id={`tool-${toolId}:${section.id}`} disabled={!isEditingToolbar}>
                           <ToolButton
+                            key={`${toolId}-${activeTool === toolId || activeConstraintType === toolId}`}
                             icon={getToolIcon(toolId, isToolImplemented(toolId))}
                             label={getToolLabel(toolId)}
                             isActive={activeTool === toolId || activeConstraintType === toolId}

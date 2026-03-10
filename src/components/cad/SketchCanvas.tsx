@@ -1449,6 +1449,12 @@ const SketchCanvas = () => {
             // Dedicated handler for handle pointer up
             const handleHandlePointerUp = (e: any) => {
                 if (e.button !== 0) return;
+
+                // When a drawing tool is active, don't intercept — let the click
+                // bubble through to the canvas so the drawing point can be set
+                // on the snapped endpoint.
+                if (activeTool !== 'select') return;
+
                 e.stopPropagation();
 
                 // Finalize handle drag
