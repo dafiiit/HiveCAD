@@ -11,6 +11,12 @@ import {
     type SketchEntity,
     type SerializedSketch,
 } from '../../lib/sketch';
+import {
+    buildPrimitiveCoincidentConstraintId,
+    findPrimitiveLineConstraint,
+    hasPrimitiveCoincidentConstraint,
+    isPrimitiveCoincidentConstraint,
+} from '../../lib/sketch/primitiveConstraints';
 
 /**
  * Convert a legacy SketchPrimitive to the new SketchEntity format.
@@ -74,6 +80,49 @@ function primitiveToEntity(prim: any): SketchEntity {
     };
 }
 
+/**
+ * Return the point indices that are considered "connectable endpoints" for a
+ * given primitive type.  Coincident constraints can only be auto-detected and
+ * propagated at these indices.
+ */
+function getEndpointIndices(primitive: { type: string; points: [number, number][] }): number[] {
+    switch (primitive.type) {
+        case 'line':
+        case 'constructionLine':
+        case 'vline':
+        case 'hline':
+        case 'polarline':
+        case 'tangentline':
+            return primitive.points.length >= 2 ? [0, primitive.points.length - 1] : [];
+        case 'threePointsArc':
+            // Points: [start, end, via] — only start and end are "connectable"
+            return primitive.points.length >= 2 ? [0, 1] : [];
+        case 'centerPointArc':
+            // Points: [center, start, end] — only start and end are "connectable"
+            return primitive.points.length >= 3 ? [1, 2] : [];
+        default:
+            return [];
+    }
+}
+
+function isSamePoint(a: [number, number], b: [number, number], epsilon = 1e-9): boolean {
+    return Math.abs(a[0] - b[0]) <= epsilon && Math.abs(a[1] - b[1]) <= epsilon;
+}
+
+function isLineLikePrimitive(primitive: { type: string; points: [number, number][] } | undefined): boolean {
+    if (!primitive) return false;
+    return ['line', 'constructionLine', 'vline', 'hline', 'polarline', 'tangentline'].includes(primitive.type)
+        && primitive.points.length >= 2;
+}
+
+/** Distance between two 2D points */
+function dist2D(a: [number, number], b: [number, number]): number {
+    return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2);
+}
+
+/** Threshold (sketch units) below which two endpoints are considered coincident */
+const COINCIDENT_THRESHOLD = 0.05;
+
 export const createSketchSlice: StateCreator<
     CADState,
     [],
@@ -101,16 +150,64 @@ export const createSketchSlice: StateCreator<
     selectedPrimitiveIds: new Set<string>(),
     selectedHandleIds: new Set<string>(),
 
+    // Coincident constraints between primitive endpoints
+    primitiveCoincidents: new Map<string, Set<string>>(),
+
     setSketchPlane: (plane) => set({ sketchPlane: plane, sketchStep: 'drawing' }),
     addSketchPoint: (point) => set(state => ({ sketchPoints: [...state.sketchPoints, point] })),
 
-    addSketchPrimitive: (primitive) => set(state => ({
-        activeSketchPrimitives: [...state.activeSketchPrimitives, primitive],
-        sketchRedoPrimitives: [],
-    })),
+    addSketchPrimitive: (primitive) => {
+        const state = get();
+        const existing = state.activeSketchPrimitives;
+
+        // Auto-detect coincident endpoint pairs with existing primitives
+        const newCoincidents = new Map<string, Set<string>>(state.primitiveCoincidents);
+        const newConstraints = [...state.sketchConstraints];
+
+        const addLink = (k1: string, k2: string) => {
+            if (!newCoincidents.has(k1)) newCoincidents.set(k1, new Set());
+            if (!newCoincidents.has(k2)) newCoincidents.set(k2, new Set());
+            newCoincidents.get(k1)!.add(k2);
+            newCoincidents.get(k2)!.add(k1);
+
+            if (!hasPrimitiveCoincidentConstraint(newConstraints, k1, k2)) {
+                newConstraints.push({
+                    id: buildPrimitiveCoincidentConstraintId(k1, k2),
+                    type: 'coincident',
+                    entityIds: [k1, k2],
+                    driving: true,
+                });
+            }
+        };
+
+        const newEndpointIndices = getEndpointIndices(primitive);
+        for (const newIdx of newEndpointIndices) {
+            const newPt = primitive.points[newIdx];
+            if (!newPt) continue;
+            const newKey = `${primitive.id}:${newIdx}`;
+
+            for (const existingPrim of existing) {
+                const existingIndices = getEndpointIndices(existingPrim);
+                for (const existingIdx of existingIndices) {
+                    const existingPt = existingPrim.points[existingIdx];
+                    if (!existingPt) continue;
+                    if (dist2D(newPt, existingPt) <= COINCIDENT_THRESHOLD) {
+                        addLink(newKey, `${existingPrim.id}:${existingIdx}`);
+                    }
+                }
+            }
+        }
+
+        set(s => ({
+            activeSketchPrimitives: [...s.activeSketchPrimitives, primitive],
+            sketchRedoPrimitives: [],
+            primitiveCoincidents: newCoincidents,
+            sketchConstraints: newConstraints,
+        }));
+    },
 
     updateCurrentDrawingPrimitive: (primitive) => set({ currentDrawingPrimitive: primitive }),
-    clearSketch: () => set({ sketchPoints: [], activeSketchPrimitives: [], sketchRedoPrimitives: [], currentDrawingPrimitive: null }),
+    clearSketch: () => set({ sketchPoints: [], activeSketchPrimitives: [], sketchRedoPrimitives: [], currentDrawingPrimitive: null, primitiveCoincidents: new Map() }),
 
     enterSketchMode: (sketchId?: string) => {
         const state = get();
@@ -141,6 +238,7 @@ export const createSketchSlice: StateCreator<
                     sketchPoints: [],
                     activeSketchId: sketchId,
                     isSaved: false,
+                    primitiveCoincidents: new Map(),
                 });
                 return;
             }
@@ -158,6 +256,7 @@ export const createSketchSlice: StateCreator<
             sketchPoints: [],
             activeSketchId: null,
             isSaved: false,
+            primitiveCoincidents: new Map(),
         });
     },
 
@@ -259,9 +358,27 @@ export const createSketchSlice: StateCreator<
             }
             if (state.activeSketchPrimitives.length === 0) return {};
             const lastPrimitive = state.activeSketchPrimitives[state.activeSketchPrimitives.length - 1];
+
+            // Clean up coincident links for the removed primitive
+            const newCoincidents = new Map<string, Set<string>>(state.primitiveCoincidents);
+            for (const [key, partners] of newCoincidents) {
+                if (key.startsWith(`${lastPrimitive.id}:`)) {
+                    // Remove this key and back-references from all partners
+                    for (const partnerKey of partners) {
+                        const partnerSet = newCoincidents.get(partnerKey);
+                        if (partnerSet) {
+                            partnerSet.delete(key);
+                            if (partnerSet.size === 0) newCoincidents.delete(partnerKey);
+                        }
+                    }
+                    newCoincidents.delete(key);
+                }
+            }
+
             return {
                 activeSketchPrimitives: state.activeSketchPrimitives.slice(0, -1),
                 sketchRedoPrimitives: [...state.sketchRedoPrimitives, lastPrimitive],
+                primitiveCoincidents: newCoincidents,
             };
         });
     },
@@ -365,12 +482,71 @@ export const createSketchSlice: StateCreator<
     clearHandleSelection: () => set({ selectedHandleIds: new Set() }),
 
     updatePrimitivePoint: (primitiveId, pointIndex, newPoint) => {
-        set(state => ({
-            activeSketchPrimitives: state.activeSketchPrimitives.map(prim => {
-                if (prim.id !== primitiveId) return prim;
-                const newPoints = [...prim.points];
-                if (pointIndex >= 0 && pointIndex < newPoints.length) {
-                    newPoints[pointIndex] = newPoint;
+        const state = get();
+        const { primitiveCoincidents } = state;
+        const primitiveMap = new Map(state.activeSketchPrimitives.map(prim => [prim.id, prim]));
+
+        // Collect all point updates via graph propagation over coincident links
+        // plus primitive horizontal/vertical constraints.
+        // Map<primitiveId, Map<pointIndex, newPoint>>
+        const updates = new Map<string, Map<number, [number, number]>>();
+
+        const getPoint = (primId: string, idx: number): [number, number] | null => {
+            const pending = updates.get(primId)?.get(idx);
+            if (pending) return pending;
+            const primitive = primitiveMap.get(primId);
+            return primitive?.points[idx] ?? null;
+        };
+
+        const enqueue = (primId: string, idx: number, pt: [number, number]) => {
+            if (!updates.has(primId)) updates.set(primId, new Map());
+            const existing = updates.get(primId)!.get(idx);
+            if (existing && isSamePoint(existing, pt)) return;
+            updates.get(primId)!.set(idx, pt);
+
+            // Propagate to coincident partners
+            const key = `${primId}:${idx}`;
+            const partners = primitiveCoincidents.get(key);
+            if (partners) {
+                for (const partnerKey of partners) {
+                    const colonIdx = partnerKey.lastIndexOf(':');
+                    const partnerPrimId = partnerKey.slice(0, colonIdx);
+                    const partnerIdx = parseInt(partnerKey.slice(colonIdx + 1), 10);
+                    enqueue(partnerPrimId, partnerIdx, pt);
+                }
+            }
+
+            const primitive = primitiveMap.get(primId);
+            const lineConstraint = findPrimitiveLineConstraint(state.sketchConstraints, primId);
+            if (!lineConstraint || !isLineLikePrimitive(primitive)) return;
+
+            const endpointIndices = getEndpointIndices(primitive);
+            if (endpointIndices.length !== 2 || !endpointIndices.includes(idx)) return;
+
+            const otherIdx = endpointIndices[0] === idx ? endpointIndices[1] : endpointIndices[0];
+            const otherPoint = getPoint(primId, otherIdx);
+            if (!otherPoint) return;
+
+            const constrainedPoint: [number, number] =
+                lineConstraint === 'horizontal'
+                    ? [otherPoint[0], pt[1]]
+                    : [pt[0], otherPoint[1]];
+
+            enqueue(primId, otherIdx, constrainedPoint);
+        };
+
+        enqueue(primitiveId, pointIndex, newPoint);
+
+        // Apply all updates in a single set call to avoid intermediate re-renders
+        set(s => ({
+            activeSketchPrimitives: s.activeSketchPrimitives.map(prim => {
+                const primUpdates = updates.get(prim.id);
+                if (!primUpdates) return prim;
+                const newPoints = [...prim.points] as [number, number][];
+                for (const [idx, pt] of primUpdates) {
+                    if (idx >= 0 && idx < newPoints.length) {
+                        newPoints[idx] = pt;
+                    }
                 }
                 return { ...prim, points: newPoints };
             }),
@@ -392,5 +568,81 @@ export const createSketchSlice: StateCreator<
                 };
             }),
         }));
+    },
+
+    addPrimitiveCoincident: (key1, key2) => {
+        set(state => {
+            const newCoincidents = new Map<string, Set<string>>(state.primitiveCoincidents);
+            if (!newCoincidents.has(key1)) newCoincidents.set(key1, new Set());
+            if (!newCoincidents.has(key2)) newCoincidents.set(key2, new Set());
+            newCoincidents.get(key1)!.add(key2);
+            newCoincidents.get(key2)!.add(key1);
+
+            const nextConstraints = hasPrimitiveCoincidentConstraint(state.sketchConstraints, key1, key2)
+                ? state.sketchConstraints
+                : [...state.sketchConstraints, {
+                    id: buildPrimitiveCoincidentConstraintId(key1, key2),
+                    type: 'coincident',
+                    entityIds: [key1, key2],
+                    driving: true,
+                }];
+
+            return {
+                primitiveCoincidents: newCoincidents,
+                sketchConstraints: nextConstraints,
+            };
+        });
+    },
+
+    removePrimitiveCoincidentLink: (key1, key2) => {
+        set(state => {
+            const newCoincidents = new Map<string, Set<string>>(state.primitiveCoincidents);
+            const set1 = newCoincidents.get(key1);
+            const set2 = newCoincidents.get(key2);
+
+            if (set1) {
+                set1.delete(key2);
+                if (set1.size === 0) newCoincidents.delete(key1);
+            }
+            if (set2) {
+                set2.delete(key1);
+                if (set2.size === 0) newCoincidents.delete(key2);
+            }
+
+            return {
+                primitiveCoincidents: newCoincidents,
+                sketchConstraints: state.sketchConstraints.filter(constraint => constraint.id !== buildPrimitiveCoincidentConstraintId(key1, key2)),
+            };
+        });
+    },
+
+    removePrimitiveCoincidents: (primitiveId) => {
+        set(state => {
+            const newCoincidents = new Map<string, Set<string>>(state.primitiveCoincidents);
+            const removedKeys = new Set<string>();
+            for (const [key, partners] of newCoincidents) {
+                if (key.startsWith(`${primitiveId}:`)) {
+                    removedKeys.add(key);
+                    for (const partnerKey of partners) {
+                        const partnerSet = newCoincidents.get(partnerKey);
+                        if (partnerSet) {
+                            partnerSet.delete(key);
+                            if (partnerSet.size === 0) newCoincidents.delete(partnerKey);
+                        }
+                    }
+                    newCoincidents.delete(key);
+                }
+            }
+
+            const nextConstraints = state.sketchConstraints.filter(constraint => {
+                if (!isPrimitiveCoincidentConstraint(constraint)) return true;
+                return !constraint.entityIds.some(entityId => removedKeys.has(entityId) || entityId.startsWith(`${primitiveId}:`));
+            });
+
+            return {
+                primitiveCoincidents: newCoincidents,
+                sketchConstraints: nextConstraints,
+            };
+        });
     },
 });

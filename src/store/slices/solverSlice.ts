@@ -9,6 +9,12 @@ import {
     validateConstraintSelection,
     getNextSelectionPrompt,
 } from '../../lib/solver';
+import {
+    buildPrimitiveLineConstraintId,
+    isPrimitiveCoincidentConstraint,
+    isPrimitiveConstraintId,
+    isPrimitiveLineConstraint,
+} from '../../lib/sketch/primitiveConstraints';
 import { CADState, SolverSlice } from '../types';
 
 /**
@@ -225,7 +231,23 @@ export const createSolverSlice: StateCreator<
     },
 
     removeSolverConstraint: (constraintId) => {
-        const { solverInstance } = get();
+        const state = get();
+        const { solverInstance } = state;
+        const constraint = state.sketchConstraints.find(c => c.id === constraintId);
+        if (!constraint) return;
+
+        if (isPrimitiveCoincidentConstraint(constraint)) {
+            state.removePrimitiveCoincidentLink(constraint.entityIds[0], constraint.entityIds[1]);
+            return;
+        }
+
+        if (isPrimitiveLineConstraint(constraint) || isPrimitiveConstraintId(constraintId)) {
+            set(current => ({
+                sketchConstraints: current.sketchConstraints.filter(c => c.id !== constraintId),
+            }));
+            return;
+        }
+
         if (!solverInstance?.isInitialized) return;
 
         solverInstance.removeConstraint(constraintId);
@@ -299,18 +321,6 @@ export const createSolverSlice: StateCreator<
         const state = get();
         const { solverInstance, sketchEntities } = state;
 
-        if (!solverInstance?.isInitialized) {
-            toast.error('Solver not initialized');
-            return;
-        }
-
-        const meta = CONSTRAINT_META[type];
-        if (!meta) {
-            toast.error(`Unknown constraint: ${type}`);
-            return;
-        }
-
-        // ─── Direct path for horizontal / vertical on line primitives ────────
         if (type === 'horizontal' || type === 'vertical') {
             const selectedPrimIds = Array.from(state.selectedPrimitiveIds ?? new Set<string>());
             const linePrims = selectedPrimIds
@@ -320,28 +330,60 @@ export const createSolverSlice: StateCreator<
                 );
 
             if (linePrims.length > 0) {
+                const nextConstraints = state.sketchConstraints.filter(constraint => {
+                    if (!isPrimitiveLineConstraint(constraint)) return true;
+                    return !linePrims.some(prim => prim.id === constraint.entityIds[0]);
+                });
+
+                for (const prim of linePrims) {
+                    nextConstraints.push({
+                        id: buildPrimitiveLineConstraintId(type, prim.id),
+                        type,
+                        entityIds: [prim.id],
+                        driving: true,
+                    });
+                }
+
+                set({ sketchConstraints: nextConstraints });
+
                 for (const prim of linePrims) {
                     const [p1, p2] = prim.points;
-                    let newPts: [number, number][];
+                    const hasCoincident0 = !!state.primitiveCoincidents.get(`${prim.id}:0`)?.size;
+                    const hasCoincident1 = !!state.primitiveCoincidents.get(`${prim.id}:1`)?.size;
+
                     if (type === 'horizontal') {
-                        const avgY = (p1[1] + p2[1]) / 2;
-                        newPts = [[p1[0], avgY], [p2[0], avgY]];
+                        const targetY = hasCoincident0 && !hasCoincident1
+                            ? p1[1]
+                            : hasCoincident1 && !hasCoincident0
+                                ? p2[1]
+                                : (p1[1] + p2[1]) / 2;
+                        state.updatePrimitivePoint(prim.id, 0, [p1[0], targetY]);
+                        state.updatePrimitivePoint(prim.id, 1, [p2[0], targetY]);
                     } else {
-                        const avgX = (p1[0] + p2[0]) / 2;
-                        newPts = [[avgX, p1[1]], [avgX, p2[1]]];
+                        const targetX = hasCoincident0 && !hasCoincident1
+                            ? p1[0]
+                            : hasCoincident1 && !hasCoincident0
+                                ? p2[0]
+                                : (p1[0] + p2[0]) / 2;
+                        state.updatePrimitivePoint(prim.id, 0, [targetX, p1[1]]);
+                        state.updatePrimitivePoint(prim.id, 1, [targetX, p2[1]]);
                     }
-                    const primId = prim.id;
-                    set(s => ({
-                        activeSketchPrimitives: s.activeSketchPrimitives.map(p =>
-                            p.id === primId ? { ...p, points: newPts } : p
-                        ),
-                    }));
                 }
-                toast.success(`Applied ${meta.label} constraint`);
+
+                toast.success(`Applied ${CONSTRAINT_META[type].label} constraint`);
                 return;
             }
+        }
 
-            // No line primitives selected — fall through to solver path or start constraint mode
+        if (!solverInstance?.isInitialized) {
+            toast.error('Solver not initialized');
+            return;
+        }
+
+        const meta = CONSTRAINT_META[type];
+        if (!meta) {
+            toast.error(`Unknown constraint: ${type}`);
+            return;
         }
 
         // Gather selected solver entities from both selection systems

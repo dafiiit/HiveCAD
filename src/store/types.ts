@@ -300,6 +300,13 @@ export interface SketchSlice {
     /** Set of selected handle IDs (format: "primitiveId:pointIndex") */
     selectedHandleIds: Set<string>;
 
+    /**
+     * Coincident constraints between primitive endpoints.
+     * Maps "primitiveId:pointIndex" → Set<"primitiveId:pointIndex"> (bidirectional).
+     * Used to propagate point moves across connected endpoints.
+     */
+    primitiveCoincidents: Map<string, Set<string>>;
+
     addSketchPoint: (point: [number, number]) => void;
     setSketchPlane: (plane: 'XY' | 'XZ' | 'YZ') => void;
     addSketchPrimitive: (primitive: SketchPrimitive) => void;
@@ -335,6 +342,15 @@ export interface SketchSlice {
     updatePrimitivePoint: (primitiveId: string, pointIndex: number, newPoint: [number, number]) => void;
     /** Toggle construction mode on a primitive */
     togglePrimitiveConstruction: (primitiveId: string) => void;
+    /**
+     * Manually add a coincident link between two endpoint keys (bidirectional).
+     * Key format: "primitiveId:pointIndex".
+     */
+    addPrimitiveCoincident: (key1: string, key2: string) => void;
+    /** Remove all coincident links involving the given primitive (call on undo/delete). */
+    removePrimitiveCoincidents: (primitiveId: string) => void;
+    /** Remove a single coincident link between two primitive endpoint keys. */
+    removePrimitiveCoincidentLink: (key1: string, key2: string) => void;
 }
 
 export interface SnappingSlice {

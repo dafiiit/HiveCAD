@@ -8,6 +8,7 @@ import { toolRegistry } from "../../lib/tools";
 import SketchToolDialog from "./SketchToolDialog";
 import { DimensionBadge, createAnnotationContext, PointMarker } from "./SketchAnnotations";
 import { snapToGrid } from "../../lib/sketch/rendering";
+import { buildPrimitiveCoincidentConstraintId } from "../../lib/sketch/primitiveConstraints";
 import {
     getHandlePoints, getEntityColor, getEntityDash, getEntityLineWidth,
     getHandleSize, getHandleColor, isConstructionPrimitive,
@@ -49,6 +50,10 @@ const SketchCanvas = () => {
         hoveredPrimitiveId, draggingHandle, selectedPrimitiveIds, selectedHandleIds,
         setHoveredPrimitive, setDraggingHandle, selectPrimitive, selectHandle,
         clearPrimitiveSelection, clearHandleSelection, updatePrimitivePoint, togglePrimitiveConstruction,
+        addPrimitiveCoincident,
+        // Coincident constraints
+        primitiveCoincidents,
+        removeSolverConstraint,
         // View controls
         setCameraControlsDisabled,
     } = useCADStore();
@@ -358,14 +363,16 @@ const SketchCanvas = () => {
                     const dx = handleP2d[0] - draggingHandle.position[0];
                     const dy = handleP2d[1] - draggingHandle.position[1];
                     if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6) {
-                        // Translate all points
+                        // Translate all points, then propagate coincident constraints
                         const prim = activeSketchPrimitives.find(p => p.id === primId);
                         if (prim) {
-                            for (let i = 0; i < prim.points.length; i++) {
-                                updatePrimitivePoint(primId, i, [
-                                    prim.points[i][0] + dx,
-                                    prim.points[i][1] + dy,
-                                ]);
+                            // Compute all new positions from the captured snapshot first
+                            const newPointPositions: [number, number][] = prim.points.map(
+                                pt => [pt[0] + dx, pt[1] + dy]
+                            );
+                            // Apply via updatePrimitivePoint — each call propagates its coincidents
+                            for (let i = 0; i < newPointPositions.length; i++) {
+                                updatePrimitivePoint(primId, i, newPointPositions[i]);
                             }
                         }
                         // Update handle position so next frame computes correct delta
@@ -391,17 +398,53 @@ const SketchCanvas = () => {
                 if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6) {
                     const storeApi = storeApiRef.current;
                     if (storeApi) {
+                        // Snapshot all target points BEFORE any updates to avoid double-
+                        // translation when coincident partners are also in the selection.
+                        type PointUpdate = { id: string; idx: number; pt: [number, number] };
+                        const batchUpdates: PointUpdate[] = [];
+                        const currentPrims = storeApi.getState().activeSketchPrimitives;
                         for (const selId of selectedPrimitiveIds) {
-                            const prim = storeApi.getState().activeSketchPrimitives.find(p => p.id === selId);
+                            const prim = currentPrims.find(p => p.id === selId);
                             if (prim) {
                                 for (let i = 0; i < prim.points.length; i++) {
-                                    updatePrimitivePoint(selId, i, [
-                                        prim.points[i][0] + dx,
-                                        prim.points[i][1] + dy,
-                                    ]);
+                                    batchUpdates.push({
+                                        id: selId,
+                                        idx: i,
+                                        pt: [prim.points[i][0] + dx, prim.points[i][1] + dy],
+                                    });
                                 }
                             }
                         }
+                        // Apply updates; propagate coincident only for primitives outside
+                        // the selection (those not being explicitly translated).
+                        const selSet = selectedPrimitiveIds as Set<string>;
+                        const { primitiveCoincidents } = storeApi.getState();
+                        storeApi.setState(s => {
+                            const prims = s.activeSketchPrimitives.map(prim => ({ ...prim, points: [...prim.points] as [number, number][] }));
+                            const primMap = new Map(prims.map(p => [p.id, p]));
+
+                            for (const { id, idx, pt } of batchUpdates) {
+                                const target = primMap.get(id);
+                                if (target) target.points[idx] = pt;
+
+                                // Propagate to NON-selected coincident partners
+                                const key = `${id}:${idx}`;
+                                const partners = primitiveCoincidents.get(key);
+                                if (partners) {
+                                    for (const partnerKey of partners) {
+                                        const colonIdx = partnerKey.lastIndexOf(':');
+                                        const pId = partnerKey.slice(0, colonIdx);
+                                        const pIdx = parseInt(partnerKey.slice(colonIdx + 1), 10);
+                                        if (!selSet.has(pId)) {
+                                            const partner = primMap.get(pId);
+                                            if (partner) partner.points[pIdx] = pt;
+                                        }
+                                    }
+                                }
+                            }
+
+                            return { activeSketchPrimitives: prims };
+                        });
                     }
                     offsetDragOriginRef.current = handleP2d;
                 }
@@ -655,6 +698,39 @@ const SketchCanvas = () => {
             }
         }
         return bestHandle;
+    };
+
+    const findSnapEndpointKey = (handle: HandlePoint, currentSnap: SnapResult | null): string | null => {
+        if (handle.pointIndex < 0 || currentSnap?.snapPoint.type !== 'endpoint') return null;
+
+        const sourcePrimitiveId = handle.id.split(':')[0];
+        const targetPrimitiveId = currentSnap.snapPoint.sourceEntityId;
+        if (!targetPrimitiveId || targetPrimitiveId === sourcePrimitiveId) return null;
+
+        const targetPrimitive = activeSketchPrimitives.find(prim => prim.id === targetPrimitiveId);
+        if (!targetPrimitive) return null;
+
+        const targetHandle = getHandlePoints(targetPrimitive).find(candidate => {
+            if (candidate.type !== 'endpoint') return false;
+            const dx = candidate.position[0] - currentSnap.x;
+            const dy = candidate.position[1] - currentSnap.y;
+            return Math.sqrt(dx * dx + dy * dy) <= 1e-6;
+        });
+
+        if (!targetHandle || targetHandle.pointIndex < 0) return null;
+        return `${targetPrimitive.id}:${targetHandle.pointIndex}`;
+    };
+
+    const finalizeHandleDrag = (handle: HandlePoint | null, currentSnap: SnapResult | null) => {
+        if (!handle || handle.pointIndex < 0) return;
+
+        const targetKey = findSnapEndpointKey(handle, currentSnap);
+        if (!targetKey) return;
+
+        const sourceKey = `${handle.id.split(':')[0]}:${handle.pointIndex}`;
+        if (sourceKey !== targetKey) {
+            addPrimitiveCoincident(sourceKey, targetKey);
+        }
     };
 
     /**
@@ -976,6 +1052,7 @@ const SketchCanvas = () => {
 
         // Finalize handle drag or handle click-to-select
         if (draggingHandle) {
+            finalizeHandleDrag(draggingHandle, snapResult);
             setDraggingHandle(null);
             setCameraControlsDisabled(false);
             handlePressedRef.current = null;
@@ -1477,6 +1554,7 @@ const SketchCanvas = () => {
 
                 // Finalize handle drag
                 if (draggingHandle?.id === h.id) {
+                    finalizeHandleDrag(draggingHandle, snapResult);
                     setDraggingHandle(null);
                     setCameraControlsDisabled(false);
                     handlePressedRef.current = null;
@@ -1983,6 +2061,109 @@ const SketchCanvas = () => {
                     </mesh>
                 );
             })}
+
+            {/* ─── Coincident Constraint Indicators ───────────────────────────────────
+                Show a small "two-circles" symbol next to endpoints that have
+                coincident constraints when the affected primitive is selected or hovered. */}
+            {(() => {
+                if (!primitiveCoincidents || primitiveCoincidents.size === 0) return null;
+
+                // Collect all endpoint keys belonging to selected/hovered primitives
+                const relevantPrimIds = new Set<string>();
+                for (const id of selectedPrimitiveIds) relevantPrimIds.add(id);
+                if (hoveredPrimitiveId) relevantPrimIds.add(hoveredPrimitiveId);
+                const selectedEndpointKeys = new Set<string>();
+                for (const handleId of selectedHandleIds) {
+                    const colonIdx = handleId.lastIndexOf(':');
+                    if (colonIdx === -1) continue;
+                    const primId = handleId.slice(0, colonIdx);
+                    const pointIdx = Number(handleId.slice(colonIdx + 1));
+                    if (!Number.isFinite(pointIdx) || pointIdx < 0) continue;
+                    relevantPrimIds.add(primId);
+                    selectedEndpointKeys.add(`${primId}:${pointIdx}`);
+                }
+                if (relevantPrimIds.size === 0 && selectedEndpointKeys.size === 0) return null;
+
+                // Build set of coincident endpoint pairs to render (avoid duplicates)
+                const rendered = new Set<string>();
+                const indicators: React.ReactNode[] = [];
+
+                for (const primId of relevantPrimIds) {
+                    const prim = activeSketchPrimitives.find(p => p.id === primId);
+                    if (!prim) continue;
+
+                    // Check each point index
+                    for (let idx = 0; idx < prim.points.length; idx++) {
+                        const key = `${primId}:${idx}`;
+                        const partners = primitiveCoincidents.get(key);
+                        if (!partners || partners.size === 0) continue;
+
+                        // Sort keys so we don't render the same pair twice
+                        for (const partnerKey of partners) {
+                            const pairKey = [key, partnerKey].sort().join('|');
+                            if (rendered.has(pairKey)) continue;
+                            rendered.add(pairKey);
+
+                            const shouldRender = selectedEndpointKeys.size === 0
+                                ? true
+                                : selectedEndpointKeys.has(key) || selectedEndpointKeys.has(partnerKey);
+                            if (!shouldRender) continue;
+
+                            const pt = prim.points[idx];
+                            if (!pt) continue;
+
+                            const constraintId = buildPrimitiveCoincidentConstraintId(key, partnerKey);
+
+                            // Offset the symbol slightly (perpendicular to cursor)
+                            const offsetScale = 2.5 * pixelScale;
+                            const pos3D = to3D(pt[0] + offsetScale, pt[1] + offsetScale);
+
+                            indicators.push(
+                                <group key={`ci-${pairKey}`} position={pos3D}>
+                                    <mesh
+                                        onPointerDown={(e) => {
+                                            e.stopPropagation();
+                                            removeSolverConstraint(constraintId);
+                                        }}
+                                    >
+                                        <circleGeometry args={[1.8 * pixelScale, 24]} />
+                                        <meshBasicMaterial transparent opacity={0.001} depthTest={false} />
+                                    </mesh>
+                                    {/* Outer ring (first circle of the "coincident" symbol) */}
+                                    <mesh onPointerDown={(e) => {
+                                        e.stopPropagation();
+                                        removeSolverConstraint(constraintId);
+                                    }}>
+                                        <ringGeometry args={[0.7 * pixelScale, 1.0 * pixelScale, 24]} />
+                                        <meshBasicMaterial
+                                            color="#22c55e"
+                                            depthTest={false}
+                                            side={THREE.DoubleSide}
+                                            transparent
+                                            opacity={0.9}
+                                        />
+                                    </mesh>
+                                    {/* Second (overlapping) ring shifted slightly */}
+                                    <mesh position={[0.9 * pixelScale, 0, 0]} onPointerDown={(e) => {
+                                        e.stopPropagation();
+                                        removeSolverConstraint(constraintId);
+                                    }}>
+                                        <ringGeometry args={[0.7 * pixelScale, 1.0 * pixelScale, 24]} />
+                                        <meshBasicMaterial
+                                            color="#22c55e"
+                                            depthTest={false}
+                                            side={THREE.DoubleSide}
+                                            transparent
+                                            opacity={0.9}
+                                        />
+                                    </mesh>
+                                </group>
+                            );
+                        }
+                    }
+                }
+                return <>{indicators}</>;
+            })()}
         </group>
     );
 };
