@@ -146,6 +146,18 @@ export interface Tool {
     ): ReactNode;
 
     /**
+     * Get 3D display points for committed (non-ghost) rendering using Drei's Line component,
+     * which properly supports lineWidth in all WebGL implementations.
+     * @param primitive - The committed sketch primitive
+     * @param to3D - Function to convert 2D sketch coords to 3D world coords
+     * @returns Array of THREE.Vector3 points along the shape, or null to fall back to renderPreview
+     */
+    getDisplayPoints?(
+        primitive: SketchPrimitive,
+        to3D: (x: number, y: number) => THREE.Vector3
+    ): THREE.Vector3[] | null;
+
+    /**
      * Render annotation overlays (dimensions, guides) for this tool
      * @param primitive - The sketch primitive being annotated
      * @param plane - The sketch plane for coordinate context

@@ -337,14 +337,12 @@ export function getEntityDash(state: SketchEntityState, isConstruction: boolean)
 /**
  * Get the line width for a sketch entity based on its visual state.
  */
-
-//for testing if this is used I will increase the line width for hovered and selected states to make it more visually obvious.
 export function getEntityLineWidth(state: SketchEntityState): number {
     switch (state) {
-        case 'hovered':   return 10; 
-        case 'selected':  return 10;
-        case 'drawing':   return 8;
-        default:          return 6;
+        case 'hovered':   return 4;
+        case 'selected':  return 4;
+        case 'drawing':   return 3;
+        default:          return 3;
     }
 }
 

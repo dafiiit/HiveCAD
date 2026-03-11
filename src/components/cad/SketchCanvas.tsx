@@ -1572,6 +1572,29 @@ const SketchCanvas = () => {
 
         // Use tool registry renderer if available
         if (useToolRenderer) {
+            // For committed (non-ghost) primitives: prefer Drei <Line> via getDisplayPoints,
+            // which uses Line2 and reliably supports lineWidth in all WebGL implementations.
+            // lineBasicMaterial.linewidth is ignored in WebGL2 / capped on many platforms.
+            if (!isGhost && toolDef.getDisplayPoints) {
+                const pts3D = toolDef.getDisplayPoints(prim as any, to3D);
+                if (pts3D && pts3D.length >= 2) {
+                    return (
+                        <Line
+                            key={prim.id}
+                            points={pts3D}
+                            color={color}
+                            lineWidth={lineWidth}
+                            depthTest={false}
+                            dashed={!!dash}
+                            dashSize={dash?.[0]}
+                            gapSize={dash?.[1]}
+                            onPointerDown={handlePointerDown as any}
+                            onPointerUp={handlePointerUp as any}
+                        />
+                    );
+                }
+            }
+
             const rendered = toolDef.renderPreview(prim as any, to3D, isGhost);
             if (!isGhost && rendered) {
                 // Clone the rendered element and apply our state-based styling + handlers

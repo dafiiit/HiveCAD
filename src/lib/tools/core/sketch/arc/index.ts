@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchToolContext } from '../../../types';
 import { arcFromThreePoints } from '../../../../sketch-graph/Geometry';
 import { generateToolId } from '../../../types';
@@ -43,6 +44,33 @@ export const threePointsArcTool: Tool = {
     },
     renderPreview: renderArcPreview,
     renderAnnotation: renderArcAnnotation,
+    getDisplayPoints(primitive: SketchPrimitive, to3D: (x: number, y: number) => THREE.Vector3): THREE.Vector3[] | null {
+        if (primitive.points.length < 2) return null;
+        if (primitive.points.length === 2) {
+            // Only start+end defined — show chord
+            return primitive.points.map(p => to3D(p[0], p[1]));
+        }
+        const start = { x: primitive.points[0][0], y: primitive.points[0][1] };
+        const end   = { x: primitive.points[1][0], y: primitive.points[1][1] };
+        const via   = { x: primitive.points[2][0], y: primitive.points[2][1] };
+        const arc = arcFromThreePoints(start, end, via);
+        const maxRadius = 10000;
+        if (arc && arc.radius < maxRadius && arc.radius > 0.01) {
+            const clockwise = !arc.ccw;
+            let s = arc.startAngle;
+            let e = arc.endAngle;
+            if (!clockwise) { if (e < s) e += 2 * Math.PI; }
+            else            { if (e > s) e -= 2 * Math.PI; }
+            const curve = new THREE.EllipseCurve(
+                arc.center.x, arc.center.y,
+                arc.radius, arc.radius,
+                s, e, clockwise, 0
+            );
+            return curve.getPoints(50).map(p => to3D(p.x, p.y));
+        }
+        // Fallback: chord between start and end
+        return [to3D(start.x, start.y), to3D(end.x, end.y)];
+    },
 };
 
 // Re-export centerPointArcTool (moved from construction/ to its correct group)

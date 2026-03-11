@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import type { Tool, SketchPrimitiveData, SketchPrimitive, SketchToolContext } from '../../../types';
 import { generateToolId } from '../../../types';
 import { LineSegment } from '../../../../sketch-graph/Geometry';
@@ -43,4 +44,8 @@ export const lineTool: Tool = {
     },
     renderPreview: renderLinePreview,
     renderAnnotation: renderLineAnnotation,
+    getDisplayPoints(primitive: SketchPrimitive, to3D: (x: number, y: number) => THREE.Vector3): THREE.Vector3[] | null {
+        if (primitive.points.length < 2) return null;
+        return primitive.points.map(p => to3D(p[0], p[1]));
+    },
 };
