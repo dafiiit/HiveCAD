@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BackgroundSyncHandler } from '@/components/layout/BackgroundSyncHandler';
 import { UnsavedChangesListener } from '@/components/layout/UnsavedChangesListener';
 import { StoreApi } from 'zustand';
@@ -34,6 +34,16 @@ export const TabManager = () => {
     const [activeTabId, setActiveTabId] = useState('dashboard');
     const [tabToDelete, setTabToDelete] = useState<Tab | null>(null);
     const { user } = useGlobalStore();
+    const tabsRef = useRef(tabs);
+    const activeTabIdRef = useRef(activeTabId);
+
+    useEffect(() => {
+        tabsRef.current = tabs;
+    }, [tabs]);
+
+    useEffect(() => {
+        activeTabIdRef.current = activeTabId;
+    }, [activeTabId]);
 
     // Enable background sync
     // Background sync moved inside provider
@@ -53,52 +63,60 @@ export const TabManager = () => {
         setActiveTabId(newTabId);
     };
 
-    const openProjectInNewTab = (project: ProjectData) => {
-        setTabs(prev => prev.map(tab => {
-            if (tab.id === activeTabId && tab.type === 'dashboard') {
-                const store: StoreApi<any> = tab.store;
+    const hydrateProjectStore = useCallback((store: StoreApi<any>, project: ProjectData) => {
+        store.getState().setProjectId(project.meta.id);
+        store.getState().setFileName(project.meta.name);
+        store.getState().setProjectFolder(project.meta.folder || '');
+        console.log(`[TabManager] Set projectId: ${project.meta.id}`);
 
-                // Set project identity
-                store.getState().setProjectId(project.meta.id);
-                store.getState().setFileName(project.meta.name);
-                store.getState().setProjectFolder(project.meta.folder || '');
-                console.log(`[TabManager] Set projectId: ${project.meta.id}`);
+        if (project.snapshot.code) {
+            store.getState().setCode(project.snapshot.code);
+        }
 
-                // Set code & objects from snapshot
-                if (project.snapshot.code) {
-                    store.getState().setCode(project.snapshot.code);
-                }
-                if (project.snapshot.objects?.length) {
-                    const cleanObjects = project.snapshot.objects.map((obj: any) => ({
-                        ...obj,
-                        geometry: undefined,
-                        edgeGeometry: undefined,
-                    }));
-                    store.setState({ objects: cleanObjects });
-                }
+        if (project.snapshot.objects?.length) {
+            const cleanObjects = project.snapshot.objects.map((obj: any) => ({
+                ...obj,
+                geometry: undefined,
+                edgeGeometry: undefined,
+            }));
+            store.setState({ objects: cleanObjects });
+        }
 
-                // Restore persistent sketches
-                if (project.snapshot.sketches?.length) {
-                    store.getState().loadSketches(project.snapshot.sketches);
-                }
+        if (project.snapshot.sketches?.length) {
+            store.getState().loadSketches(project.snapshot.sketches);
+        }
 
-                // Always trigger runCode after loading if we have code
-                if (store.getState().code) {
-                    store.getState().runCode();
-                }
+        if (store.getState().code) {
+            store.getState().runCode();
+        }
 
-                store.setState({ hasUnpushedChanges: true });
+        store.setState({ hasUnpushedChanges: true });
+    }, []);
 
-                return {
-                    ...tab,
-                    type: 'project',
-                    title: project.meta.name,
-                    projectId: project.meta.id,
-                };
+    const openProjectInNewTab = useCallback((project: ProjectData) => {
+        const targetTab = tabsRef.current.find(
+            (tab) => tab.id === activeTabIdRef.current && tab.type === 'dashboard'
+        );
+
+        if (!targetTab) {
+            return;
+        }
+
+        hydrateProjectStore(targetTab.store, project);
+
+        setTabs((prev) => prev.map((tab) => {
+            if (tab.id !== targetTab.id) {
+                return tab;
             }
-            return tab;
+
+            return {
+                ...tab,
+                type: 'project',
+                title: project.meta.name,
+                projectId: project.meta.id,
+            };
         }));
-    };
+    }, [hydrateProjectStore]);
 
     const closeTab = (tabId: string) => {
         const tabToRemove = tabs.find(t => t.id === tabId);
