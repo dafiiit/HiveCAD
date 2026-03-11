@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildPrimitiveCoincidentConstraintId, buildPrimitiveLineConstraintId } from './primitiveConstraints';
+import {
+    buildPrimitiveCoincidentConstraintId,
+    buildPrimitiveLineConstraintId,
+    buildPrimitivePointOnLineConstraintId,
+} from './primitiveConstraints';
 
 class TestWorker {
     onmessage: ((event: MessageEvent) => void) | null = null;
@@ -165,5 +169,38 @@ describe('primitive sketch constraints', () => {
 
         expect(store.getState().sketchConstraints.some(constraint => constraint.id === expectedId)).toBe(true);
         expect(store.getState().sketchConstraints.some(constraint => constraint.id === unexpectedId)).toBe(false);
+    });
+
+    it('keeps an attached endpoint on its target line when the line moves', () => {
+        const store = createCADStore();
+
+        store.setState({
+            activeSketchPrimitives: [
+                {
+                    id: 'line-1',
+                    type: 'line',
+                    points: [[0, 0], [10, 0]],
+                    properties: {},
+                },
+                {
+                    id: 'arc-1',
+                    type: 'centerPointArc',
+                    points: [[20, 20], [24, 20], [2.5, 0]],
+                    properties: {},
+                },
+            ],
+        });
+
+        store.getState().setPrimitivePointOnLine('arc-1:2', 'line-1', 0.25);
+        store.getState().updatePrimitivePoint('line-1', 1, [20, 0]);
+
+        const [line, arc] = store.getState().activeSketchPrimitives;
+        const constraintId = buildPrimitivePointOnLineConstraintId('arc-1:2', 'line-1');
+        const constraint = store.getState().sketchConstraints.find(item => item.id === constraintId);
+
+        expect(line.points[1]).toEqual([20, 0]);
+        expect(arc.points[2][0]).toBeCloseTo(5, 8);
+        expect(arc.points[2][1]).toBeCloseTo(0, 8);
+        expect(constraint?.value).toBeCloseTo(0.25, 8);
     });
 });

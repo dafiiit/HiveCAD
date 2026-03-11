@@ -18,6 +18,7 @@ export class SnappingEngine {
     private quadtree: Quadtree;
     private config: SnappingConfig;
     private snapPoints: SnapPoint[] = [];
+    private primitives: SketchPrimitive[] = [];
 
     constructor(config: Partial<SnappingConfig> = {}) {
         this.quadtree = new Quadtree();
@@ -35,6 +36,7 @@ export class SnappingEngine {
      * Set the entities to snap to
      */
     setEntities(primitives: SketchPrimitive[]) {
+        this.primitives = primitives;
         this.snapPoints = [];
 
         // Extract snap points from all primitives
@@ -44,6 +46,57 @@ export class SnappingEngine {
 
         // Rebuild spatial index
         this.quadtree.rebuild(this.snapPoints);
+    }
+
+    private findCurveSnap(x: number, y: number, excludeSourceEntityId?: string): SnapResult | null {
+        const { snapDistance } = this.config;
+        let best: SnapResult | null = null;
+
+        for (const primitive of this.primitives) {
+            if (primitive.id === excludeSourceEntityId) continue;
+            if (!['line', 'constructionLine', 'vline', 'hline', 'polarline', 'tangentline'].includes(primitive.type)) continue;
+            if (primitive.points.length < 2) continue;
+
+            const start = primitive.points[0];
+            const end = primitive.points[primitive.points.length - 1];
+            const dx = end[0] - start[0];
+            const dy = end[1] - start[1];
+            const lenSq = dx * dx + dy * dy;
+            if (lenSq <= 1e-12) continue;
+
+            const t = Math.min(1, Math.max(0, ((x - start[0]) * dx + (y - start[1]) * dy) / lenSq));
+            const px = start[0] + dx * t;
+            const py = start[1] + dy * t;
+            const distX = px - x;
+            const distY = py - y;
+            const distance = Math.sqrt(distX * distX + distY * distY);
+
+            if (distance > snapDistance) continue;
+
+            const next: SnapResult = {
+                x: px,
+                y: py,
+                snapPoint: {
+                    id: generateSnapPointId(),
+                    x: px,
+                    y: py,
+                    type: 'curve',
+                    sourceEntityId: primitive.id,
+                    priority: SNAP_PRIORITY.curve,
+                    metadata: {
+                        primitiveConstraintType: 'pointOnLine',
+                        constraintValue: t,
+                    },
+                },
+                distance,
+            };
+
+            if (!best || next.distance < best.distance) {
+                best = next;
+            }
+        }
+
+        return best;
     }
 
     /**
@@ -174,11 +227,31 @@ export class SnappingEngine {
     /**
      * Find the best snap target for a given position
      */
-    findSnapTarget(x: number, y: number): SnapResult | null {
+    findSnapTarget(x: number, y: number, excludeSourceEntityId?: string): SnapResult | null {
         const { snapDistance } = this.config;
 
         // 1. Query Spatial Index for direct snaps (Endpoint, Midpoint, Center)
-        const nearest = this.quadtree.findNearest(x, y, snapDistance);
+        const nearestCandidates = this.quadtree
+            .queryRadius(x, y, snapDistance)
+            .filter(point => point.sourceEntityId !== excludeSourceEntityId);
+
+        let nearest: SnapPoint | null = null;
+        let nearestDistSquared = Infinity;
+        let nearestPriority = Infinity;
+
+        for (const point of nearestCandidates) {
+            const dx = point.x - x;
+            const dy = point.y - y;
+            const distSquared = dx * dx + dy * dy;
+            if (
+                point.priority < nearestPriority ||
+                (point.priority === nearestPriority && distSquared < nearestDistSquared)
+            ) {
+                nearest = point;
+                nearestDistSquared = distSquared;
+                nearestPriority = point.priority;
+            }
+        }
 
         if (nearest) {
             const dx = nearest.x - x;
@@ -189,6 +262,11 @@ export class SnappingEngine {
                 snapPoint: nearest,
                 distance: Math.sqrt(dx * dx + dy * dy)
             };
+        }
+
+        const curveSnap = this.findCurveSnap(x, y, excludeSourceEntityId);
+        if (curveSnap) {
+            return curveSnap;
         }
 
         // 2. Virtual Constraints (Horizontal/Vertical alignment)

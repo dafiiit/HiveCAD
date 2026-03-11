@@ -13,9 +13,12 @@ import {
 } from '../../lib/sketch';
 import {
     buildPrimitiveCoincidentConstraintId,
+    buildPrimitivePointOnLineConstraintId,
+    findPrimitivePointOnLineConstraint,
     findPrimitiveLineConstraint,
     hasPrimitiveCoincidentConstraint,
     isPrimitiveCoincidentConstraint,
+    isPrimitivePointOnLineConstraint,
 } from '../../lib/sketch/primitiveConstraints';
 
 /**
@@ -118,6 +121,30 @@ function isLineLikePrimitive(primitive: { type: string; points: [number, number]
 /** Distance between two 2D points */
 function dist2D(a: [number, number], b: [number, number]): number {
     return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2);
+}
+
+function clamp01(value: number): number {
+    return Math.min(1, Math.max(0, value));
+}
+
+function projectPointToLineSegment(
+    point: [number, number],
+    start: [number, number],
+    end: [number, number],
+): { point: [number, number]; t: number } {
+    const dx = end[0] - start[0];
+    const dy = end[1] - start[1];
+    const lenSq = dx * dx + dy * dy;
+
+    if (lenSq <= 1e-12) {
+        return { point: start, t: 0 };
+    }
+
+    const t = clamp01(((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / lenSq);
+    return {
+        point: [start[0] + dx * t, start[1] + dy * t],
+        t,
+    };
 }
 
 /** Threshold (sketch units) below which two endpoints are considered coincident */
@@ -475,6 +502,24 @@ export const createSketchSlice: StateCreator<
         const state = get();
         const { primitiveCoincidents } = state;
         const primitiveMap = new Map(state.activeSketchPrimitives.map(prim => [prim.id, prim]));
+        const attachmentValueUpdates = new Map<string, number>();
+
+        const attachmentsByTargetPrimitive = new Map<string, Array<{
+            id: string;
+            type: 'pointOnLine';
+            entityIds: [string, string];
+            value?: number;
+        }>>();
+        for (const constraint of state.sketchConstraints) {
+            if (!isPrimitivePointOnLineConstraint(constraint)) continue;
+            const targetPrimitiveId = constraint.entityIds[1];
+            const existing = attachmentsByTargetPrimitive.get(targetPrimitiveId);
+            if (existing) {
+                existing.push(constraint);
+            } else {
+                attachmentsByTargetPrimitive.set(targetPrimitiveId, [constraint]);
+            }
+        }
 
         // Collect all point updates via graph propagation over coincident links
         // plus primitive horizontal/vertical constraints.
@@ -488,11 +533,42 @@ export const createSketchSlice: StateCreator<
             return primitive?.points[idx] ?? null;
         };
 
-        const enqueue = (primId: string, idx: number, pt: [number, number]) => {
+        const projectAttachedPoint = (
+            pointKey: string,
+            desiredPoint: [number, number],
+            useStoredValue: boolean,
+        ): [number, number] => {
+            const constraint = findPrimitivePointOnLineConstraint(state.sketchConstraints, pointKey);
+            if (!constraint) return desiredPoint;
+
+            const targetPrimitive = primitiveMap.get(constraint.entityIds[1]);
+            if (!isLineLikePrimitive(targetPrimitive)) return desiredPoint;
+
+            const start = getPoint(targetPrimitive.id, 0);
+            const end = getPoint(targetPrimitive.id, targetPrimitive.points.length - 1);
+            if (!start || !end) return desiredPoint;
+
+            const projected = useStoredValue && constraint.value != null
+                ? {
+                    point: [
+                        start[0] + (end[0] - start[0]) * clamp01(constraint.value),
+                        start[1] + (end[1] - start[1]) * clamp01(constraint.value),
+                    ] as [number, number],
+                    t: clamp01(constraint.value),
+                }
+                : projectPointToLineSegment(desiredPoint, start, end);
+
+            attachmentValueUpdates.set(constraint.id, projected.t);
+            return projected.point;
+        };
+
+        const enqueue = (primId: string, idx: number, pt: [number, number], useStoredAttachmentValue = false) => {
+            const normalizedPoint = projectAttachedPoint(`${primId}:${idx}`, pt, useStoredAttachmentValue);
+
             if (!updates.has(primId)) updates.set(primId, new Map());
             const existing = updates.get(primId)!.get(idx);
-            if (existing && isSamePoint(existing, pt)) return;
-            updates.get(primId)!.set(idx, pt);
+            if (existing && isSamePoint(existing, normalizedPoint)) return;
+            updates.get(primId)!.set(idx, normalizedPoint);
 
             // Propagate to coincident partners
             const key = `${primId}:${idx}`;
@@ -502,8 +578,19 @@ export const createSketchSlice: StateCreator<
                     const colonIdx = partnerKey.lastIndexOf(':');
                     const partnerPrimId = partnerKey.slice(0, colonIdx);
                     const partnerIdx = parseInt(partnerKey.slice(colonIdx + 1), 10);
-                    enqueue(partnerPrimId, partnerIdx, pt);
+                    enqueue(partnerPrimId, partnerIdx, normalizedPoint, useStoredAttachmentValue);
                 }
+            }
+
+            const dependentAttachments = attachmentsByTargetPrimitive.get(primId) ?? [];
+            for (const attachment of dependentAttachments) {
+                const sourceKey = attachment.entityIds[0];
+                const colonIdx = sourceKey.lastIndexOf(':');
+                const sourcePrimId = sourceKey.slice(0, colonIdx);
+                const sourceIdx = parseInt(sourceKey.slice(colonIdx + 1), 10);
+                const currentSourcePoint = getPoint(sourcePrimId, sourceIdx) ?? primitiveMap.get(sourcePrimId)?.points[sourceIdx];
+                if (!currentSourcePoint) continue;
+                enqueue(sourcePrimId, sourceIdx, currentSourcePoint, true);
             }
 
             const primitive = primitiveMap.get(primId);
@@ -519,8 +606,8 @@ export const createSketchSlice: StateCreator<
 
             const constrainedPoint: [number, number] =
                 lineConstraint === 'horizontal'
-                    ? [otherPoint[0], pt[1]]
-                    : [pt[0], otherPoint[1]];
+                    ? [otherPoint[0], normalizedPoint[1]]
+                    : [normalizedPoint[0], otherPoint[1]];
 
             enqueue(primId, otherIdx, constrainedPoint);
         };
@@ -540,6 +627,12 @@ export const createSketchSlice: StateCreator<
                 }
                 return { ...prim, points: newPoints };
             }),
+            sketchConstraints: attachmentValueUpdates.size === 0
+                ? s.sketchConstraints
+                : s.sketchConstraints.map(constraint => {
+                    const nextValue = attachmentValueUpdates.get(constraint.id);
+                    return nextValue == null ? constraint : { ...constraint, value: nextValue };
+                }),
         }));
     },
 
@@ -579,6 +672,26 @@ export const createSketchSlice: StateCreator<
 
             return {
                 primitiveCoincidents: newCoincidents,
+                sketchConstraints: nextConstraints,
+            };
+        });
+    },
+
+    setPrimitivePointOnLine: (pointKey, primitiveId, value) => {
+        set(state => {
+            const nextConstraints = state.sketchConstraints.filter(constraint => {
+                return !(isPrimitivePointOnLineConstraint(constraint) && constraint.entityIds[0] === pointKey);
+            });
+
+            nextConstraints.push({
+                id: buildPrimitivePointOnLineConstraintId(pointKey, primitiveId),
+                type: 'pointOnLine',
+                entityIds: [pointKey, primitiveId],
+                value: value != null ? clamp01(value) : value,
+                driving: true,
+            });
+
+            return {
                 sketchConstraints: nextConstraints,
             };
         });
@@ -627,6 +740,9 @@ export const createSketchSlice: StateCreator<
             const nextConstraints = state.sketchConstraints.filter(constraint => {
                 if (!isPrimitiveCoincidentConstraint(constraint)) return true;
                 return !constraint.entityIds.some(entityId => removedKeys.has(entityId) || entityId.startsWith(`${primitiveId}:`));
+            }).filter(constraint => {
+                if (!isPrimitivePointOnLineConstraint(constraint)) return true;
+                return !constraint.entityIds[0].startsWith(`${primitiveId}:`) && constraint.entityIds[1] !== primitiveId;
             });
 
             return {

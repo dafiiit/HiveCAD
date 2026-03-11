@@ -13,6 +13,7 @@ export type SnapPointType =
     | 'endpoint'      // End of a line, arc, or spline
     | 'midpoint'      // Middle of a line segment
     | 'center'        // Center of a circle, arc, or polygon
+    | 'curve'         // Closest point on a curve/segment
     | 'intersection'  // Where two entities cross
     | 'grid'          // Grid line intersection
     | 'horizontal'    // Virtual horizontal alignment
@@ -26,11 +27,12 @@ export const SNAP_PRIORITY: Record<SnapPointType, number> = {
     endpoint: 1,
     midpoint: 2,
     center: 3,
-    intersection: 4,
-    grid: 5,
-    horizontal: 6,
-    vertical: 6,
-    extension: 7,
+    curve: 4,
+    intersection: 5,
+    grid: 6,
+    horizontal: 7,
+    vertical: 7,
+    extension: 8,
 };
 
 /**
@@ -55,6 +57,10 @@ export interface SnapPoint {
         angle?: number;
         /** For alignment snaps: the source point being aligned to */
         alignedToPoint?: { x: number; y: number };
+        /** Persistent point-on-line parameter for curve snaps. */
+        constraintValue?: number;
+        /** Primitive constraint type to apply when a drag is finalized on this snap. */
+        primitiveConstraintType?: 'pointOnLine';
     };
 }
 

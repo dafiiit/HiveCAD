@@ -351,6 +351,8 @@ export interface SketchSlice {
     removePrimitiveCoincidents: (primitiveId: string) => void;
     /** Remove a single coincident link between two primitive endpoint keys. */
     removePrimitiveCoincidentLink: (key1: string, key2: string) => void;
+    /** Attach an endpoint to a line-like primitive with a persistent point-on-line constraint. */
+    setPrimitivePointOnLine: (pointKey: string, primitiveId: string, value?: number) => void;
 }
 
 export interface SnappingSlice {

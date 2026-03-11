@@ -9,7 +9,9 @@ import { toolRegistry } from "../../lib/tools";
 import SketchToolDialog from "./SketchToolDialog";
 import { DimensionBadge, createAnnotationContext, PointMarker } from "./SketchAnnotations";
 import { snapToGrid } from "../../lib/sketch/rendering";
-import { buildPrimitiveCoincidentConstraintId } from "../../lib/sketch/primitiveConstraints";
+import {
+    buildPrimitiveCoincidentConstraintId,
+} from "../../lib/sketch/primitiveConstraints";
 import {
     getHandlePoints, getEntityColor, getEntityDash, getEntityLineWidth,
     getHandleSize, getHandleColor, isConstructionPrimitive,
@@ -51,7 +53,7 @@ const SketchCanvas = () => {
         hoveredPrimitiveId, draggingHandle, selectedPrimitiveIds, selectedHandleIds,
         setHoveredPrimitive, setDraggingHandle, selectPrimitive, selectHandle,
         clearPrimitiveSelection, clearHandleSelection, updatePrimitivePoint, togglePrimitiveConstruction,
-        addPrimitiveCoincident,
+        addPrimitiveCoincident, setPrimitivePointOnLine,
         // Coincident constraints
         primitiveCoincidents,
         removeSolverConstraint,
@@ -100,6 +102,8 @@ const SketchCanvas = () => {
 
     // Always-current hover position (avoids stale-closure issues in pointer handlers)
     const hoverPointRef = useRef<[number, number] | null>(null);
+    // Always-current snap result (avoids stale-closure issues in pointer handlers)
+    const snapResultRef = useRef<SnapResult | null>(null);
 
     // Zoom-independent sizing: compute a scale factor from camera distance
     const { camera } = useThree();
@@ -352,7 +356,11 @@ const SketchCanvas = () => {
                 let handleP2d = [...p2d] as [number, number];
                 // Apply snapping to handle drag
                 if (snappingEnabled && snappingEngine) {
-                    const snap = snappingEngine.findSnapTarget(handleP2d[0], handleP2d[1]);
+                    const snap = snappingEngine.findSnapTarget(
+                        handleP2d[0],
+                        handleP2d[1],
+                        draggingHandle.id.split(':')[0],
+                    );
                     if (snap) {
                         handleP2d = [snap.x, snap.y];
                         currentSnapResult = snap;
@@ -386,6 +394,7 @@ const SketchCanvas = () => {
                     updatePrimitivePoint(primId, draggingHandle.pointIndex, handleP2d);
                 }
                 setHoverPoint(handleP2d);
+                snapResultRef.current = currentSnapResult;
                 setSnapResult(currentSnapResult);
                 setSnapPoint(currentSnapResult?.snapPoint || null);
                 return;
@@ -524,6 +533,7 @@ const SketchCanvas = () => {
 
             hoverPointRef.current = finalP2d;
             setHoverPoint(finalP2d);
+            snapResultRef.current = currentSnapResult;
             setSnapResult(currentSnapResult);
             setSnapPoint(currentSnapResult?.snapPoint || null); // Update global store
 
@@ -729,10 +739,20 @@ const SketchCanvas = () => {
     const finalizeHandleDrag = (handle: HandlePoint | null, currentSnap: SnapResult | null) => {
         if (!handle || handle.pointIndex < 0) return;
 
+        const sourceKey = `${handle.id.split(':')[0]}:${handle.pointIndex}`;
+
+        if (currentSnap?.snapPoint.metadata?.primitiveConstraintType === 'pointOnLine') {
+            const targetPrimitiveId = currentSnap.snapPoint.sourceEntityId;
+            const sourcePrimitiveId = handle.id.split(':')[0];
+            if (targetPrimitiveId && targetPrimitiveId !== sourcePrimitiveId) {
+                setPrimitivePointOnLine(sourceKey, targetPrimitiveId, currentSnap.snapPoint.metadata.constraintValue);
+            }
+            return;
+        }
+
         const targetKey = findSnapEndpointKey(handle, currentSnap);
         if (!targetKey) return;
 
-        const sourceKey = `${handle.id.split(':')[0]}:${handle.pointIndex}`;
         if (sourceKey !== targetKey) {
             addPrimitiveCoincident(sourceKey, targetKey);
         }
@@ -1119,7 +1139,7 @@ const SketchCanvas = () => {
 
         // Finalize handle drag or handle click-to-select
         if (draggingHandle) {
-            finalizeHandleDrag(draggingHandle, snapResult);
+            finalizeHandleDrag(draggingHandle, snapResultRef.current);
             setDraggingHandle(null);
             setCameraControlsDisabled(false);
             handlePressedRef.current = null;
@@ -1631,9 +1651,9 @@ const SketchCanvas = () => {
 
                 e.stopPropagation();
 
-                // Finalize handle drag
-                if (draggingHandle?.id === h.id) {
-                    finalizeHandleDrag(draggingHandle, snapResult);
+                // Finalize handle drag (whether releasing over this handle or a different one)
+                if (draggingHandle) {
+                    finalizeHandleDrag(draggingHandle, snapResultRef.current);
                     setDraggingHandle(null);
                     setCameraControlsDisabled(false);
                     handlePressedRef.current = null;
@@ -2006,6 +2026,13 @@ const SketchCanvas = () => {
                                 <mesh rotation={[0, 0, Math.PI / 4]}>
                                     <boxGeometry args={[0.8 * pixelScale, 0.8 * pixelScale, 0.8 * pixelScale]} />
                                     <meshBasicMaterial color="#00ff00" depthTest={false} />
+                                </mesh>
+                            )}
+                            {/* Curve snap: small square ring */}
+                            {snapResult.snapPoint.type === 'curve' && (
+                                <mesh rotation={[0, 0, Math.PI / 4]}>
+                                    <ringGeometry args={[0.35 * pixelScale, 0.6 * pixelScale, 4]} />
+                                    <meshBasicMaterial color="#00ff00" depthTest={false} side={THREE.DoubleSide} />
                                 </mesh>
                             )}
                             {/* Grid / H / V snap: small ring */}
