@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -76,7 +76,13 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
     sketch3D: false,
   });
 
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
+
+  useEffect(() => {
+    if (isVisible) {
+      setIsCollapsed(true);
+    }
+  }, [isVisible]);
 
   if (!isVisible) return null;
 
