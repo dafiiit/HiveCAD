@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import SketchCanvas from "./SketchCanvas";
 import type { ArcballControls as ArcballControlsImpl } from "three-stdlib";
 import { computeDoubleClickSelection } from "../../lib/selection/SelectionManager";
+import { computeViewCubeCameraPose } from "../../lib/camera/viewCubeSnap";
 
 // Extracted sub-components
 import { FaceHighlighter, EdgeHighlighter, VertexHighlighter, VertexBasePoints, SELECTION_COLORS } from "./viewport/SelectionHighlighters";
@@ -25,9 +26,64 @@ interface ViewportProps {
   isSketchMode: boolean;
 }
 
+type ArcballControlsWithCameraSync = ArcballControlsImpl & {
+  dispatchEvent?: (event: { type: string }) => void;
+  setCamera?: (camera: THREE.PerspectiveCamera | THREE.OrthographicCamera) => void;
+  setTarget?: (x: number, y: number, z: number) => void;
+  target: THREE.Vector3;
+};
+
 // Z-up to Y-up rotation: -90° around X axis
 // This allows Replicad Z-up geometry to display correctly while keeping ArcballControls stable
 const Z_UP_ROTATION: [number, number, number] = [-Math.PI / 2, 0, 0];
+
+const ViewportGizmo = ({ controlsRef }: { controlsRef: React.RefObject<ArcballControlsImpl | null> }) => {
+  const { camera, invalidate } = useThree();
+
+  const handleGizmoClick = useCallback((event: any) => {
+    event.stopPropagation();
+
+    const controls = controlsRef.current as ArcballControlsWithCameraSync | null;
+    const sourcePosition = event.eventObject?.position;
+    const rawDirection = sourcePosition && sourcePosition.lengthSq() > 0
+      ? sourcePosition.clone()
+      : event.face?.normal?.clone();
+
+    if (!(rawDirection instanceof THREE.Vector3)) {
+      return;
+    }
+
+    const target = controls?.target?.clone() ?? new THREE.Vector3(0, 0, 0);
+    const radius = camera.position.distanceTo(target);
+    const { position, up } = computeViewCubeCameraPose(rawDirection, target, radius);
+
+    camera.position.copy(position);
+    camera.up.copy(up);
+    camera.lookAt(target);
+    camera.updateMatrix();
+    camera.updateMatrixWorld(true);
+
+    controls?.setTarget?.(target.x, target.y, target.z);
+    controls?.setCamera?.(camera as THREE.PerspectiveCamera | THREE.OrthographicCamera);
+    controls?.dispatchEvent?.({ type: 'change' });
+    invalidate();
+  }, [camera, controlsRef, invalidate]);
+
+  return (
+    <GizmoHelper
+      alignment="top-right"
+      margin={[80, 80]}
+    >
+      <GizmoViewcube
+        color="#1a1a2e"
+        hoverColor="#80c0ff"
+        textColor="#ffffff"
+        strokeColor="#8ab4f8"
+        onClick={handleGizmoClick}
+      />
+    </GizmoHelper>
+  );
+};
 
 const SceneObjects = ({ clippingPlanes = [] }: { clippingPlanes?: THREE.Plane[] }) => {
   const objects = useCADStore((state) => state.objects);
@@ -487,17 +543,7 @@ const Viewport = ({ isSketchMode }: ViewportProps) => {
         <CameraController controlsRef={controlsRef} />
 
         {/* ViewCube - outside rotation for correct orientation labels */}
-        <GizmoHelper
-          alignment="top-right"
-          margin={[80, 80]}
-        >
-          <GizmoViewcube
-            color="#1a1a2e"
-            hoverColor="#80c0ff"
-            textColor="#ffffff"
-            strokeColor="#8ab4f8"
-          />
-        </GizmoHelper>
+        <ViewportGizmo controlsRef={controlsRef} />
       </Canvas>
     </div>
   );

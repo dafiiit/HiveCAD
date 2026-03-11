@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronLeft,
+  Check,
   Minus,
   Pencil,
   ArrowUpRight,
@@ -135,21 +136,22 @@ const SketchPalette = ({ isVisible }: SketchPaletteProps) => {
       <div className={containerClass}>
         <div className="flex flex-col items-center py-2 space-y-2">
           <button
+            onClick={handleFinishSketch}
+            disabled={activeSketchPrimitives.length === 0}
+            className="p-1.5 rounded-lg bg-blue-500 text-white transition-colors hover:bg-blue-600 disabled:bg-blue-500/40 disabled:text-white/70 disabled:cursor-not-allowed"
+            title="Finish Sketch"
+            aria-label="Finish Sketch"
+          >
+            <Check className="w-4 h-4" />
+          </button>
+
+          <button
             onClick={() => setIsCollapsed(false)}
             className="p-1.5 hover:bg-secondary/70 rounded-lg transition-colors"
             title="Expand Palette"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-
-          <div className="w-full h-[1px] bg-border my-1" />
-
-          <div
-            className="p-2 text-muted-foreground select-none cursor-default"
-            title="Sketch Palette"
-          >
-            <PencilRuler className="w-4 h-4" />
-          </div>
         </div>
       </div>
     );
