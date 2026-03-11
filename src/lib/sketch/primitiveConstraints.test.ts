@@ -30,6 +30,18 @@ if (!('navigator' in globalThis)) {
 const { createCADStore } = await import('../../store/createCADStore');
 
 describe('primitive sketch constraints', () => {
+    it('keeps sketch primitive and handle selections additive until cleared', () => {
+        const store = createCADStore();
+
+        store.getState().selectPrimitive('line-1');
+        store.getState().selectPrimitive('arc-1');
+        store.getState().selectHandle('line-1:0');
+        store.getState().selectHandle('arc-1:2');
+
+        expect(Array.from(store.getState().selectedPrimitiveIds)).toEqual(['line-1', 'arc-1']);
+        expect(Array.from(store.getState().selectedHandleIds)).toEqual(['line-1:0', 'arc-1:2']);
+    });
+
     it('applies a persistent vertical constraint to selected line primitives without solver entities', () => {
         const store = createCADStore();
 
@@ -107,5 +119,51 @@ describe('primitive sketch constraints', () => {
 
         expect(store.getState().primitiveCoincidents.size).toBe(0);
         expect(store.getState().sketchConstraints.some(constraint => constraint.id === constraintId)).toBe(false);
+    });
+
+    it('applies a coincident constraint from preselected line and arc endpoint handles', () => {
+        const store = createCADStore();
+
+        store.setState({
+            activeSketchPrimitives: [
+                {
+                    id: 'line-1',
+                    type: 'line',
+                    points: [[0, 0], [5, 0]],
+                    properties: {},
+                },
+                {
+                    id: 'arc-1',
+                    type: 'centerPointArc',
+                    points: [[10, 10], [12, 10], [10, 12]],
+                    properties: {},
+                },
+            ],
+            selectedHandleIds: new Set(['line-1:1', 'arc-1:2']),
+        });
+
+        store.getState().applyConstraintToSelection('coincident');
+
+        const constraintId = buildPrimitiveCoincidentConstraintId('line-1:1', 'arc-1:2');
+        expect(store.getState().primitiveCoincidents.get('line-1:1')).toEqual(new Set(['arc-1:2']));
+        expect(store.getState().primitiveCoincidents.get('arc-1:2')).toEqual(new Set(['line-1:1']));
+        expect(store.getState().sketchConstraints.some(constraint => constraint.id === constraintId)).toBe(true);
+        expect(store.getState().selectedHandleIds.size).toBe(0);
+    });
+
+    it('uses the two most recently selected endpoint handles for coincident constraints', () => {
+        const store = createCADStore();
+
+        store.setState({
+            selectedHandleIds: new Set(['line-1:0', 'line-2:1', 'arc-1:2']),
+        });
+
+        store.getState().applyConstraintToSelection('coincident');
+
+        const expectedId = buildPrimitiveCoincidentConstraintId('line-2:1', 'arc-1:2');
+        const unexpectedId = buildPrimitiveCoincidentConstraintId('line-1:0', 'line-2:1');
+
+        expect(store.getState().sketchConstraints.some(constraint => constraint.id === expectedId)).toBe(true);
+        expect(store.getState().sketchConstraints.some(constraint => constraint.id === unexpectedId)).toBe(false);
     });
 });

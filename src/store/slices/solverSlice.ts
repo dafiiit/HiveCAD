@@ -375,6 +375,25 @@ export const createSolverSlice: StateCreator<
             }
         }
 
+        // For coincident: prefer the primitive-layer handle selection over the solver system.
+        // Drawn primitives (lines, arcs) may not be registered with the solver, so their
+        // endpoint handles (format "primitiveId:pointIndex") are the canonical target.
+        if (type === 'coincident') {
+            const handleIds = Array.from(state.selectedHandleIds ?? new Set<string>());
+            // Filter out non-endpoint handles such as the arc centre ("primId:center")
+            const epHandleIds = handleIds.filter(id => !isNaN(parseInt(id.split(':').pop() ?? '')));
+            if (epHandleIds.length >= 2) {
+                const pair = epHandleIds.slice(-2);
+                state.addPrimitiveCoincident(pair[0], pair[1]);
+                set({ selectedHandleIds: new Set() });
+                toast.success('Applied Coincident constraint');
+                return;
+            }
+            // Not enough handles selected — enter constraint-first mode
+            state.startConstraintMode(type);
+            return;
+        }
+
         if (!solverInstance?.isInitialized) {
             toast.error('Solver not initialized');
             return;

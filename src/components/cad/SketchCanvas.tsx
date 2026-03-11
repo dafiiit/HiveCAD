@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo, useLayoutEffect } from "react";
+import { toast } from 'sonner';
 import { useThree, useFrame, ThreeEvent } from "@react-three/fiber";
 import { Html, Grid, Line } from "@react-three/drei";
 import * as THREE from "three";
@@ -96,6 +97,9 @@ const SketchCanvas = () => {
 
     // Offset drag state: tracks the 2D origin point for offset dragging
     const offsetDragOriginRef = useRef<[number, number] | null>(null);
+
+    // Always-current hover position (avoids stale-closure issues in pointer handlers)
+    const hoverPointRef = useRef<[number, number] | null>(null);
 
     // Zoom-independent sizing: compute a scale factor from camera distance
     const { camera } = useThree();
@@ -518,6 +522,7 @@ const SketchCanvas = () => {
                 }
             }
 
+            hoverPointRef.current = finalP2d;
             setHoverPoint(finalP2d);
             setSnapResult(currentSnapResult);
             setSnapPoint(currentSnapResult?.snapPoint || null); // Update global store
@@ -731,6 +736,65 @@ const SketchCanvas = () => {
         if (sourceKey !== targetKey) {
             addPrimitiveCoincident(sourceKey, targetKey);
         }
+    };
+
+    const getSelectedEndpointPair = (): [string, string] | null => {
+        const endpointHandleIds = Array.from(storeApiRef.current.getState().selectedHandleIds).filter(
+            id => !isNaN(parseInt(id.split(':').pop() ?? '', 10))
+        );
+
+        if (endpointHandleIds.length < 2) {
+            return null;
+        }
+
+        const pair = endpointHandleIds.slice(-2);
+        return [pair[0], pair[1]];
+    };
+
+    const applyCoincidentFromSelectedHandles = (): boolean => {
+        const pair = getSelectedEndpointPair();
+        if (!pair || pair[0] === pair[1]) {
+            return false;
+        }
+
+        addPrimitiveCoincident(pair[0], pair[1]);
+        clearHandleSelection();
+        cancelConstraintMode();
+        toast.success('Applied Coincident constraint');
+        return true;
+    };
+
+    const isHandleSelectedInCoincidentGroup = (handleId: string): boolean => {
+        if (selectedHandleIds.has(handleId)) {
+            return true;
+        }
+
+        const visited = new Set<string>();
+        const pending = [handleId];
+
+        while (pending.length > 0) {
+            const current = pending.pop()!;
+            if (visited.has(current)) {
+                continue;
+            }
+            visited.add(current);
+
+            const partners = primitiveCoincidents.get(current);
+            if (!partners) {
+                continue;
+            }
+
+            for (const partnerId of partners) {
+                if (selectedHandleIds.has(partnerId)) {
+                    return true;
+                }
+                if (!visited.has(partnerId)) {
+                    pending.push(partnerId);
+                }
+            }
+        }
+
+        return false;
     };
 
     /**
@@ -1024,22 +1088,25 @@ const SketchCanvas = () => {
                 time: Date.now()
             };
 
-            // Note: Handle pointerDown is now handled by individual handle meshes
-            // This fallback is for legacy compatibility only
-            if (hoverPoint && activeTool === 'select' && !currentDrawingPrimitive) {
-                const handleHit = hitTestHandles(hoverPoint);
+            // Use the always-current ref so we never get a stale closure value.
+            // Falls back to the React state if the ref hasn't been seeded yet.
+            const clickP = hoverPointRef.current ?? hoverPoint;
+
+            // Detect handle press in both select mode and constraint-first mode.
+            if (clickP && !currentDrawingPrimitive && (activeTool === 'select' || activeConstraintType !== null)) {
+                const handleHit = hitTestHandles(clickP);
                 if (handleHit) {
-                    // Don't start dragging immediately - just record the press
                     handlePressedRef.current = handleHit;
                     e.stopPropagation();
+                    return;
                 }
             }
 
             // Offset tool: start drag on a selected primitive
-            if (hoverPoint && activeTool === 'offset' && !currentDrawingPrimitive && selectedPrimitiveIds.size > 0) {
-                const primHit = hitTestPrimitives(hoverPoint);
+            if (clickP && activeTool === 'offset' && !currentDrawingPrimitive && selectedPrimitiveIds.size > 0) {
+                const primHit = hitTestPrimitives(clickP);
                 if (primHit && selectedPrimitiveIds.has(primHit)) {
-                    offsetDragOriginRef.current = hoverPoint;
+                    offsetDragOriginRef.current = clickP;
                     setCameraControlsDisabled(true);
                     e.stopPropagation();
                 }
@@ -1061,12 +1128,16 @@ const SketchCanvas = () => {
         
         // Handle was pressed but not dragged - treat as selection click
         if (handlePressedRef.current) {
-            const multiSelect = e.ctrlKey || e.metaKey || e.shiftKey;
-            selectHandle(handlePressedRef.current.id, multiSelect);
-            if (!multiSelect) {
-                clearPrimitiveSelection();
-            }
+            const pressedHandle = handlePressedRef.current;
             handlePressedRef.current = null;
+
+            if (activeConstraintType === 'coincident') {
+                // Coincident mode: add to selection additively
+                selectHandle(pressedHandle.id, true);
+                applyCoincidentFromSelectedHandles();
+            } else {
+                selectHandle(pressedHandle.id, true);
+            }
             return;
         }
 
@@ -1220,12 +1291,8 @@ const SketchCanvas = () => {
         }
 
         if (primHit && (activeTool === 'select' || activeTool === 'dimension' || activeTool === 'offset' || activeConstraintType !== null)) {
-            const multiSelect = e.ctrlKey || e.metaKey || e.shiftKey;
-            selectPrimitive(primHit, multiSelect);
-            // Clear handle selection when selecting primitives
-            if (!multiSelect) {
-                clearHandleSelection();
-            }
+            // In constraint mode selection is additive so partial selections cumulate
+            selectPrimitive(primHit, true);
 
             // Dimension tool: apply dimension directly on sketch primitives
             if (activeTool === 'dimension') {
@@ -1243,6 +1310,20 @@ const SketchCanvas = () => {
                     // H/V: direct primitive manipulation — the primitive is now selected
                     applyConstraintToSelection(activeConstraintType);
                     cancelConstraintMode();
+                } else if (activeConstraintType === 'coincident' && prim) {
+                    // Coincident: select the nearest endpoint handle of the clicked primitive
+                    const handles = getHandlePoints(prim);
+                    const endpointHandles = handles.filter(h => h.type === 'endpoint' && h.pointIndex >= 0);
+                    if (endpointHandles.length > 0) {
+                        let nearestHandle = endpointHandles[0];
+                        let nearestDist = Infinity;
+                        for (const h of endpointHandles) {
+                            const d = Math.hypot(h.position[0] - p2d[0], h.position[1] - p2d[1]);
+                            if (d < nearestDist) { nearestDist = d; nearestHandle = h; }
+                        }
+                        selectHandle(nearestHandle.id, true);
+                        applyCoincidentFromSelectedHandles();
+                    }
                 } else {
                     // Other constraints: forward to solver entity path
                     const solverLineId = prim?.properties?.solverId as string | undefined;
@@ -1264,8 +1345,7 @@ const SketchCanvas = () => {
         }
 
         if (hitId && (activeTool === 'select' || activeTool === 'dimension' || selectedIds.has(hitId))) {
-            const multiSelect = e.ctrlKey || e.metaKey || e.shiftKey || activeTool === 'dimension';
-            selectObject(hitId, multiSelect);
+            selectObject(hitId, true);
             return;
         }
 
@@ -1537,7 +1617,7 @@ const SketchCanvas = () => {
         return handles.map(h => {
             const isDrag = draggingHandle?.id === h.id;
             const isHover = false; // TODO: per-handle hover
-            const isHandleSelected = selectedHandleIds.has(h.id);
+            const isHandleSelected = isHandleSelectedInCoincidentGroup(h.id);
             const size = getHandleSize(h.type) * pixelScale;
             const handleColor = getHandleColor(h.type, isDrag, isHover, isHandleSelected);
 
@@ -1545,10 +1625,9 @@ const SketchCanvas = () => {
             const handleHandlePointerUp = (e: any) => {
                 if (e.button !== 0) return;
 
-                // When a drawing tool is active, don't intercept — let the click
-                // bubble through to the canvas so the drawing point can be set
-                // on the snapped endpoint.
-                if (activeTool !== 'select') return;
+                // Allow interaction in select mode and in constraint-first mode.
+                // Let other drawing tools receive the click via the canvas.
+                if (activeTool !== 'select' && activeConstraintType === null) return;
 
                 e.stopPropagation();
 
@@ -1560,21 +1639,26 @@ const SketchCanvas = () => {
                     handlePressedRef.current = null;
                     return;
                 }
-                
-                // Handle was pressed but not dragged - treat as selection click
-                if (handlePressedRef.current?.id === h.id) {
-                    // Check if this was a drag or a click
+
+                // A handle was pressed (DOWN) but not dragged — treat as a selection click.
+                // IMPORTANT: we intentionally check `!== null` (not `?.id === h.id`) because
+                // for coincident endpoints the UP event may fire on a different overlapping
+                // handle than the one that received DOWN. We always honour the DOWN handle.
+                if (handlePressedRef.current !== null) {
                     if (dragStartRef.current) {
                         const dx = e.clientX - dragStartRef.current.x;
                         const dy = e.clientY - dragStartRef.current.y;
                         const dist = Math.sqrt(dx * dx + dy * dy);
-                        
+
                         if (dist <= IS_CLICK_THRESHOLD) {
-                            // It's a click - select the handle
-                            const multiSelect = e.ctrlKey || e.metaKey || e.shiftKey;
-                            selectHandle(h.id, multiSelect);
-                            if (!multiSelect) {
-                                clearPrimitiveSelection();
+                            const pressedHandle = handlePressedRef.current;
+
+                            if (activeConstraintType === 'coincident') {
+                                // Coincident mode: add to selection additively
+                                selectHandle(pressedHandle.id, true);
+                                applyCoincidentFromSelectedHandles();
+                            } else {
+                                selectHandle(pressedHandle.id, true);
                             }
                         }
                     }
@@ -1593,7 +1677,7 @@ const SketchCanvas = () => {
                     {/* Invisible larger hit target */}
                     <mesh visible={false}
                         onPointerDown={(e: any) => {
-                            if (e.button === 0 && activeTool === 'select') {
+                            if (e.button === 0 && (activeTool === 'select' || activeConstraintType !== null)) {
                                 e.stopPropagation();
                                 // Record handle press - don't start dragging yet
                                 handlePressedRef.current = h;
@@ -1775,10 +1859,10 @@ const SketchCanvas = () => {
                                 ? [[-axisLength, 0], [axisLength, 0]]
                                 : [[0, -axisLength], [0, axisLength]],
                         };
-                        selectPrimitive(axisId, false);
+                        selectPrimitive(axisId, true);
                         applyDimensionToPrimitive(axisPrim);
                     } else if (activeTool === 'select') {
-                        selectPrimitive(axisId, e.ctrlKey || e.metaKey || e.shiftKey);
+                        selectPrimitive(axisId, true);
                     }
                 };
 
@@ -1791,11 +1875,11 @@ const SketchCanvas = () => {
                             type: 'line' as any,
                             points: [[0, 0]],
                         };
-                        selectPrimitive('__origin__', false);
+                        selectPrimitive('__origin__', true);
                         // For the dimension tool, set as first prim for distance
                         dimensionFirstPrimRef.current = '__origin__';
                     } else if (activeTool === 'select') {
-                        selectPrimitive('__origin__', e.ctrlKey || e.metaKey || e.shiftKey);
+                        selectPrimitive('__origin__', true);
                     }
                 };
 

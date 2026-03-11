@@ -330,11 +330,11 @@ export interface SketchSlice {
     setHoveredPrimitive: (id: string | null) => void;
     /** Set dragging handle */
     setDraggingHandle: (handle: HandlePoint | null) => void;
-    /** Select a sketch primitive (adds to or replaces selection) */
+    /** Add a sketch primitive to the current sketch selection. */
     selectPrimitive: (id: string, multiSelect?: boolean) => void;
     /** Clear sketch primitive selection */
     clearPrimitiveSelection: () => void;
-    /** Select a handle point (adds to or replaces selection) */
+    /** Add a handle point to the current sketch selection. */
     selectHandle: (handleId: string, multiSelect?: boolean) => void;
     /** Clear handle selection */
     clearHandleSelection: () => void;

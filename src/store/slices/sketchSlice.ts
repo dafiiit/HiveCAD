@@ -443,38 +443,28 @@ export const createSketchSlice: StateCreator<
 
     setDraggingHandle: (handle) => set({ draggingHandle: handle }),
 
-    selectPrimitive: (id, multiSelect = false) => {
+    selectPrimitive: (id) => {
         set(state => {
-            // If single-select mode and clicking the only selected item, deselect it
-            if (!multiSelect && state.selectedPrimitiveIds.size === 1 && state.selectedPrimitiveIds.has(id)) {
-                return { selectedPrimitiveIds: new Set() };
+            if (state.selectedPrimitiveIds.has(id)) {
+                return state;
             }
-            
-            const newSelection = new Set(multiSelect ? state.selectedPrimitiveIds : []);
-            if (newSelection.has(id)) {
-                newSelection.delete(id); // Toggle off in multi-select mode
-            } else {
-                newSelection.add(id);
-            }
+
+            const newSelection = new Set(state.selectedPrimitiveIds);
+            newSelection.add(id);
             return { selectedPrimitiveIds: newSelection };
         });
     },
 
     clearPrimitiveSelection: () => set({ selectedPrimitiveIds: new Set() }),
 
-    selectHandle: (handleId, multiSelect = false) => {
+    selectHandle: (handleId) => {
         set(state => {
-            // If single-select mode and clicking the only selected handle, deselect it
-            if (!multiSelect && state.selectedHandleIds.size === 1 && state.selectedHandleIds.has(handleId)) {
-                return { selectedHandleIds: new Set() };
+            if (state.selectedHandleIds.has(handleId)) {
+                return state;
             }
-            
-            const newSelection = new Set(multiSelect ? state.selectedHandleIds : []);
-            if (newSelection.has(handleId)) {
-                newSelection.delete(handleId); // Toggle off in multi-select mode
-            } else {
-                newSelection.add(handleId);
-            }
+
+            const newSelection = new Set(state.selectedHandleIds);
+            newSelection.add(handleId);
             return { selectedHandleIds: newSelection };
         });
     },
