@@ -9,6 +9,7 @@ import {
     type SketchObject,
     type SketchEntity,
     type SerializedSketch,
+    type SketchConstraint,
 } from '../../lib/sketch';
 import {
     buildPrimitiveCoincidentConstraintId,
@@ -85,7 +86,7 @@ export const createSketchSlice: StateCreator<
                     type: 'coincident',
                     entityIds: [k1, k2],
                     driving: true,
-                });
+                } as SketchConstraint);
             }
         };
 
@@ -550,7 +551,7 @@ export const createSketchSlice: StateCreator<
                     type: 'coincident',
                     entityIds: [key1, key2],
                     driving: true,
-                }];
+                } as SketchConstraint];
 
             return {
                 primitiveCoincidents: newCoincidents,
@@ -571,7 +572,7 @@ export const createSketchSlice: StateCreator<
                 entityIds: [pointKey, primitiveId],
                 value: value != null ? clamp01(value) : value,
                 driving: true,
-            });
+            } as SketchConstraint);
 
             return {
                 sketchConstraints: nextConstraints,
