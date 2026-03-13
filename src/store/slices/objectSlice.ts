@@ -1,146 +1,30 @@
 import { StateCreator } from 'zustand';
 import { toast } from 'sonner';
-import { initCAD, replicadToThreeGeometry, replicadToThreeEdges } from '../../lib/cad-kernel';
-// import * as replicad from 'replicad'; // Removed: execution is now in worker
+import { initCAD } from '../../lib/cad-kernel';
 import { CodeManager } from '../../lib/code-manager';
 import { getDependencyGraph, mergeExecutionResults } from '../../lib/dependency-graph';
 import { toolRegistry } from '../../lib/tools';
 import { invokeToolCreate, invokeToolExecute } from '../../lib/tools/invoke';
 import { CADState, ObjectSlice, CADObject } from '../types';
-import * as THREE from 'three';
+import { replicadWorkerPool } from '../../lib/workers/WorkerPool';
+import {
+    registerGeometries,
+    disposeGeometries,
+    migrateGeometries,
+    getOriginAxes,
+    getNextColor,
+    buildMeshGeometry,
+    buildEdgeGeometry,
+} from './objectGeometry';
 
 const DEFAULT_CODE = `const main = () => {
   return;
 };`;
 
-import { replicadWorkerPool } from '../../lib/workers/WorkerPool';
-
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 const WARN_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
-const DEFAULT_COLORS = ['#6090c0', '#c06060', '#60c060', '#c06060', '#c0c060', '#60c0c0'];
-let colorIndex = 0;
-const getNextColor = () => {
-    const color = DEFAULT_COLORS[colorIndex % DEFAULT_COLORS.length];
-    colorIndex++;
-    return color;
-};
 
-// Track geometries for cleanup
-const geometryRegistry = new WeakMap<CADObject, THREE.BufferGeometry[]>();
-
-const registerGeometries = (obj: CADObject) => {
-    const geometries = [obj.geometry, obj.edgeGeometry, obj.vertexGeometry].filter((g): g is THREE.BufferGeometry => !!g);
-    if (geometries.length > 0) {
-        geometryRegistry.set(obj, geometries);
-    }
-};
-
-const disposeGeometries = (obj: CADObject) => {
-    if (geometryRegistry.has(obj)) {
-        const geometries = geometryRegistry.get(obj)!;
-        geometries.forEach(geo => geo.dispose());
-        geometryRegistry.delete(obj);
-    }
-};
-
-let cachedAxes: CADObject[] | null = null;
-const getOriginAxes = (): CADObject[] => {
-    if (cachedAxes) return cachedAxes;
-
-    const axisLength = 50;
-    const axes: CADObject[] = [
-        {
-            id: 'AXIS_X',
-            name: 'X Axis',
-            type: 'datumAxis',
-            position: [0, 0, 0],
-            rotation: [0, 0, 0],
-            scale: [1, 1, 1],
-            dimensions: {},
-            color: '#ff4444',
-            visible: true,
-            selected: false,
-        },
-        {
-            id: 'AXIS_Y',
-            name: 'Y Axis',
-            type: 'datumAxis',
-            position: [0, 0, 0],
-            rotation: [0, 0, 0],
-            scale: [1, 1, 1],
-            dimensions: {},
-            color: '#44ff44',
-            visible: true,
-            selected: false
-        },
-        {
-            id: 'AXIS_Z',
-            name: 'Z Axis',
-            type: 'datumAxis',
-            position: [0, 0, 0],
-            rotation: [0, 0, 0],
-            scale: [1, 1, 1],
-            dimensions: {},
-            color: '#4444ff',
-            visible: true,
-            selected: false
-        }
-    ];
-
-    // Create geometries
-    const createAxisGeo = (start: [number, number, number], end: [number, number, number]) => {
-        const geo = new THREE.BufferGeometry();
-        const vertices = new Float32Array([...start, ...end]);
-        geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-        return geo;
-    };
-
-    // Helper for thicker hit target
-    const createHitCylinder = (length: number, axis: 'x' | 'y' | 'z') => {
-        const geo = new THREE.CylinderGeometry(2, 2, length);
-        if (axis === 'x') {
-            geo.rotateZ(-Math.PI / 2);
-            geo.translate(length / 2, 0, 0);
-        }
-        if (axis === 'y') {
-            /* default Y up */
-            geo.translate(0, length / 2, 0);
-        }
-        if (axis === 'z') {
-            geo.rotateX(Math.PI / 2);
-            geo.translate(0, 0, length / 2);
-        }
-        return geo;
-    };
-
-    // Use edgeGeometry for the visual "line"
-    // Use regular geometry (invisible) for hit testing? 
-    // Actually, Viewport renderer only attaches events to `geometry` mesh.
-    // So we need a mesh. If we make it fully transparent, it works as a hit target.
-    // And we set edgeGeometry for the visual line.
-
-    // X Axis - Red
-    axes[0].geometry = createHitCylinder(axisLength, 'x');
-    axes[0].geometry.computeBoundingSphere();
-    axes[0].edgeGeometry = createAxisGeo([0, 0, 0], [axisLength, 0, 0]);
-    axes[0].edgeGeometry.computeBoundingSphere();
-
-    // Y Axis - Green
-    axes[1].geometry = createHitCylinder(axisLength, 'y');
-    axes[1].geometry.computeBoundingSphere();
-    axes[1].edgeGeometry = createAxisGeo([0, 0, 0], [0, axisLength, 0]);
-    axes[1].edgeGeometry.computeBoundingSphere();
-
-    // Z Axis - Blue
-    axes[2].geometry = createHitCylinder(axisLength, 'z');
-    axes[2].geometry.computeBoundingSphere();
-    axes[2].edgeGeometry = createAxisGeo([0, 0, 0], [0, 0, axisLength]);
-    axes[2].edgeGeometry.computeBoundingSphere();
-
-    cachedAxes = axes;
-    return axes;
-};
 
 export const createObjectSlice: StateCreator<
     CADState,
@@ -307,11 +191,9 @@ export const createObjectSlice: StateCreator<
         // (WeakMap needs the exact object reference being stored in state)
         if (updates.geometry || updates.edgeGeometry || updates.vertexGeometry) {
             registerGeometries(updatedObjects[objectIndex]);
-        } else if (geometryRegistry.has(oldObject)) {
+        } else {
             // Keep existing geometries for the new object reference
-            const geometries = geometryRegistry.get(oldObject)!;
-            geometryRegistry.set(updatedObjects[objectIndex], geometries);
-            geometryRegistry.delete(oldObject);
+            migrateGeometries(oldObject, updatedObjects[objectIndex]);
         }
 
         set({ objects: updatedObjects, isSaved: false });
@@ -455,27 +337,15 @@ export const createObjectSlice: StateCreator<
                 let geometry = undefined;
                 let edgeGeometry = undefined;
                 if (item.meshData) {
-                    const { vertices, indices, normals } = item.meshData;
-                    geometry = new THREE.BufferGeometry();
-                    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
-                    if (indices) geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
-                    if (normals && normals.length > 0) {
-                        geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
-                    } else {
-                        geometry.computeVertexNormals();
-                    }
-                    geometry.computeBoundingSphere();
+                    geometry = buildMeshGeometry(item.meshData);
                 }
                 if (item.edgeData && item.edgeData.length > 0) {
-                    edgeGeometry = new THREE.BufferGeometry();
-                    edgeGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(item.edgeData), 3));
-                    edgeGeometry.computeBoundingSphere();
+                    edgeGeometry = buildEdgeGeometry(item.edgeData);
                 }
 
                 let vertexGeometry = undefined;
                 if (item.vertexData && item.vertexData.length > 0) {
-                    vertexGeometry = new THREE.BufferGeometry();
-                    vertexGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(item.vertexData), 3));
+                    vertexGeometry = buildEdgeGeometry(item.vertexData);
                     vertexGeometry.computeBoundingSphere();
                 }
 
