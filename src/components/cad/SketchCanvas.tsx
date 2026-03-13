@@ -8,6 +8,7 @@ import { SnappingEngine, SnapResult } from "../../lib/snapping";
 import { toolRegistry } from "../../lib/tools";
 import SketchToolDialog from "./SketchToolDialog";
 import { DimensionBadge, createAnnotationContext, PointMarker } from "./SketchAnnotations";
+import { IconResolver } from "../ui/IconResolver";
 import { snapToGrid } from "../../lib/sketch/rendering";
 import {
     buildPrimitiveCoincidentConstraintId,
@@ -18,6 +19,12 @@ import {
     type HandlePoint, type SketchEntityState
 } from "../../lib/sketch/interaction-types";
 import { reflectPrimitive } from "../../lib/tools/core/modify/mirror";
+
+type ConstraintOverlayTarget = {
+    kind: 'handle' | 'primitive';
+    id: string;
+    anchorPoint?: [number, number];
+};
 
 // Import tool types once at startup for efficiency
 const DIALOG_REQUIRED_TOOLS: ToolType[] = toolRegistry.getDialogTools().map(t => t.metadata.id as ToolType);
@@ -69,6 +76,8 @@ const SketchCanvas = () => {
 
     // Editable dimension input focus state
     const [dimFocusedField, setDimFocusedField] = useState<'length' | 'angle' | null>('length');
+    const [constraintOverlayTarget, setConstraintOverlayTarget] = useState<ConstraintOverlayTarget | null>(null);
+    const [selectedConstraintOverlayId, setSelectedConstraintOverlayId] = useState<string | null>(null);
 
     // Dimension annotations: lightweight local state for sketch dimensions
     interface SketchDimension {
@@ -171,12 +180,23 @@ const SketchCanvas = () => {
                     e.preventDefault();
                     return;
                 }
+                if (selectedConstraintOverlayId) {
+                    setSelectedConstraintOverlayId(null);
+                    e.preventDefault();
+                    return;
+                }
                 if (currentDrawingPrimitive) {
                     updateCurrentDrawingPrimitive(null);
                     clearSketchInputLocks();
                     setDimFocusedField('length');
                     e.preventDefault();
                 }
+            }
+            if (e.key === 'Enter' && selectedConstraintOverlayId && !currentDrawingPrimitive) {
+                removeSolverConstraint(selectedConstraintOverlayId);
+                setSelectedConstraintOverlayId(null);
+                e.preventDefault();
+                return;
             }
             // 'X' key: toggle construction mode on selected primitives
             if (e.key === 'x' || e.key === 'X') {
@@ -193,7 +213,7 @@ const SketchCanvas = () => {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [currentDrawingPrimitive, updateCurrentDrawingPrimitive, selectedPrimitiveIds, togglePrimitiveConstruction, activeConstraintType, cancelConstraintMode, clearSketchInputLocks]);
+    }, [currentDrawingPrimitive, updateCurrentDrawingPrimitive, selectedPrimitiveIds, togglePrimitiveConstruction, activeConstraintType, cancelConstraintMode, clearSketchInputLocks, selectedConstraintOverlayId, removeSolverConstraint]);
 
     // Reset dimension focus when starting a new drawing primitive
     useEffect(() => {
@@ -205,6 +225,136 @@ const SketchCanvas = () => {
     }, [currentDrawingPrimitive?.id]);
 
     const annotationCtx = useMemo(() => sketchPlane ? createAnnotationContext(sketchPlane) : null, [sketchPlane]);
+
+    const parseEndpointHandleId = useCallback((handleId: string): { primitiveId: string; pointIndex: number } | null => {
+        const colonIdx = handleId.lastIndexOf(':');
+        if (colonIdx === -1) return null;
+        const primitiveId = handleId.slice(0, colonIdx);
+        const pointIndex = Number(handleId.slice(colonIdx + 1));
+        if (!primitiveId || !Number.isFinite(pointIndex) || pointIndex < 0) return null;
+        return { primitiveId, pointIndex };
+    }, []);
+
+    const clearConstraintOverlay = useCallback(() => {
+        setConstraintOverlayTarget(null);
+        setSelectedConstraintOverlayId(null);
+    }, []);
+
+    const setConstraintOverlayForHandle = useCallback((handleId: string) => {
+        const parsed = parseEndpointHandleId(handleId);
+        if (!parsed) {
+            clearConstraintOverlay();
+            return;
+        }
+        setConstraintOverlayTarget({ kind: 'handle', id: `${parsed.primitiveId}:${parsed.pointIndex}` });
+        setSelectedConstraintOverlayId(null);
+    }, [clearConstraintOverlay, parseEndpointHandleId]);
+
+    const setConstraintOverlayForPrimitive = useCallback((primitiveId: string, anchorPoint?: [number, number]) => {
+        setConstraintOverlayTarget({ kind: 'primitive', id: primitiveId, anchorPoint });
+        setSelectedConstraintOverlayId(null);
+    }, []);
+
+    const constraintOverlay = useMemo(() => {
+        if (!constraintOverlayTarget) return null;
+
+        const matchedById = new Map<string, (typeof sketchConstraints)[number]>();
+
+        if (constraintOverlayTarget.kind === 'handle') {
+            const parsed = parseEndpointHandleId(constraintOverlayTarget.id);
+            if (!parsed) return null;
+
+            const { primitiveId, pointIndex } = parsed;
+            const primitive = activeSketchPrimitives.find(p => p.id === primitiveId);
+            const point = primitive?.points[pointIndex];
+            if (!primitive || !point) return null;
+
+            const endpointKey = `${primitiveId}:${pointIndex}`;
+            const solverEntityIds = (primitive.properties?.solverEntityIds as string[] | undefined) ?? [];
+            const solverPointId = solverEntityIds[pointIndex];
+            const maybeSolverEntityId = primitive.properties?.solverId as string | undefined;
+
+            for (const constraint of sketchConstraints) {
+                const ids = constraint.entityIds ?? [];
+
+                if (ids.includes(endpointKey)) {
+                    matchedById.set(constraint.id, constraint);
+                    continue;
+                }
+
+                if (solverPointId && ids.includes(solverPointId)) {
+                    matchedById.set(constraint.id, constraint);
+                    continue;
+                }
+
+                if (maybeSolverEntityId && ids.includes(maybeSolverEntityId)) {
+                    matchedById.set(constraint.id, constraint);
+                    continue;
+                }
+
+                if (ids.includes(primitiveId) && (constraint.type === 'horizontal' || constraint.type === 'vertical')) {
+                    matchedById.set(constraint.id, constraint);
+                }
+            }
+
+            return {
+                anchorPoint: point,
+                constraints: Array.from(matchedById.values()),
+            };
+        }
+
+        const primitive = activeSketchPrimitives.find(p => p.id === constraintOverlayTarget.id);
+        if (!primitive) return null;
+
+        const solverId = primitive.properties?.solverId as string | undefined;
+
+        for (const constraint of sketchConstraints) {
+            const ids = constraint.entityIds ?? [];
+
+            if (ids.includes(primitive.id)) {
+                matchedById.set(constraint.id, constraint);
+                continue;
+            }
+
+            if (solverId && ids.includes(solverId)) {
+                matchedById.set(constraint.id, constraint);
+            }
+        }
+
+        const fallbackAnchor = primitive.points.length === 0
+            ? [0, 0] as [number, number]
+            : primitive.type === 'circle' || primitive.type === 'constructionCircle'
+                ? primitive.points[0]
+                : getMidpoint(primitive);
+
+        return {
+            anchorPoint: constraintOverlayTarget.anchorPoint ?? fallbackAnchor,
+            constraints: Array.from(matchedById.values()),
+        };
+    }, [constraintOverlayTarget, parseEndpointHandleId, activeSketchPrimitives, sketchConstraints]);
+
+    const overlayConstraintItems = useMemo(() => {
+        if (!constraintOverlay) return [];
+
+        return constraintOverlay.constraints
+            .sort((a, b) => a.type.localeCompare(b.type) || a.id.localeCompare(b.id))
+            .map(constraint => {
+                const tool = toolRegistry.get(constraint.type);
+                return {
+                    id: constraint.id,
+                    type: constraint.type,
+                    iconName: tool?.metadata.icon ?? 'HelpCircle',
+                    label: tool?.metadata.label ?? constraint.type,
+                };
+            });
+    }, [constraintOverlay]);
+
+    useEffect(() => {
+        if (!selectedConstraintOverlayId) return;
+        if (!overlayConstraintItems.some(constraint => constraint.id === selectedConstraintOverlayId)) {
+            setSelectedConstraintOverlayId(null);
+        }
+    }, [overlayConstraintItems, selectedConstraintOverlayId]);
 
     // Callbacks for editable dimension inputs - MUST be before early return to avoid hook order issues
     const handleDimLengthChange = useCallback((value: number) => {
@@ -1090,14 +1240,14 @@ const SketchCanvas = () => {
     };
 
     /** Get the midpoint of a primitive (for distance dimensions). */
-    const getMidpoint = (prim: SketchPrimitive): [number, number] => {
+    function getMidpoint(prim: SketchPrimitive): [number, number] {
         if (prim.points.length === 0) return [0, 0];
         if (prim.points.length === 1) return prim.points[0];
         // For lines: midpoint of first and last
         const p1 = prim.points[0];
         const p2 = prim.points[prim.points.length - 1];
         return [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
-    };
+    }
 
     const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
         // Record potential start of interaction
@@ -1140,6 +1290,7 @@ const SketchCanvas = () => {
         // Finalize handle drag or handle click-to-select
         if (draggingHandle) {
             finalizeHandleDrag(draggingHandle, snapResultRef.current);
+            setConstraintOverlayForHandle(draggingHandle.id);
             setDraggingHandle(null);
             setCameraControlsDisabled(false);
             handlePressedRef.current = null;
@@ -1154,9 +1305,11 @@ const SketchCanvas = () => {
             if (activeConstraintType === 'coincident') {
                 // Coincident mode: add to selection additively
                 selectHandle(pressedHandle.id, true);
+                setConstraintOverlayForHandle(pressedHandle.id);
                 applyCoincidentFromSelectedHandles();
             } else {
                 selectHandle(pressedHandle.id, true);
+                setConstraintOverlayForHandle(pressedHandle.id);
             }
             return;
         }
@@ -1176,6 +1329,8 @@ const SketchCanvas = () => {
             dragStartRef.current = null;
             if (dist > IS_CLICK_THRESHOLD) return;
         }
+
+        clearConstraintOverlay();
 
         e.stopPropagation();
         const p2d = hoverPoint;
@@ -1314,6 +1469,10 @@ const SketchCanvas = () => {
             // In constraint mode selection is additive so partial selections cumulate
             selectPrimitive(primHit, true);
 
+            if (activeTool === 'select' && activeConstraintType === null) {
+                setConstraintOverlayForPrimitive(primHit, p2d);
+            }
+
             // Dimension tool: apply dimension directly on sketch primitives
             if (activeTool === 'dimension') {
                 const prim = activeSketchPrimitives.find(p => p.id === primHit);
@@ -1342,6 +1501,7 @@ const SketchCanvas = () => {
                             if (d < nearestDist) { nearestDist = d; nearestHandle = h; }
                         }
                         selectHandle(nearestHandle.id, true);
+                        setConstraintOverlayForHandle(nearestHandle.id);
                         applyCoincidentFromSelectedHandles();
                     }
                 } else {
@@ -1374,6 +1534,7 @@ const SketchCanvas = () => {
                 clearSelection();
                 clearPrimitiveSelection();
                 clearHandleSelection();
+                clearConstraintOverlay();
                 // Cancel constraint mode on background click
                 if (activeConstraintType) {
                     cancelConstraintMode();
@@ -1677,6 +1838,7 @@ const SketchCanvas = () => {
                 // Finalize handle drag (whether releasing over this handle or a different one)
                 if (draggingHandle) {
                     finalizeHandleDrag(draggingHandle, snapResultRef.current);
+                    setConstraintOverlayForHandle(draggingHandle.id);
                     setDraggingHandle(null);
                     setCameraControlsDisabled(false);
                     handlePressedRef.current = null;
@@ -1699,9 +1861,11 @@ const SketchCanvas = () => {
                             if (activeConstraintType === 'coincident') {
                                 // Coincident mode: add to selection additively
                                 selectHandle(pressedHandle.id, true);
+                                setConstraintOverlayForHandle(pressedHandle.id);
                                 applyCoincidentFromSelectedHandles();
                             } else {
                                 selectHandle(pressedHandle.id, true);
+                                setConstraintOverlayForHandle(pressedHandle.id);
                             }
                         }
                     }
@@ -2017,6 +2181,47 @@ const SketchCanvas = () => {
 
             {/* Drawing Annotations - delegates to tool registry */}
             {currentDrawingPrimitive && currentDrawingPrimitive.points.length >= 2 && renderAnnotation(currentDrawingPrimitive)}
+
+            {/* Constraint Icons */}
+            {constraintOverlay && overlayConstraintItems.length > 0 && (
+                <Html
+                    position={to3D(
+                        constraintOverlay.anchorPoint[0] + 8 * pixelScale,
+                        constraintOverlay.anchorPoint[1] + 8 * pixelScale,
+                    )}
+                    center
+                    className="select-none"
+                >
+                    <div className="pointer-events-auto flex items-center gap-1 rounded-md border border-border/40 bg-background/90 px-1.5 py-1 shadow-lg backdrop-blur-sm">
+                        {overlayConstraintItems.map(constraint => {
+                            const isSelected = constraint.id === selectedConstraintOverlayId;
+                            return (
+                                <button
+                                    key={`constraint-overlay-${constraint.id}`}
+                                    type="button"
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        setSelectedConstraintOverlayId(current => current === constraint.id ? null : constraint.id);
+                                    }}
+                                    className={`flex h-6 w-6 items-center justify-center rounded-sm border transition-colors ${isSelected
+                                        ? 'border-red-500 bg-red-500/15 text-red-500'
+                                        : 'border-primary/25 bg-background/95 text-primary hover:border-primary/50 hover:bg-primary/10'
+                                    }`}
+                                    title={constraint.label}
+                                >
+                                    <IconResolver name={constraint.iconName} className="h-3.5 w-3.5" />
+                                </button>
+                            );
+                        })}
+                        {selectedConstraintOverlayId && (
+                            <div className="ml-1 whitespace-nowrap text-[10px] text-muted-foreground">
+                                Press Enter to delete
+                            </div>
+                        )}
+                    </div>
+                </Html>
+            )}
 
             {/* Hover Cursor */}
             {hoverPoint && !showDialog && (
