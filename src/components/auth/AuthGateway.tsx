@@ -25,7 +25,7 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
                 authLoaded: true,
                 isStorageConnected: false // No remote storage in offline mode
             });
-            setStorageReady(false);
+            setStorageReady(true);
             return;
         }
     }, []);
