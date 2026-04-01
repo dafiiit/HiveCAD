@@ -42,6 +42,7 @@ export function ProjectCard({
     onMoveToFolder,
 }: ProjectCardProps) {
     const isExample = project.id?.startsWith('example-') || project.type === 'example' || project.ownerId === 'Example Project';
+    const tombstoneRetentionDays = 30;
 
     // Thumbnail resolution order:
     // 1. Explicit project.thumbnail (if present, usually from modern storage index)
@@ -58,7 +59,13 @@ export function ProjectCard({
         thumbnail = `https://raw.githubusercontent.com/${project.ownerId}/hivecad-data/main/hivecad/thumbnails/${project.id}.png`;
     }
 
-    const deleteMessage = project.deletedAt ? `Deleted ${Math.floor((Date.now() - project.deletedAt) / (1000 * 60 * 60 * 24))}d ago (Expires in ${7 - Math.floor((Date.now() - project.deletedAt) / (1000 * 60 * 60 * 24))}d)` : null;
+    const deleteMessage = project.deletedAt
+        ? (() => {
+            const deletedDays = Math.max(0, Math.floor((Date.now() - project.deletedAt) / (1000 * 60 * 60 * 24)));
+            const daysRemaining = Math.max(0, tombstoneRetentionDays - deletedDays);
+            return `Deleted ${deletedDays}d ago (Expires in ${daysRemaining}d)`;
+        })()
+        : null;
 
     return (
         <div
