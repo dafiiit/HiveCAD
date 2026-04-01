@@ -1,13 +1,15 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useGlobalStore } from '@/store/useGlobalStore';
 import { AuthDialog } from './AuthDialog';
 import { StorageManager } from '@/lib/storage/StorageManager';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
 
 // Check if offline mode is enabled
 const isOfflineMode = import.meta.env.VITE_OFFLINE_MODE === 'true';
 
 export function AuthGateway({ children }: { children: React.ReactNode }) {
     const { user, initializeAuth, authLoaded, showPATDialog } = useGlobalStore();
+    const [storageReady, setStorageReady] = useState(false);
 
     // Offline mode: Create mock user and skip authentication
     useEffect(() => {
@@ -23,6 +25,7 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
                 authLoaded: true,
                 isStorageConnected: false // No remote storage in offline mode
             });
+            setStorageReady(false);
             return;
         }
     }, []);
@@ -39,6 +42,8 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
 
     // Initialize StorageManager + auto-connect remote when PAT is present
     useEffect(() => {
+        setStorageReady(false);
+
         const connectStorage = async () => {
             if (!user) return;
 
@@ -89,18 +94,27 @@ export function AuthGateway({ children }: { children: React.ReactNode }) {
             }
         };
 
-        if (authLoaded && user) connectStorage();
+        if (!authLoaded || !user) return;
+
+        void connectStorage().finally(() => {
+            setStorageReady(true);
+        });
     }, [authLoaded, user]);
 
-    if (!authLoaded) return null;
+    if (!authLoaded) return <LoadingScreen message="Checking session..." />;
 
     // In offline mode, skip all auth checks
     if (isOfflineMode) {
+        if (!storageReady) return <LoadingScreen message="Loading workspace..." />;
         return <>{children}</>;
     }
 
     if (!user) {
         return <AuthDialog />;
+    }
+
+    if (!storageReady) {
+        return <LoadingScreen message="Loading workspace..." />;
     }
 
     if (!user.pat || showPATDialog) {
