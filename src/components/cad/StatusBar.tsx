@@ -186,8 +186,9 @@ const StatusBar = () => {
             sectionViewEnabled ? "bg-amber-500/20 text-amber-500 shadow-sm" : "hover:bg-secondary text-muted-foreground hover:text-foreground"
           )}
           onClick={() => {
+            const nextSectionViewEnabled = !sectionViewEnabled;
             toggleSectionView();
-            toast(sectionViewEnabled ? "Section view disabled" : "Section view enabled (Preview)");
+            toast(nextSectionViewEnabled ? "Section view enabled (Preview)" : "Section view disabled");
           }}
           title="Section View"
         >
