@@ -29,6 +29,30 @@ export interface FeatureNode {
     path?: any; // Babel path to the VariableDeclarator
 }
 
+function collectDeclaredNames(ast: t.File): Set<string> {
+    const names = new Set<string>();
+
+    traverse(ast, {
+        VariableDeclarator(path: any) {
+            if (t.isIdentifier(path.node.id)) {
+                names.add(path.node.id.name);
+            }
+        },
+        FunctionDeclaration(path: any) {
+            if (path.node.id && t.isIdentifier(path.node.id)) {
+                names.add(path.node.id.name);
+            }
+        },
+        ClassDeclaration(path: any) {
+            if (path.node.id && t.isIdentifier(path.node.id)) {
+                names.add(path.node.id.name);
+            }
+        },
+    });
+
+    return names;
+}
+
 export class CodeManager {
     code: string;
     ast: t.File | null;
@@ -53,6 +77,19 @@ export class CodeManager {
         } catch (e) {
             console.error("Failed to parse code:", e);
         }
+    }
+
+    private allocateName(prefix: string) {
+        if (!this.ast) return `${prefix}1`;
+
+        const usedNames = collectDeclaredNames(this.ast);
+        let suffix = 1;
+
+        while (usedNames.has(`${prefix}${suffix}`)) {
+            suffix += 1;
+        }
+
+        return `${prefix}${suffix}`;
     }
 
     mapFeatures() {
@@ -199,7 +236,7 @@ export class CodeManager {
     addFeature(type: string, sourceId: string | null, params: any[]) {
         if (!this.ast) return;
 
-        const newVarName = `shape${this.features.length + 1}`;
+        const newVarName = this.allocateName('shape');
         let init: t.Expression;
 
         const args = params.map(p => this.convertArgToAST(p));
@@ -296,8 +333,8 @@ export class CodeManager {
     addFaceExtrusion(solidId: string, faceIndex: number, distance: number, options?: Record<string, any>): string {
         if (!this.ast) return '';
 
-        const tempVarName = `_ext${Date.now() % 10000}`;
-        const newVarName = `faceExt${this.features.length + 1}`;
+        const tempVarName = this.allocateName('_ext');
+        const newVarName = this.allocateName('faceExt');
 
         // Build options with fuseWithOriginal: false so extrudeFace returns just the extrusion
         const extrudeOpts = { ...options, fuseWithOriginal: false };
@@ -453,6 +490,45 @@ export class CodeManager {
         if (!feature) return;
 
         if (feature.path) {
+            const updateReturnStatements = (body: any[]) => {
+                body.forEach(node => {
+                    if (!t.isReturnStatement(node)) return;
+
+                    const arg = node.argument;
+                    if (!arg) return;
+
+                    if (t.isArrayExpression(arg)) {
+                        const filtered = arg.elements.filter((element) => {
+                            return !(t.isIdentifier(element) && element.name === featureId);
+                        });
+                        node.argument = t.arrayExpression(filtered as any[]);
+                        return;
+                    }
+
+                    if (t.isIdentifier(arg) && arg.name === featureId) {
+                        node.argument = t.arrayExpression([]);
+                    }
+                });
+            };
+
+            traverse(this.ast, {
+                FunctionDeclaration: (path: any) => {
+                    if (path.node.id?.name === 'main') {
+                        updateReturnStatements(path.node.body.body);
+                        path.stop();
+                    }
+                },
+                VariableDeclarator: (path: any) => {
+                    if (t.isIdentifier(path.node.id) && path.node.id.name === 'main' &&
+                        (t.isArrowFunctionExpression(path.node.init) || t.isFunctionExpression(path.node.init))) {
+                        if (t.isBlockStatement(path.node.init.body)) {
+                            updateReturnStatements(path.node.init.body.body);
+                            path.stop();
+                        }
+                    }
+                }
+            });
+
             feature.path.remove(); // Removes VariableDeclarator
             this.regenerate();
         }

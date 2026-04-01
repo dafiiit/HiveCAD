@@ -69,4 +69,23 @@ describe('CodeManager', () => {
 
         expect(manager.code).toContain('.lineTo([10, 20])');
     });
+
+    it('should keep generated feature names unique after deletion', () => {
+        const manager = new CodeManager('function main() { return []; }');
+
+        const first = manager.addFeature('drawCircle', null, [10]);
+        const second = manager.addFeature('drawRectangle', null, [5, 5]);
+
+        expect(first).toBe('shape1');
+        expect(second).toBe('shape2');
+
+        manager.removeFeature(first);
+
+        const third = manager.addFeature('drawCircle', null, [8]);
+
+        expect(third).toBe('shape1');
+        expect(manager.getCode()).toContain('const shape2 = replicad.drawRectangle(5, 5);');
+        expect(manager.getCode()).toContain('const shape1 = replicad.drawCircle(8);');
+        expect(manager.getCode()).toContain('return [shape2, shape1];');
+    });
 });
