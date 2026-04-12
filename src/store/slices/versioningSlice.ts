@@ -4,6 +4,7 @@ import { CADState, VersioningSlice, Comment, HistoryItem } from '../types';
 import {
     serializeObjects, cleanObjects, createBlankProject, uuid, DEFAULT_CODE,
 } from '@/lib/storage/projectUtils';
+import { resolveProjectThumbnail, upsertProjectThumbnail, removeProjectThumbnail } from '@/lib/storage/thumbnail';
 import { StorageManager } from '@/lib/storage/StorageManager';
 import { ID } from '@/lib/utils/id-generator';
 import type { ProjectData, CommitInfo } from '@/lib/storage/types';
@@ -16,11 +17,11 @@ let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 /**
  * Build a ProjectData from the current store state.
  */
-function buildProjectData(state: CADState): ProjectData {
+function buildProjectData(state: CADState, projectId: string): ProjectData {
     const mgr = StorageManager.getInstance();
     return {
         meta: {
-            id: state.projectId ?? uuid(),
+            id: projectId,
             name: state.fileName,
             ownerId: '',
             ownerEmail: '',
@@ -28,7 +29,7 @@ function buildProjectData(state: CADState): ProjectData {
             visibility: 'private',
             tags: [],
             folder: state.projectFolder,
-            thumbnail: state.projectThumbnails[state.fileName] ?? '',
+            thumbnail: resolveProjectThumbnail(state.projectThumbnails, projectId, state.fileName),
             lastModified: Date.now(),
             createdAt: Date.now(),
             remoteProvider: mgr.remoteStore?.providerKey ?? 'github',
@@ -179,20 +180,29 @@ export const createVersioningSlice: StateCreator<
 
     saveToLocal: async () => {
         const state = get();
+        const projectId = state.projectId ?? uuid();
         set({ syncStatus: 'saving_local' });
         try {
+            if (!state.projectId) {
+                set({ projectId });
+            }
+
             // Capture thumbnail
             if (state.thumbnailCapturer) {
                 const thumb = state.thumbnailCapturer();
-                if (thumb) state.updateThumbnail(state.fileName, thumb);
+                if (thumb) {
+                    set({
+                        projectThumbnails: upsertProjectThumbnail(
+                            get().projectThumbnails,
+                            thumb,
+                            projectId,
+                            state.fileName,
+                        ),
+                    });
+                }
             }
 
-            const projectData = buildProjectData(get());
-
-            // Assign a projectId if we don't have one yet
-            if (!state.projectId) {
-                set({ projectId: projectData.meta.id });
-            }
+            const projectData = buildProjectData(get(), projectId);
 
             const mgr = StorageManager.getInstance();
             await mgr.quickStore.saveProject(projectData);
@@ -412,9 +422,9 @@ export const createVersioningSlice: StateCreator<
     },
 
     removeThumbnail: (name) => {
-        const thumbs = { ...get().projectThumbnails };
-        delete thumbs[name];
-        set({ projectThumbnails: thumbs });
+        set({
+            projectThumbnails: removeProjectThumbnail(get().projectThumbnails, get().projectId, name),
+        });
     },
 
     compareVersions: (versionA, versionB) =>

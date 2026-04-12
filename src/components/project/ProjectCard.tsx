@@ -3,6 +3,7 @@ import {
     Star, MoreVertical, Trash2, Info, Tag, Folder, LayoutGrid, GitBranch, Share2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { resolveProjectThumbnail } from '@/lib/storage/thumbnail';
 
 export interface ProjectCardProps {
     project: any;
@@ -46,17 +47,24 @@ export function ProjectCard({
 
     // Thumbnail resolution order:
     // 1. Explicit project.thumbnail (if present, usually from modern storage index)
-    // 2. Local store projectThumbnails[project.name] (base64 from local storage)
+    // 2. Local store projectThumbnails[project.id] with legacy project.name fallback
     // 3. Fallback for examples if no thumbnail exists AND no PAT is connected
     // 4. Fallback to constructed URL if project is on GitHub
-    let thumbnail = project.thumbnail || projectThumbnails[project.name];
+    const thumbnail = resolveProjectThumbnail(
+        projectThumbnails,
+        project.id,
+        project.name,
+        project.thumbnail,
+    );
 
-    if (!thumbnail && isExample) {
-        if (project.id === 'example-gridfinity') thumbnail = '/previews/gridfinity.png';
+    let resolvedThumbnail = thumbnail;
+
+    if (!resolvedThumbnail && isExample) {
+        if (project.id === 'example-gridfinity') resolvedThumbnail = '/previews/gridfinity.png';
     }
 
-    if (!thumbnail && project.sha && !isExample) {
-        thumbnail = `https://raw.githubusercontent.com/${project.ownerId}/hivecad-data/main/hivecad/thumbnails/${project.id}.png`;
+    if (!resolvedThumbnail && project.sha && !isExample) {
+        resolvedThumbnail = `https://raw.githubusercontent.com/${project.ownerId}/hivecad-data/main/hivecad/thumbnails/${project.id}.png`;
     }
 
     const deleteMessage = project.deletedAt
@@ -73,9 +81,9 @@ export function ProjectCard({
             onClick={onOpen}
         >
             <div className="flex-1 bg-muted flex items-center justify-center relative overflow-hidden rounded-t-xl">
-                {thumbnail ? (
+                {resolvedThumbnail ? (
                     <img
-                        src={thumbnail}
+                        src={resolvedThumbnail}
                         className="w-full h-full object-cover transition-transform group-hover:scale-110"
                         alt={project.name}
                         onError={(e) => {

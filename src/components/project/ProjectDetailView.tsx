@@ -6,6 +6,7 @@ import {
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import type { ProjectMeta, FolderEntry, CollaboratorRole } from '@/lib/storage/types';
+import { resolveProjectThumbnail } from '@/lib/storage/thumbnail';
 
 interface ProjectDetailViewProps {
     /** Breadcrumb path: array of folder entries from root → current */
@@ -272,40 +273,44 @@ export function ProjectDetailView({
                     </button>
 
                     {/* Model Cards */}
-                    {filteredModels.map((model) => (
-                        <div
-                            key={model.id}
-                            onClick={() => onOpen3DModel(model)}
-                            className="aspect-[4/3] bg-card border border-border rounded-xl overflow-hidden cursor-pointer group transition-all hover:shadow-xl hover:border-primary/30 relative"
-                        >
-                            <div className="w-full h-2/3 bg-muted/30 flex items-center justify-center relative overflow-hidden">
-                                {projectThumbnails[model.name] ? (
-                                    <img
-                                        src={projectThumbnails[model.name]}
-                                        alt={model.name}
-                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                    />
-                                ) : (
-                                    <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary">
-                                        <FileText className="w-5 h-5" />
+                    {filteredModels.map((model) => {
+                        const thumbnail = resolveProjectThumbnail(projectThumbnails, model.id, model.name, model.thumbnail);
+
+                        return (
+                            <div
+                                key={model.id}
+                                onClick={() => onOpen3DModel(model)}
+                                className="aspect-[4/3] bg-card border border-border rounded-xl overflow-hidden cursor-pointer group transition-all hover:shadow-xl hover:border-primary/30 relative"
+                            >
+                                <div className="w-full h-2/3 bg-muted/30 flex items-center justify-center relative overflow-hidden">
+                                    {thumbnail ? (
+                                        <img
+                                            src={thumbnail}
+                                            alt={model.name}
+                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                        />
+                                    ) : (
+                                        <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary">
+                                            <FileText className="w-5 h-5" />
+                                        </div>
+                                    )}
+                                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                        <span className="text-white font-bold text-xs uppercase tracking-widest">Open</span>
                                     </div>
-                                )}
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                    <span className="text-white font-bold text-xs uppercase tracking-widest">Open</span>
+                                </div>
+                                <div className="p-2.5 flex items-center justify-between">
+                                    <div className="truncate">
+                                        <h4 className="font-bold text-sm text-foreground truncate group-hover:text-primary transition-colors">
+                                            {model.name}
+                                        </h4>
+                                        <p className="text-[10px] text-muted-foreground">
+                                            {new Date(model.lastModified).toLocaleDateString()}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
-                            <div className="p-2.5 flex items-center justify-between">
-                                <div className="truncate">
-                                    <h4 className="font-bold text-sm text-foreground truncate group-hover:text-primary transition-colors">
-                                        {model.name}
-                                    </h4>
-                                    <p className="text-[10px] text-muted-foreground">
-                                        {new Date(model.lastModified).toLocaleDateString()}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
 
                     {filteredModels.length === 0 && !searchQuery && (
                         <div className="col-span-full py-8 text-center space-y-2">

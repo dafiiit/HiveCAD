@@ -217,6 +217,7 @@ export function useProjectDashboard() {
         const DEFAULT_THUMBNAIL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
         try {
             const currentThumbnails = JSON.parse(localStorage.getItem('hivecad_thumbnails') || '{}');
+            currentThumbnails[projectId] = DEFAULT_THUMBNAIL;
             currentThumbnails[name] = DEFAULT_THUMBNAIL;
             localStorage.setItem('hivecad_thumbnails', JSON.stringify(currentThumbnails));
         } catch (e) { console.warn('Failed to set default thumbnail', e); }
