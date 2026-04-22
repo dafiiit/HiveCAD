@@ -62,6 +62,7 @@ export function ProjectDetailView({
     const filteredSubProjects = subProjects.filter(f =>
         f.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
+    const hasSearchQuery = searchQuery.trim().length > 0;
 
     const handleSaveTitle = () => {
         if (titleInput.trim() && titleInput.trim() !== project.name) {
@@ -250,6 +251,17 @@ export function ProjectDetailView({
                             </div>
                         </div>
                     ))}
+
+                    {filteredSubProjects.length === 0 && (
+                        <div className="col-span-full py-8 text-center space-y-2">
+                            <div className="w-10 h-10 bg-muted/30 rounded-full flex items-center justify-center mx-auto text-muted-foreground/50">
+                                <FolderOpen className="w-5 h-5" />
+                            </div>
+                            <p className="text-muted-foreground/60 text-sm">
+                                {hasSearchQuery ? 'No sub-projects match your search' : 'No sub-projects yet'}
+                            </p>
+                        </div>
+                    )}
                 </div>
             </section>
 
@@ -312,12 +324,14 @@ export function ProjectDetailView({
                         );
                     })}
 
-                    {filteredModels.length === 0 && !searchQuery && (
+                    {filteredModels.length === 0 && (
                         <div className="col-span-full py-8 text-center space-y-2">
                             <div className="w-10 h-10 bg-muted/30 rounded-full flex items-center justify-center mx-auto text-muted-foreground/50">
                                 <FileText className="w-5 h-5" />
                             </div>
-                            <p className="text-muted-foreground/60 text-sm">No 3D models yet</p>
+                            <p className="text-muted-foreground/60 text-sm">
+                                {hasSearchQuery ? 'No 3D models match your search' : 'No 3D models yet'}
+                            </p>
                         </div>
                     )}
                 </div>
