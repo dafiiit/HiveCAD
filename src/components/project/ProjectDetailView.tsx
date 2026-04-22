@@ -60,6 +60,10 @@ export function ProjectDetailView({
         setShowCollabForm(false);
     }, [project.id, project.name, project.description]);
 
+    useEffect(() => {
+        setSearchQuery('');
+    }, [project.id]);
+
     // Sub-projects that belong to this project (direct children via parentId)
     const subProjects = allFolders.filter(f => f.parentId === project.id);
 

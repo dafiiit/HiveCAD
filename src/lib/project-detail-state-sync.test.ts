@@ -86,4 +86,39 @@ describe('ProjectDetailView project switching', () => {
     fireEvent.click(screen.getByRole('heading', { name: 'Child Project' }));
     expect(screen.getByDisplayValue('Child Project')).toBeTruthy();
   });
+
+  it('clears the detail search when navigating to a different project', () => {
+    const { rerender } = renderView(rootProject);
+
+    const search = screen.getByPlaceholderText('Search in Root Project...');
+    fireEvent.change(search, { target: { value: 'zzz' } });
+    expect(screen.queryByText('Alpha Model')).toBeNull();
+
+    rerender(
+      React.createElement(ProjectDetailView, {
+        breadcrumb: [childProject],
+        project: childProject,
+        allFolders: [rootProject, childProject],
+        models: [{
+          ...model,
+          id: 'model-2',
+          name: 'Beta Model',
+          folder: childProject.id,
+        }],
+        onNavigateBreadcrumb: vi.fn(),
+        onBack: vi.fn(),
+        onCreate3DModel: vi.fn(),
+        onCreateSubProject: vi.fn(),
+        onOpenSubProject: vi.fn(),
+        onOpen3DModel: vi.fn(),
+        onDelete3DModel: vi.fn(),
+        onRename3DModel: vi.fn(),
+        onUpdateProject: vi.fn(),
+        projectThumbnails: {},
+      }),
+    );
+
+    expect((screen.getByPlaceholderText('Search in Child Project...') as HTMLInputElement).value).toBe('');
+    expect(screen.getByText('Beta Model')).toBeTruthy();
+  });
 });
