@@ -20,7 +20,7 @@ export interface ProjectCardProps {
     tags: Array<{ name: string; color: string }>;
     projectThumbnails: Record<string, string>;
     hasPAT: boolean;
-    folders: Array<{ name: string; color: string }>;
+    folders: Array<{ id: string; name: string; color: string }>;
     onMoveToFolder: (folderName: string | undefined) => void;
 }
 
@@ -56,6 +56,9 @@ export function ProjectCard({
         project.name,
         project.thumbnail,
     );
+    const folderName = project.folder
+        ? folders.find((f) => f.id === project.folder)?.name
+        : undefined;
 
     let resolvedThumbnail = thumbnail;
 
@@ -157,7 +160,12 @@ export function ProjectCard({
                 <div className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-tighter font-black opacity-60 flex items-center justify-between">
                     <span>{isExample ? 'Example' : (project.ownerId || 'My 3D Model')}</span>
                     {!isExample && !project.deletedAt && project.sha && <span className="text-green-500/80">Cloud</span>}
-                    {project.folder && <span className="ml-2 text-primary opacity-80 flex items-center gap-1"><Folder className="w-2 h-2" /> {project.folder}</span>}
+                    {project.folder && (
+                        <span className="ml-2 text-primary opacity-80 flex items-center gap-1">
+                            <Folder className="w-2 h-2" />
+                            {folderName || project.folder}
+                        </span>
+                    )}
                 </div>
                 {deleteMessage && <div className="text-[9px] text-red-400 font-bold mt-1 uppercase tracking-tighter">{deleteMessage}</div>}
             </div>

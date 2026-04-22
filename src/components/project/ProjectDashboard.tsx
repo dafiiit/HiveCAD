@@ -163,7 +163,7 @@ export function ProjectDashboard() {
                                 <Input
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder={selectedFolder ? `Search in ${selectedFolder}...` : `Search in my HiveCAD...`}
+                                    placeholder={selectedProject ? `Search in ${selectedProject.name}...` : `Search in my HiveCAD...`}
                                     className="bg-card/50 border-border pl-14 h-14 w-full focus:ring-2 focus:ring-primary/20 focus:border-primary rounded-full text-lg shadow-sm transition-all hover:bg-card hover:shadow-md placeholder:text-muted-foreground/50"
                                 />
                             </div>
