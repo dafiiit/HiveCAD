@@ -106,8 +106,6 @@ export function useProjectDashboard() {
     // ─── Refresh Projects ─────────────────────────────────────────────────────
 
     const refreshProjects = useCallback(async () => {
-        if (user?.pat && !isStorageConnected) return;
-
         if (dashboardMode === 'workspace') {
             setLoading(true);
             try {
