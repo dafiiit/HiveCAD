@@ -243,15 +243,6 @@ export function ProjectDashboard() {
                                         }
                                     }}
                                     onBack={() => {
-                                        // Navigate to parent if exists, else back to dashboard
-                                        if (selectedProject.parentId) {
-                                            const parent = folders.find(f => f.id === selectedProject.parentId);
-                                            if (parent) {
-                                                setSelectedProject(parent);
-                                                setSelectedFolder(parent.id);
-                                                return;
-                                            }
-                                        }
                                         setSelectedProject(null);
                                         setSelectedFolder(null);
                                     }}
