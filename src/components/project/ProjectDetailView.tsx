@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Plus, Edit3, Users, Search,
     FolderOpen, FileText, Folder, ChevronRight
@@ -51,6 +51,14 @@ export function ProjectDetailView({
     const [collabEmail, setCollabEmail] = useState('');
     const [collabRole, setCollabRole] = useState<CollaboratorRole>('viewer');
     const [searchQuery, setSearchQuery] = useState('');
+
+    useEffect(() => {
+        setTitleInput(project.name);
+        setDescInput(project.description || '');
+        setIsEditingTitle(false);
+        setIsEditingDesc(false);
+        setShowCollabForm(false);
+    }, [project.id, project.name, project.description]);
 
     // Sub-projects that belong to this project (direct children via parentId)
     const subProjects = allFolders.filter(f => f.parentId === project.id);
