@@ -6,7 +6,7 @@ import { getDependencyGraph, mergeExecutionResults } from '../../lib/dependency-
 import { toolRegistry } from '../../lib/tools';
 import { invokeToolCreate, invokeToolExecute } from '../../lib/tools/invoke';
 import { CADState, ObjectSlice, CADObject } from '../types';
-import { replicadWorkerPool } from '../../lib/workers/WorkerPool';
+import { getReplicadWorkerPool } from '../../lib/workers/WorkerPool';
 import {
     registerGeometries,
     disposeGeometries,
@@ -302,7 +302,13 @@ export const createObjectSlice: StateCreator<
                 console.log(`[Incremental] Executing ${plan.toExecute.length} features, reusing ${plan.toCache.length} from cache`);
             }
 
-            const result = await replicadWorkerPool.execute(
+            const workerPool = getReplicadWorkerPool();
+            if (!workerPool) {
+                toast.error('Web workers are not available in this environment');
+                return;
+            }
+
+            const result = await workerPool.execute(
                 { type: 'EXECUTE', code: executableCode },
                 (progressData) => {
                     if (progressData.type === 'MESH_PROGRESS') {
@@ -477,7 +483,13 @@ export const createObjectSlice: StateCreator<
 
     exportSTL: async () => {
         const state = get();
-        const result = await replicadWorkerPool.execute({ type: 'EXPORT_STL', code: state.code });
+        const workerPool = getReplicadWorkerPool();
+        if (!workerPool) {
+            toast.error('Web workers are not available in this environment');
+            return;
+        }
+
+        const result = await workerPool.execute({ type: 'EXPORT_STL', code: state.code });
         const blob = result.blob;
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -490,7 +502,13 @@ export const createObjectSlice: StateCreator<
 
     exportSTEP: async () => {
         const state = get();
-        const result = await replicadWorkerPool.execute({ type: 'EXPORT_STEP', code: state.code });
+        const workerPool = getReplicadWorkerPool();
+        if (!workerPool) {
+            toast.error('Web workers are not available in this environment');
+            return;
+        }
+
+        const result = await workerPool.execute({ type: 'EXPORT_STEP', code: state.code });
         const blob = result.blob;
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');

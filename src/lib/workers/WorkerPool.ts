@@ -69,5 +69,17 @@ export class WorkerPool {
     }
 }
 
-// Singleton instance for the application
-export const replicadWorkerPool = new WorkerPool();
+let replicadWorkerPool: WorkerPool | null = null;
+
+export function getReplicadWorkerPool() {
+    if (replicadWorkerPool) {
+        return replicadWorkerPool;
+    }
+
+    if (typeof Worker === 'undefined') {
+        return null;
+    }
+
+    replicadWorkerPool = new WorkerPool();
+    return replicadWorkerPool;
+}
