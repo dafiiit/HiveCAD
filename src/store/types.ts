@@ -11,6 +11,7 @@ import { SnapPoint, SnappingEngine } from '../lib/snapping';
 import { AssemblyState, AssemblyComponent, AssemblyMate, ComponentId, MateId, MateType } from '../lib/assembly/types';
 import type { SketchObject, SerializedSketch, SketchEntityType, SketchEntityProperties } from '../lib/sketch';
 import type { HandlePoint, SketchEntityState } from '../lib/sketch/interaction-types';
+import type { ImportFormat } from '../lib/storage/import';
 
 /**
  * Tool identifier — any string registered in the ToolRegistry.
@@ -107,7 +108,7 @@ export interface ObjectSlice {
     exportSTL: () => Promise<void>;
     exportSTEP: () => Promise<void>;
     exportJSON: () => void;
-    importFile: () => void;
+    importFile: (format?: ImportFormat) => void;
     processImport: (file: File, type: string, extension: string) => Promise<void>;
     confirmImport: () => Promise<void>;
     cancelImport: () => void;

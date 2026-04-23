@@ -108,8 +108,8 @@ export const FileManagerDialog = ({ open, onOpenChange }: FileManagerDialogProps
         (p.id ?? '').toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const handleImport = () => {
-        importFile();
+    const handleImportFormat = (format: 'json' | 'step' | 'stl') => {
+        importFile(format);
         onOpenChange(false);
     };
 
@@ -139,15 +139,15 @@ export const FileManagerDialog = ({ open, onOpenChange }: FileManagerDialogProps
                                     </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" className="rounded-xl border-border/40 bg-background/95 backdrop-blur-md">
-                                    <DropdownMenuItem onClick={handleImport} className="gap-2 cursor-pointer rounded-lg">
+                                    <DropdownMenuItem onClick={() => handleImportFormat('json')} className="gap-2 cursor-pointer rounded-lg">
                                         <FileJson className="w-4 h-4" />
                                         <span>JSON Format</span>
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={handleImport} className="gap-2 cursor-pointer rounded-lg">
+                                    <DropdownMenuItem onClick={() => handleImportFormat('step')} className="gap-2 cursor-pointer rounded-lg">
                                         <FileArchive className="w-4 h-4" />
                                         <span>STEP Format</span>
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={handleImport} className="gap-2 cursor-pointer rounded-lg">
+                                    <DropdownMenuItem onClick={() => handleImportFormat('stl')} className="gap-2 cursor-pointer rounded-lg">
                                         <FileBox className="w-4 h-4" />
                                         <span>STL Format</span>
                                     </DropdownMenuItem>

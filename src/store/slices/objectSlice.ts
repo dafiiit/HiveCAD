@@ -16,6 +16,13 @@ import {
     buildMeshGeometry,
     buildEdgeGeometry,
 } from './objectGeometry';
+import {
+    getImportAccept,
+    getImportLabel,
+    getImportedFileType,
+    matchesImportFormat,
+    type ImportFormat,
+} from '../../lib/storage/import';
 
 const DEFAULT_CODE = `const main = () => {
   return;
@@ -630,10 +637,10 @@ export const createObjectSlice: StateCreator<
         }
     },
 
-    importFile: () => {
+    importFile: (format: ImportFormat = 'all') => {
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = '.json,.stl,.step,.stp';
+        input.accept = getImportAccept(format);
         input.onchange = async (e) => {
             const file = (e.target as HTMLInputElement).files?.[0];
             if (!file) return;
@@ -648,7 +655,16 @@ export const createObjectSlice: StateCreator<
             }
 
             const extension = file.name.split('.').pop()?.toLowerCase() || '';
-            const type = (extension === 'stl') ? 'STL' : 'STEP';
+            if (!matchesImportFormat(extension, format)) {
+                toast.error(`Please choose a ${getImportLabel(format)} file.`);
+                return;
+            }
+
+            const type = getImportedFileType(extension);
+            if (!type) {
+                toast.error('Unsupported file format');
+                return;
+            }
 
             if (file.size > WARN_FILE_SIZE) {
                 set({ pendingImport: { file, type, extension } });
