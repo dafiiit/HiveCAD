@@ -16,7 +16,7 @@ import { SettingsDialog } from '@/components/ui/SettingsDialog';
 import { ProjectCard } from './ProjectCard';
 import { ProjectDetailView } from './ProjectDetailView';
 import { EXAMPLES } from '@/lib/data/examples';
-import { useProjectDashboard } from './useProjectDashboard';
+import { matchesWorkspaceProjectFilters, useProjectDashboard } from './useProjectDashboard';
 
 type DashboardMode = 'workspace' | 'discover';
 
@@ -397,23 +397,13 @@ export function ProjectDashboard() {
                                                     .filter(e => !userProjects.some(up => up.id === e.id))
                                                     .map(e => ({ ...e, type: 'example' as const, ownerId: 'Example Project', tags: [] as string[], folder: '', lastModified: Date.parse(e.modified) }))
                                             ]
-                                                .filter(p => (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
-                                                .filter(p => {
-                                                    // Tag filter
-                                                    const projectTags = (p as any).tags || [];
-                                                    if (activeTags.length > 0) {
-                                                        return activeTags.every(t => projectTags.includes(t));
-                                                    }
-                                                    const isStarred = starredProjects.includes(p.id);
-                                                    if (activeNav === 'Starred') return isStarred;
-                                                    if (activeNav === 'Created by me') return p.type === 'user' || (p as any).ownerId === 'Example Project';
-                                                    if (activeNav === 'Shared with me') return false;
-                                                    if (activeNav === 'Public by me') return p.type === 'user' && (p as any).visibility === 'public';
-                                                    if (activeNav === 'Last Opened') return true;
-                                                    if (activeNav === 'Tags') return projectTags.length > 0;
-                                                    if (activeNav === 'Trash') return false;
-                                                    return true;
-                                                })
+                                                .filter(p => matchesWorkspaceProjectFilters(p as any, {
+                                                    activeNav,
+                                                    activeTags,
+                                                    searchQuery,
+                                                    starredProjects,
+                                                    currentUserId: user?.id,
+                                                }))
                                                 .sort((a: any, b: any) => {
                                                     return (b.lastModified || 0) - (a.lastModified || 0);
                                                 })

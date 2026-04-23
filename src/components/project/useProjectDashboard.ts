@@ -14,9 +14,56 @@ import type { ProjectMeta, ProjectData, TagEntry, FolderEntry } from '@/lib/stor
 import { createBlank3DModel, uuid } from '@/lib/storage/projectUtils';
 import { StorageManager } from '@/lib/storage/StorageManager';
 import { EXAMPLES } from '@/lib/data/examples';
+import { clearStarredProjects, loadStarredProjects, saveStarredProjects, toggleStarredProject } from './starredProjects';
 
 type DashboardMode = 'workspace' | 'discover';
 const FOLDERS_STORAGE_KEY = 'hivecad_folders';
+
+type WorkspaceProject = ProjectMeta & {
+    type?: 'user' | 'example';
+    tags?: string[];
+};
+
+export const matchesWorkspaceProjectFilters = (
+    project: WorkspaceProject,
+    {
+        activeNav,
+        activeTags,
+        searchQuery,
+        starredProjects,
+        currentUserId,
+    }: {
+        activeNav: string;
+        activeTags: string[];
+        searchQuery: string;
+        starredProjects: string[];
+        currentUserId?: string | null;
+    },
+) => {
+    if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesSearch = project.name.toLowerCase().includes(q) || project.description?.toLowerCase().includes(q);
+        if (!matchesSearch) return false;
+    }
+
+    if (activeTags.length > 0) {
+        const projectTags = project.tags || [];
+        if (!activeTags.every(tag => projectTags.includes(tag))) {
+            return false;
+        }
+    }
+
+    const isStarred = starredProjects.includes(project.id);
+    if (activeNav === 'Starred') return isStarred;
+    if (activeNav === 'Created by me') return project.type === 'user' && project.ownerId === currentUserId;
+    if (activeNav === 'Shared with me') return project.type === 'user' && project.ownerId !== currentUserId;
+    if (activeNav === 'Public by me') return project.type === 'user' && project.visibility === 'public' && project.ownerId === currentUserId;
+    if (activeNav === 'Last Opened') return true;
+    if (activeNav === 'Tags') return (project.tags || []).length > 0;
+    if (activeNav === 'Trash') return false;
+
+    return true;
+};
 
 export function useProjectDashboard() {
     const { openProjectInNewTab } = useTabManager();
@@ -41,7 +88,7 @@ export function useProjectDashboard() {
     const [folders, setFolders] = useState<FolderEntry[]>([]);
     const [tags, setTags] = useState<TagEntry[]>([]);
     const [activeTags, setActiveTags] = useState<string[]>([]);
-    const [starredProjects, setStarredProjects] = useState<string[]>([]);
+    const [starredProjects, setStarredProjects] = useState<string[]>(() => loadStarredProjects());
 
     // ─── Dialog State ─────────────────────────────────────────────────────────
     const [contextMenuProject, setContextMenuProject] = useState<string | null>(null);
@@ -70,6 +117,7 @@ export function useProjectDashboard() {
     });
 
     const autoOpenHandledRef = useRef(false);
+    const searchQueryRef = useRef(searchQuery);
     const mgr = StorageManager.getInstance();
 
     // ─── Folder Persistence ───────────────────────────────────────────────────
@@ -105,7 +153,11 @@ export function useProjectDashboard() {
 
     // ─── Refresh Projects ─────────────────────────────────────────────────────
 
-    const refreshProjects = useCallback(async () => {
+    useEffect(() => {
+        searchQueryRef.current = searchQuery;
+    }, [searchQuery]);
+
+    const refreshWorkspaceProjects = useCallback(async () => {
         if (dashboardMode === 'workspace') {
             setLoading(true);
             try {
@@ -125,11 +177,15 @@ export function useProjectDashboard() {
             } finally {
                 setLoading(false);
             }
-        } else if (dashboardMode === 'discover') {
+        }
+    }, [user?.pat, user?.id, loadFolders, mgr.quickStore, mgr.supabaseMeta, dashboardMode]);
+
+    const refreshDiscoverProjects = useCallback(async () => {
+        if (dashboardMode === 'discover') {
             setLoading(true);
             try {
                 if (mgr.supabaseMeta) {
-                    const projects = await mgr.supabaseMeta.searchPublicProjects(searchQuery);
+                    const projects = await mgr.supabaseMeta.searchPublicProjects(searchQueryRef.current);
                     setDiscoverProjects(projects);
                 }
             } catch (error) {
@@ -139,9 +195,31 @@ export function useProjectDashboard() {
                 setLoading(false);
             }
         }
-    }, [user?.pat, user?.id, dashboardMode, isStorageConnected, searchQuery, loadFolders]);
+    }, [dashboardMode, mgr.supabaseMeta]);
 
-    useEffect(() => { refreshProjects(); }, [refreshProjects]);
+    const refreshProjects = useCallback(async () => {
+        if (dashboardMode === 'workspace') {
+            await refreshWorkspaceProjects();
+        } else {
+            await refreshDiscoverProjects();
+        }
+    }, [dashboardMode, refreshDiscoverProjects, refreshWorkspaceProjects]);
+
+    useEffect(() => {
+        if (dashboardMode === 'workspace') {
+            void refreshWorkspaceProjects();
+        }
+    }, [dashboardMode, refreshWorkspaceProjects]);
+
+    useEffect(() => {
+        if (dashboardMode === 'discover') {
+            void refreshDiscoverProjects();
+        }
+    }, [dashboardMode, searchQuery, refreshDiscoverProjects]);
+
+    useEffect(() => {
+        saveStarredProjects(starredProjects);
+    }, [starredProjects]);
 
     // ─── Auto-open shared project from URL param ───────────────────────────────
 
@@ -339,6 +417,7 @@ export function useProjectDashboard() {
             try { await mgr.supabaseMeta?.deleteProjectMeta(projectId); }
             catch (err) { console.warn(`[Dashboard] Failed to delete ${projectId} from Supabase:`, err); }
             removeThumbnail(projectName);
+            setStarredProjects(prev => prev.filter(id => id !== projectId));
             toast.success(`Deleted "${projectName}"`);
             await refreshProjects();
         } catch (error) {
@@ -544,6 +623,7 @@ export function useProjectDashboard() {
             localStorage.removeItem('hivecad_thumbnails');
             localStorage.removeItem('hivecad_example_opens');
             localStorage.removeItem('hivecad_thumbnails_cache');
+            clearStarredProjects();
             setStarredProjects([]);
             setFolders([]);
             setTags([]);
@@ -565,7 +645,7 @@ export function useProjectDashboard() {
     const handleToggleStar = (e: React.MouseEvent, projectId: string) => {
         e.stopPropagation();
         const isAdded = !starredProjects.includes(projectId);
-        setStarredProjects(prev => isAdded ? [...prev, projectId] : prev.filter(id => id !== projectId));
+        setStarredProjects(prev => toggleStarredProject(prev, projectId));
         toast.success(isAdded ? 'Added to Starred' : 'Removed from Starred');
     };
 
@@ -637,27 +717,15 @@ export function useProjectDashboard() {
 
     /** Filter the project list according to active nav, star, tags, folder, and search. */
     const getFilteredProjects = () => {
-        let result = userProjects;
-
-        // Folder filter
-        if (selectedFolder) result = result.filter(p => p.folder === selectedFolder);
-
-        // Nav filter
-        if (activeNav === 'Starred') result = result.filter(p => starredProjects.includes(p.id));
-        else if (activeNav === 'Created by me') result = result.filter(p => p.ownerId === user?.id);
-        else if (activeNav === 'Public by me') result = result.filter(p => p.visibility === 'public' && p.ownerId === user?.id);
-        else if (activeNav === 'Shared with me') result = result.filter(p => p.ownerId !== user?.id);
-
-        // Tag filter
-        if (activeTags.length > 0) result = result.filter(p => activeTags.every(t => p.tags?.includes(t)));
-
-        // Search
-        if (searchQuery.trim()) {
-            const q = searchQuery.toLowerCase();
-            result = result.filter(p => p.name.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q));
-        }
-
-        return result;
+        return userProjects
+            .filter(p => selectedFolder ? p.folder === selectedFolder : true)
+            .filter(p => matchesWorkspaceProjectFilters(p, {
+                activeNav,
+                activeTags,
+                searchQuery,
+                starredProjects,
+                currentUserId: user?.id,
+            }));
     };
 
     return {

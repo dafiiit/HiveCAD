@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockListProjects = vi.fn();
@@ -95,5 +95,18 @@ describe('useProjectDashboard', () => {
     await waitFor(() => expect(result.current.userProjects).toHaveLength(1));
 
     expect(result.current.userProjects[0].name).toBe('Local Cube');
+  });
+
+  it('does not reload workspace projects when the local search query changes', async () => {
+    const { result } = renderHook(() => useProjectDashboard());
+
+    await waitFor(() => expect(mockListProjects).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.setSearchQuery('cube');
+    });
+
+    await waitFor(() => expect(result.current.searchQuery).toBe('cube'));
+    expect(mockListProjects).toHaveBeenCalledTimes(1);
   });
 });
