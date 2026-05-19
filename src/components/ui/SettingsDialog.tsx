@@ -29,6 +29,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { StorageManager } from '@/lib/storage/StorageManager';
+import { getUserInitial, getUserLabel } from '@/lib/ui/settings';
 import { toast } from 'sonner';
 import { isDesktop } from '@/lib/platform/platform';
 
@@ -44,6 +45,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     const [isResetting, setIsResetting] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
     const [resetStatus, setResetStatus] = useState<string | null>(null);
+    const userInitial = getUserInitial(user?.email, user?.id);
+    const userEmail = getUserLabel(user?.email);
 
     const handleCheckAndInstallUpdate = async () => {
         if (!isDesktop()) {
@@ -185,10 +188,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                                 <div className="p-4 rounded-2xl bg-muted/20 border border-border/10 space-y-3">
                                     <div className="flex items-center gap-4">
                                         <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-xl font-bold text-primary-foreground">
-                                            {user?.email?.[0].toUpperCase()}
+                                            {userInitial}
                                         </div>
                                         <div>
-                                            <div className="font-semibold text-foreground">{user?.email}</div>
+                                            <div className="font-semibold text-foreground">{userEmail}</div>
                                             <div className="text-xs text-muted-foreground">Standard License</div>
                                         </div>
                                     </div>
