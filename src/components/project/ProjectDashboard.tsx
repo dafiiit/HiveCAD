@@ -89,7 +89,6 @@ export function ProjectDashboard() {
         { icon: Star, label: 'Starred' },
         { icon: Users, label: 'Shared with me' },
         { icon: Globe, label: 'Public by me' },
-        { icon: Trash2, label: 'Trash' },
     ];
 
     // ─── Render ───────────────────────────────────────────────────────────
@@ -379,17 +378,15 @@ export function ProjectDashboard() {
                                         </h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                                             {/* New 3D Model Card */}
-                                            {activeNav !== 'Trash' && (
-                                                <button
-                                                    onClick={() => handleCreate3DModel(undefined)}
-                                                    className="aspect-[4/3] bg-primary/10 border-2 border-dashed border-primary/30 hover:border-primary hover:bg-primary/20 rounded-xl flex flex-col items-center justify-center gap-3 text-primary transition-all group shadow-lg shadow-primary/5"
-                                                >
-                                                    <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                                        <Plus className="w-7 h-7" />
-                                                    </div>
-                                                    <span className="font-bold text-lg">New 3D Model</span>
-                                                </button>
-                                            )}
+                                            <button
+                                                onClick={() => handleCreate3DModel(undefined)}
+                                                className="aspect-[4/3] bg-primary/10 border-2 border-dashed border-primary/30 hover:border-primary hover:bg-primary/20 rounded-xl flex flex-col items-center justify-center gap-3 text-primary transition-all group shadow-lg shadow-primary/5"
+                                            >
+                                                <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                                    <Plus className="w-7 h-7" />
+                                                </div>
+                                                <span className="font-bold text-lg">New 3D Model</span>
+                                            </button>
 
                                             {!loading && [
                                                 ...userProjects.map(p => ({ ...p, type: 'user' as const })),

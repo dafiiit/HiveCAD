@@ -60,8 +60,6 @@ export const matchesWorkspaceProjectFilters = (
     if (activeNav === 'Public by me') return project.type === 'user' && project.visibility === 'public' && project.ownerId === currentUserId;
     if (activeNav === 'Last Opened') return true;
     if (activeNav === 'Tags') return (project.tags || []).length > 0;
-    if (activeNav === 'Trash') return false;
-
     return true;
 };
 
