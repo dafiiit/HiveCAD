@@ -2,6 +2,7 @@ import React from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { UnifiedColorPicker } from '../ui/UnifiedColorPicker';
+import { matchesSearchableFields } from '@/lib/search';
 import {
     Plus, Search, Clock, User, Users, Tag, Globe, Trash2,
     MoreVertical, Grid, List as ListIcon, Folder, ChevronDown,
@@ -294,7 +295,7 @@ export function ProjectDashboard() {
 
                                             {/* Existing Projects — filtered by search */}
                                             {folders
-                                                .filter(f => !f.parentId && f.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                                                .filter(f => !f.parentId && matchesSearchableFields(searchQuery, f.name, f.description))
                                                 .map((folder) => (
                                                     <div
                                                         key={folder.id}

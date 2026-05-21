@@ -7,6 +7,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import type { ProjectMeta, FolderEntry, CollaboratorRole } from '@/lib/storage/types';
 import { resolveProjectThumbnail } from '@/lib/storage/thumbnail';
+import { matchesSearchableFields } from '@/lib/search';
 
 interface ProjectDetailViewProps {
     /** Breadcrumb path: array of folder entries from root → current */
@@ -69,10 +70,10 @@ export function ProjectDetailView({
 
     // Filter models by search
     const filteredModels = models.filter(m =>
-        m.name.toLowerCase().includes(searchQuery.toLowerCase())
+        matchesSearchableFields(searchQuery, m.name, m.description)
     );
     const filteredSubProjects = subProjects.filter(f =>
-        f.name.toLowerCase().includes(searchQuery.toLowerCase())
+        matchesSearchableFields(searchQuery, f.name, f.description)
     );
     const hasSearchQuery = searchQuery.trim().length > 0;
 
