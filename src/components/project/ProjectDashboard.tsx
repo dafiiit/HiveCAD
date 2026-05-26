@@ -116,6 +116,8 @@ export function ProjectDashboard() {
         activeNav,
         lastOpenedAt,
     );
+    const hasWorkspaceProjects = workspaceProjects.length > 0;
+    const hasAnyWorkspaceData = userProjects.length > 0 || EXAMPLES.length > 0;
 
     // ─── Render ───────────────────────────────────────────────────────────
 
@@ -414,8 +416,7 @@ export function ProjectDashboard() {
                                                 <span className="font-bold text-lg">New 3D Model</span>
                                             </button>
 
-                                            {!loading && workspaceProjects
-                                                .map((project: any) => (
+                                            {!loading && workspaceProjects.map((project: any) => (
                                                     <ProjectCard
                                                         key={`filtered-${project.id}`}
                                                         project={project}
@@ -442,13 +443,19 @@ export function ProjectDashboard() {
                                                         onMoveToFolder={(folderName: string) => handleMoveProjectToFolder(project.id, folderName)}
                                                     />
                                                 ))}
-                                            {userProjects.length === 0 && EXAMPLES.length === 0 && (
+                                            {!loading && !hasWorkspaceProjects && (
                                                 <div className="col-span-full py-20 text-center space-y-3">
                                                     <div className="w-16 h-16 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto text-zinc-600">
                                                         <Search className="w-8 h-8" />
                                                     </div>
-                                                    <div className="text-zinc-500 font-medium">No projects found in {activeNav}</div>
-                                                    <p className="text-zinc-600 text-sm">Try exploring the community in Discover mode or create a new project.</p>
+                                                    <div className="text-zinc-500 font-medium">
+                                                        {hasAnyWorkspaceData ? `No projects found in ${activeNav}` : 'No projects yet'}
+                                                    </div>
+                                                    <p className="text-zinc-600 text-sm">
+                                                        {searchQuery.trim() || activeTags.length > 0
+                                                            ? 'Try clearing your search or filters.'
+                                                            : 'Try exploring the community in Discover mode or create a new project.'}
+                                                    </p>
                                                 </div>
                                             )}
                                         </div>

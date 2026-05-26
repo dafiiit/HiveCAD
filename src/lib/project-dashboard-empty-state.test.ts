@@ -1,0 +1,139 @@
+// @vitest-environment jsdom
+
+import React from 'react';
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+const mockUseProjectDashboard = vi.fn();
+
+vi.mock('@/components/project/useProjectDashboard', () => ({
+  matchesWorkspaceProjectFilters: () => false,
+  sortWorkspaceProjects: (projects: any[]) => projects,
+  useProjectDashboard: () => mockUseProjectDashboard(),
+}));
+
+vi.mock('@/components/ui/SettingsDialog', () => ({
+  SettingsDialog: () => null,
+}));
+
+import { ProjectDashboard } from '@/components/project/ProjectDashboard';
+
+describe('ProjectDashboard empty workspace state', () => {
+  it('shows a filtered-results empty state instead of a blank grid', () => {
+    mockUseProjectDashboard.mockReturnValue({
+      searchQuery: 'missing',
+      setSearchQuery: vi.fn(),
+      viewMode: 'grid',
+      setViewMode: vi.fn(),
+      dashboardMode: 'workspace',
+      setDashboardMode: vi.fn(),
+      activeNav: 'Starred',
+      setActiveNav: vi.fn(),
+      loading: false,
+      loadingMessage: null,
+      isSyncingDashboard: false,
+      isSettingsOpen: false,
+      setIsSettingsOpen: vi.fn(),
+      showSettingsMenu: false,
+      setShowSettingsMenu: vi.fn(),
+      showResetConfirm: false,
+      setShowResetConfirm: vi.fn(),
+      userProjects: [
+        {
+          id: 'project-1',
+          name: 'Visible Project',
+          ownerId: 'user-1',
+          ownerEmail: 'user@example.com',
+          description: '',
+          visibility: 'private',
+          tags: [],
+          folder: '',
+          thumbnail: '',
+          lastModified: Date.now(),
+          createdAt: Date.now(),
+          remoteProvider: '',
+          remoteLocator: '',
+          lockedBy: null,
+        },
+      ],
+      discoverProjects: [],
+      folders: [],
+      tags: [],
+      activeTags: [],
+      setActiveTags: vi.fn(),
+      starredProjects: [],
+      contextMenuProject: null,
+      setContextMenuProject: vi.fn(),
+      showRenameDialog: null,
+      setShowRenameDialog: vi.fn(),
+      renameInput: '',
+      setRenameInput: vi.fn(),
+      showTagDialog: null,
+      setShowTagDialog: vi.fn(),
+      tagNameInput: '',
+      setTagNameInput: vi.fn(),
+      tagColorInput: '#fbbf24',
+      setTagColorInput: vi.fn(),
+      showFolderDialog: false,
+      setShowFolderDialog: vi.fn(),
+      folderNameInput: '',
+      setFolderNameInput: vi.fn(),
+      folderColorInput: '#3b82f6',
+      setFolderColorInput: vi.fn(),
+      folderDescriptionInput: '',
+      setFolderDescriptionInput: vi.fn(),
+      selectedProject: null,
+      setSelectedProject: vi.fn(),
+      selectedFolder: null,
+      setSelectedFolder: vi.fn(),
+      folderParentId: undefined,
+      setFolderParentId: vi.fn(),
+      contextMenuFolder: null,
+      setContextMenuFolder: vi.fn(),
+      renameFolderDialog: null,
+      setRenameFolderDialog: vi.fn(),
+      renameFolderInput: '',
+      setRenameFolderInput: vi.fn(),
+      showDeleteConfirm: null,
+      setShowDeleteConfirm: vi.fn(),
+      deleteInput: '',
+      setDeleteInput: vi.fn(),
+      showHistoryDialog: null,
+      setShowHistoryDialog: vi.fn(),
+      exampleOpenedAt: {},
+      lastOpenedAt: {},
+      user: { id: 'user-1', email: 'user@example.com', pat: null },
+      logout: vi.fn(),
+      showPATDialog: false,
+      setShowPATDialog: vi.fn(),
+      projectThumbnails: {},
+      refreshProjects: vi.fn(),
+      handleCreate3DModel: vi.fn(),
+      handleOpenProject: vi.fn(),
+      handleForkProject: vi.fn(),
+      handleOpenExample: vi.fn(),
+      handleDeleteProject: vi.fn(),
+      handleConfirmDelete: vi.fn(),
+      handleRenameProject: vi.fn(),
+      handleUpdateTags: vi.fn(),
+      handleCreateTag: vi.fn(),
+      handleDeleteTag: vi.fn(),
+      handleAddFolder: vi.fn(),
+      handleCreateFolder: vi.fn(),
+      handleRenameFolder: vi.fn(),
+      handleDeleteFolder: vi.fn(),
+      handleFolderColorChange: vi.fn(),
+      handleMoveProjectToFolder: vi.fn(),
+      handleResetRepository: vi.fn(),
+      handleToggleStar: vi.fn(),
+      handleDashboardSync: vi.fn(),
+      handleShareProject: vi.fn(),
+      getFilteredProjects: vi.fn(() => []),
+    });
+
+    render(React.createElement(ProjectDashboard));
+
+    expect(screen.getByText(/No projects found in Starred/i)).toBeTruthy();
+    expect(screen.getByText(/Try clearing your search or filters\./i)).toBeTruthy();
+  });
+});
