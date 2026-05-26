@@ -179,6 +179,7 @@ const VersioningPanel: React.FC = () => {
                                     commits={graphCommits}
                                     currentCommitId={currentVersionId || undefined}
                                     onCheckout={checkoutVersion}
+                                    showCheckoutAction={false}
                                     compact={true}
                                 />
                             )}

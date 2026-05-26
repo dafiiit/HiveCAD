@@ -140,7 +140,8 @@ export function ProjectHistoryView({ isOpen, onClose, projectId, onViewVersion }
                                     const commit = commits.find(c => c.hash === id);
                                     if (commit) setSelectedCommit(commit);
                                 }}
-                            />
+                                checkoutActionLabel="Select"
+                                />
                         )}
                     </div>
                 </div>

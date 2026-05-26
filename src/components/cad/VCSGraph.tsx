@@ -10,6 +10,8 @@ interface VCSGraphProps {
     commits: Commit[];
     currentCommitId?: string;
     onCheckout?: (commitId: string) => void;
+    checkoutActionLabel?: string;
+    showCheckoutAction?: boolean;
     compact?: boolean;
 }
 
@@ -27,6 +29,8 @@ export const VCSGraph: React.FC<VCSGraphProps> = ({
     commits,
     currentCommitId,
     onCheckout,
+    checkoutActionLabel = 'Checkout',
+    showCheckoutAction = true,
     compact = false
 }) => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -202,18 +206,20 @@ export const VCSGraph: React.FC<VCSGraphProps> = ({
                                                 <div className="text-[9px] font-mono text-zinc-600 bg-black/40 px-1.5 py-0.5 rounded">
                                                     {node.commit.id.substring(0, 8)}
                                                 </div>
-                                                <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    className="h-6 text-[10px] gap-1 px-2 hover:bg-zinc-700 hover:text-white"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        onCheckout?.(node.commit.id);
-                                                    }}
-                                                >
-                                                    <ChevronRight className="w-3 h-3" />
-                                                    Checkout
-                                                </Button>
+                                                {showCheckoutAction && onCheckout && (
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="h-6 text-[10px] gap-1 px-2 hover:bg-zinc-700 hover:text-white"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onCheckout(node.commit.id);
+                                                        }}
+                                                    >
+                                                        <ChevronRight className="w-3 h-3" />
+                                                        {checkoutActionLabel}
+                                                    </Button>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
