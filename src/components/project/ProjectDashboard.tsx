@@ -17,7 +17,7 @@ import { SettingsDialog } from '@/components/ui/SettingsDialog';
 import { ProjectCard } from './ProjectCard';
 import { ProjectDetailView } from './ProjectDetailView';
 import { EXAMPLES } from '@/lib/data/examples';
-import { matchesWorkspaceProjectFilters, useProjectDashboard } from './useProjectDashboard';
+import { matchesWorkspaceProjectFilters, sortWorkspaceProjects, useProjectDashboard } from './useProjectDashboard';
 
 type DashboardMode = 'workspace' | 'discover';
 
@@ -57,6 +57,7 @@ export function ProjectDashboard() {
         deleteInput, setDeleteInput,
         showHistoryDialog, setShowHistoryDialog,
         exampleOpenedAt,
+        lastOpenedAt,
         user, logout, showPATDialog, setShowPATDialog, projectThumbnails,
         refreshProjects,
         handleCreate3DModel,
@@ -91,6 +92,30 @@ export function ProjectDashboard() {
         { icon: Users, label: 'Shared with me' },
         { icon: Globe, label: 'Public by me' },
     ];
+
+    const workspaceProjects = sortWorkspaceProjects(
+        [
+            ...userProjects.map(p => ({ ...p, type: 'user' as const })),
+            ...EXAMPLES
+                .filter(e => !userProjects.some(up => up.id === e.id))
+                .map(e => ({
+                    ...e,
+                    type: 'example' as const,
+                    ownerId: 'Example Project',
+                    tags: [] as string[],
+                    folder: '',
+                    lastModified: Date.parse(e.modified),
+                })),
+        ].filter(p => matchesWorkspaceProjectFilters(p as any, {
+            activeNav,
+            activeTags,
+            searchQuery,
+            starredProjects,
+            currentUserId: user?.id,
+        })),
+        activeNav,
+        lastOpenedAt,
+    );
 
     // ─── Render ───────────────────────────────────────────────────────────
 
@@ -389,22 +414,7 @@ export function ProjectDashboard() {
                                                 <span className="font-bold text-lg">New 3D Model</span>
                                             </button>
 
-                                            {!loading && [
-                                                ...userProjects.map(p => ({ ...p, type: 'user' as const })),
-                                                ...EXAMPLES
-                                                    .filter(e => !userProjects.some(up => up.id === e.id))
-                                                    .map(e => ({ ...e, type: 'example' as const, ownerId: 'Example Project', tags: [] as string[], folder: '', lastModified: Date.parse(e.modified) }))
-                                            ]
-                                                .filter(p => matchesWorkspaceProjectFilters(p as any, {
-                                                    activeNav,
-                                                    activeTags,
-                                                    searchQuery,
-                                                    starredProjects,
-                                                    currentUserId: user?.id,
-                                                }))
-                                                .sort((a: any, b: any) => {
-                                                    return (b.lastModified || 0) - (a.lastModified || 0);
-                                                })
+                                            {!loading && workspaceProjects
                                                 .map((project: any) => (
                                                     <ProjectCard
                                                         key={`filtered-${project.id}`}

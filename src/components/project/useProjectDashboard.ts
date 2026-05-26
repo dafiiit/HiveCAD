@@ -18,6 +18,7 @@ import { clearStarredProjects, loadStarredProjects, saveStarredProjects, toggleS
 
 type DashboardMode = 'workspace' | 'discover';
 const FOLDERS_STORAGE_KEY = 'hivecad_folders';
+const LAST_OPENED_STORAGE_KEY = 'hivecad_last_opened';
 
 type WorkspaceProject = ProjectMeta & {
     type?: 'user' | 'example';
@@ -63,6 +64,22 @@ export const matchesWorkspaceProjectFilters = (
     return true;
 };
 
+export const sortWorkspaceProjects = (
+    projects: WorkspaceProject[],
+    activeNav: string,
+    lastOpenedAt: Record<string, number> = {},
+) => {
+    return [...projects].sort((a, b) => {
+        const aSort = activeNav === 'Last Opened'
+            ? (lastOpenedAt[a.id] ?? a.lastModified ?? 0)
+            : (a.lastModified ?? 0);
+        const bSort = activeNav === 'Last Opened'
+            ? (lastOpenedAt[b.id] ?? b.lastModified ?? 0)
+            : (b.lastModified ?? 0);
+        return bSort - aSort;
+    });
+};
+
 export function useProjectDashboard() {
     const { openProjectInNewTab } = useTabManager();
     const { user, logout, showPATDialog, setShowPATDialog, isStorageConnected } = useGlobalStore();
@@ -87,6 +104,10 @@ export function useProjectDashboard() {
     const [tags, setTags] = useState<TagEntry[]>([]);
     const [activeTags, setActiveTags] = useState<string[]>([]);
     const [starredProjects, setStarredProjects] = useState<string[]>(() => loadStarredProjects());
+    const [lastOpenedAt, setLastOpenedAt] = useState<Record<string, number>>(() => {
+        try { return JSON.parse(localStorage.getItem(LAST_OPENED_STORAGE_KEY) || '{}'); }
+        catch { return {}; }
+    });
 
     // ─── Dialog State ─────────────────────────────────────────────────────────
     const [contextMenuProject, setContextMenuProject] = useState<string | null>(null);
@@ -117,6 +138,21 @@ export function useProjectDashboard() {
     const autoOpenHandledRef = useRef(false);
     const searchQueryRef = useRef(searchQuery);
     const mgr = StorageManager.getInstance();
+
+    const markProjectOpened = useCallback((projectId: string) => {
+        setLastOpenedAt(prev => ({
+            ...prev,
+            [projectId]: Date.now(),
+        }));
+    }, []);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(LAST_OPENED_STORAGE_KEY, JSON.stringify(lastOpenedAt));
+        } catch (e) {
+            console.warn('[Dashboard] Failed to save last opened timestamps', e);
+        }
+    }, [lastOpenedAt]);
 
     // ─── Folder Persistence ───────────────────────────────────────────────────
 
@@ -248,6 +284,7 @@ export function useProjectDashboard() {
                 }
                 if (cancelled) return;
                 if (data) {
+                    markProjectOpened(data.meta.id);
                     openProjectInNewTab(data);
                     toast.success(`Opened shared project: ${data.meta.name}`);
                     await refreshProjects();
@@ -296,6 +333,7 @@ export function useProjectDashboard() {
             localStorage.setItem('hivecad_thumbnails', JSON.stringify(currentThumbnails));
         } catch (e) { console.warn('Failed to set default thumbnail', e); }
 
+        markProjectOpened(newProject.meta.id);
         openProjectInNewTab(newProject);
         toast.success(`Started new 3D model: ${name}`);
         refreshProjects();
@@ -310,6 +348,7 @@ export function useProjectDashboard() {
                 if (data) await mgr.quickStore.saveProject(data);
             }
             if (data) {
+                markProjectOpened(data.meta.id);
                 openProjectInNewTab(data);
                 toast.success(`Opened project: ${data.meta.name}`);
                 refreshProjects();
@@ -350,6 +389,7 @@ export function useProjectDashboard() {
 
             await mgr.quickStore.saveProject(forkedProject);
             mgr.syncEngine?.markDirty();
+            markProjectOpened(forkId);
             toast.success(`Forked "${meta.name}" to your workspace!`);
             setDashboardMode('workspace');
             refreshProjects();
@@ -387,6 +427,7 @@ export function useProjectDashboard() {
             namespaces: {},
         };
 
+        markProjectOpened(projectData.meta.id);
         openProjectInNewTab(projectData);
         toast.success(`Opened ${example.name}`);
     };
@@ -621,12 +662,14 @@ export function useProjectDashboard() {
             localStorage.removeItem('hivecad_thumbnails');
             localStorage.removeItem('hivecad_example_opens');
             localStorage.removeItem('hivecad_thumbnails_cache');
+            localStorage.removeItem(LAST_OPENED_STORAGE_KEY);
             clearStarredProjects();
             setStarredProjects([]);
             setFolders([]);
             setTags([]);
             setUserProjects([]);
             setExampleOpenedAt({});
+            setLastOpenedAt({});
             toast.success('Repository and local data reset successfully. Sync paused — reconnect GitHub to resume.');
             setShowResetConfirm(false);
         } catch (error) {
@@ -762,6 +805,7 @@ export function useProjectDashboard() {
         deleteInput, setDeleteInput,
         showHistoryDialog, setShowHistoryDialog,
         exampleOpenedAt,
+        lastOpenedAt,
         // Store values
         user, logout, showPATDialog, setShowPATDialog, projectThumbnails,
         // Handlers
