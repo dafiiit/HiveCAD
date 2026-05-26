@@ -143,7 +143,9 @@ export const VCSGraph: React.FC<VCSGraphProps> = ({
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     setExpandedId(isExpanded ? null : node.commit.id);
-                                    if (!isExpanded) onCheckout?.(node.commit.id);
+                                    if (!isExpanded && showCheckoutAction && onCheckout) {
+                                        onCheckout(node.commit.id);
+                                    }
                                 }}
                             >
                                 <div
