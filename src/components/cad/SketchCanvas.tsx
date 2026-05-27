@@ -292,15 +292,9 @@ const SketchCanvas = () => {
 
     const renderSolverEntity = (entity: any) => {
         const isSelected = selectedIds.has(entity.id);
-
-        // DEBUG: High contrast for testing
-        const baseColor = isSelected ? "#ff00ff" : "#ffffff";
-        const lineWidth = isSelected ? 10 : 2;
+        const baseColor = isSelected ? getEntityColor('selected') : getEntityColor('default');
+        const lineWidth = isSelected ? getEntityLineWidth('selected') : getEntityLineWidth('default');
         const opacity = isSelected ? 1.0 : 0.8;
-
-        if (isSelected) {
-            console.log(`Rendering selected entity ${entity.id} with color ${baseColor} and width ${lineWidth}`);
-        }
 
         if (entity.type === 'line') {
             const p1 = sketchEntities.get(entity.p1Id);
@@ -348,6 +342,8 @@ const SketchCanvas = () => {
         }
         // Points rendering
         if (entity.type === 'point') {
+            const pointColor = isSelected ? getEntityColor('selected') : '#aaddff';
+
             // ALWAYS render a hit target, even if not selected
             return (
                 <group key={entity.id} position={to3D(entity.x, entity.y)}>
@@ -355,7 +351,7 @@ const SketchCanvas = () => {
                     <mesh visible={true} onPointerDown={handlePointerDown as any} onPointerUp={handlePointerUp as any}>
                         <sphereGeometry args={[0.6 * pixelScale, 12, 12]} />
                         <meshBasicMaterial
-                            color={isSelected ? "#ff9900" : "#aaddff"}
+                            color={pointColor}
                             depthTest={false}
                         />
                     </mesh>
