@@ -64,6 +64,16 @@ export const ReferenceRepairDialog: React.FC<ReferenceRepairDialogProps> = ({
     const currentRef = references[currentIndex];
     const isLast = currentIndex >= references.length - 1;
 
+    const moveToNext = useCallback((nextRepairedCount: number) => {
+        if (isLast) {
+            onRepairComplete?.(nextRepairedCount);
+            onClose();
+        } else {
+            setCurrentIndex(prev => prev + 1);
+            setSelectedCandidate(null);
+        }
+    }, [isLast, onClose, onRepairComplete]);
+
     const handleSelectCandidate = useCallback((index: number) => {
         setSelectedCandidate(index);
 
@@ -86,9 +96,10 @@ export const ReferenceRepairDialog: React.FC<ReferenceRepairDialogProps> = ({
         const manager = getReferenceManager();
         manager.repairReference(currentRef.id, bestCandidate.index, 'accept_suggestion');
 
-        setRepairedCount(prev => prev + 1);
-        moveToNext();
-    }, [currentRef]);
+        const nextRepairedCount = repairedCount + 1;
+        setRepairedCount(nextRepairedCount);
+        moveToNext(nextRepairedCount);
+    }, [currentRef, moveToNext, repairedCount]);
 
     const handleManualSelect = useCallback(() => {
         if (!currentRef || selectedCandidate === null) return;
@@ -96,24 +107,15 @@ export const ReferenceRepairDialog: React.FC<ReferenceRepairDialogProps> = ({
         const manager = getReferenceManager();
         manager.repairReference(currentRef.id, selectedCandidate, 'user_select');
 
-        setRepairedCount(prev => prev + 1);
+        const nextRepairedCount = repairedCount + 1;
+        setRepairedCount(nextRepairedCount);
         setSelectedCandidate(null);
-        moveToNext();
-    }, [currentRef, selectedCandidate]);
+        moveToNext(nextRepairedCount);
+    }, [currentRef, moveToNext, repairedCount, selectedCandidate]);
 
     const handleSkip = useCallback(() => {
-        moveToNext();
-    }, []);
-
-    const moveToNext = () => {
-        if (isLast) {
-            onRepairComplete?.(repairedCount);
-            onClose();
-        } else {
-            setCurrentIndex(prev => prev + 1);
-            setSelectedCandidate(null);
-        }
-    };
+        moveToNext(repairedCount);
+    }, [moveToNext, repairedCount]);
 
     if (!currentRef) {
         return null;
