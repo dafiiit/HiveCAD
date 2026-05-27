@@ -26,6 +26,7 @@ const Timeline = ({ items: propItems }: TimelineProps) => {
     stepForward,
     goToHistoryIndex
   } = useCADStore();
+  const storeApi = useCADStoreApi();
 
   const [isPlaying, setIsPlaying] = useState(false);
 
@@ -79,7 +80,7 @@ const Timeline = ({ items: propItems }: TimelineProps) => {
 
       // Auto-step through history
       const playInterval = setInterval(() => {
-        const state = useCADStoreApi().getState();
+        const state = storeApi.getState();
         if (state.historyIndex >= state.history.length - 1) {
           setIsPlaying(false);
           clearInterval(playInterval);
