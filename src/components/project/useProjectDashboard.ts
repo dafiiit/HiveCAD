@@ -136,7 +136,6 @@ export function useProjectDashboard() {
     });
 
     const autoOpenHandledRef = useRef(false);
-    const searchQueryRef = useRef(searchQuery);
     const mgr = StorageManager.getInstance();
 
     const markProjectOpened = useCallback((projectId: string) => {
@@ -187,10 +186,6 @@ export function useProjectDashboard() {
 
     // ─── Refresh Projects ─────────────────────────────────────────────────────
 
-    useEffect(() => {
-        searchQueryRef.current = searchQuery;
-    }, [searchQuery]);
-
     const refreshWorkspaceProjects = useCallback(async () => {
         if (dashboardMode === 'workspace') {
             setLoading(true);
@@ -219,7 +214,9 @@ export function useProjectDashboard() {
             setLoading(true);
             try {
                 if (mgr.supabaseMeta) {
-                    const projects = await mgr.supabaseMeta.searchPublicProjects(searchQueryRef.current);
+                    // Discover mode does not expose a search box yet, so keep the
+                    // public feed stable instead of leaking the workspace query into it.
+                    const projects = await mgr.supabaseMeta.searchPublicProjects('');
                     setDiscoverProjects(projects);
                 }
             } catch (error) {
@@ -249,7 +246,7 @@ export function useProjectDashboard() {
         if (dashboardMode === 'discover') {
             void refreshDiscoverProjects();
         }
-    }, [dashboardMode, searchQuery, refreshDiscoverProjects]);
+    }, [dashboardMode, refreshDiscoverProjects]);
 
     useEffect(() => {
         saveStarredProjects(starredProjects);

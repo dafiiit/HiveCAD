@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mockListProjects = vi.fn();
 const mockGetUserTags = vi.fn();
 const mockGetUserFolders = vi.fn();
+const mockSearchPublicProjects = vi.fn();
 const mockOpenProjectInNewTab = vi.fn();
 const mockStorageManager = {
   quickStore: {
@@ -14,6 +15,7 @@ const mockStorageManager = {
   supabaseMeta: {
     getUserTags: mockGetUserTags,
     getUserFolders: mockGetUserFolders,
+    searchPublicProjects: mockSearchPublicProjects,
   },
   remoteStore: null,
   isRemoteConnected: false,
@@ -63,6 +65,7 @@ describe('useProjectDashboard', () => {
     mockListProjects.mockReset();
     mockGetUserTags.mockReset();
     mockGetUserFolders.mockReset();
+    mockSearchPublicProjects.mockReset();
     mockOpenProjectInNewTab.mockReset();
 
     mockListProjects.mockResolvedValue([
@@ -85,6 +88,7 @@ describe('useProjectDashboard', () => {
     ]);
     mockGetUserTags.mockResolvedValue([]);
     mockGetUserFolders.mockResolvedValue([]);
+    mockSearchPublicProjects.mockResolvedValue([]);
     localStorage.clear();
   });
 
@@ -108,5 +112,25 @@ describe('useProjectDashboard', () => {
 
     await waitFor(() => expect(result.current.searchQuery).toBe('cube'));
     expect(mockListProjects).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not leak the workspace search query into discover mode', async () => {
+    const { result } = renderHook(() => useProjectDashboard());
+
+    await waitFor(() => expect(mockListProjects).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.setDashboardMode('discover');
+    });
+
+    await waitFor(() => expect(mockSearchPublicProjects).toHaveBeenCalledWith(''));
+    expect(mockSearchPublicProjects).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.setSearchQuery('cube');
+    });
+
+    await waitFor(() => expect(result.current.searchQuery).toBe('cube'));
+    expect(mockSearchPublicProjects).toHaveBeenCalledTimes(1);
   });
 });
