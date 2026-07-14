@@ -8,14 +8,19 @@ const mockGetUserTags = vi.fn();
 const mockGetUserFolders = vi.fn();
 const mockSearchPublicProjects = vi.fn();
 const mockOpenProjectInNewTab = vi.fn();
+const mockDeleteProject = vi.fn();
+const mockDeleteProjectMeta = vi.fn();
+const mockRemoveThumbnail = vi.fn();
 const mockStorageManager = {
   quickStore: {
     listProjects: mockListProjects,
+    deleteProject: mockDeleteProject,
   },
   supabaseMeta: {
     getUserTags: mockGetUserTags,
     getUserFolders: mockGetUserFolders,
     searchPublicProjects: mockSearchPublicProjects,
+    deleteProjectMeta: mockDeleteProjectMeta,
   },
   remoteStore: null,
   isRemoteConnected: false,
@@ -48,7 +53,7 @@ vi.mock('@/hooks/useCADStore', () => ({
     projectThumbnails: {},
     reset: vi.fn(),
     closeProject: vi.fn(),
-    removeThumbnail: vi.fn(),
+    removeThumbnail: mockRemoveThumbnail,
   })),
 }));
 
@@ -67,6 +72,9 @@ describe('useProjectDashboard', () => {
     mockGetUserFolders.mockReset();
     mockSearchPublicProjects.mockReset();
     mockOpenProjectInNewTab.mockReset();
+    mockDeleteProject.mockReset();
+    mockDeleteProjectMeta.mockReset();
+    mockRemoveThumbnail.mockReset();
 
     mockListProjects.mockResolvedValue([
       {
@@ -89,7 +97,7 @@ describe('useProjectDashboard', () => {
     mockGetUserTags.mockResolvedValue([]);
     mockGetUserFolders.mockResolvedValue([]);
     mockSearchPublicProjects.mockResolvedValue([]);
-    localStorage.clear();
+    window.localStorage.clear();
   });
 
   it('still loads local workspace projects when remote storage is not connected', async () => {
@@ -132,5 +140,23 @@ describe('useProjectDashboard', () => {
 
     await waitFor(() => expect(result.current.searchQuery).toBe('cube'));
     expect(mockSearchPublicProjects).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes project thumbnails by stable id when deleting a project', async () => {
+    const { result } = renderHook(() => useProjectDashboard());
+
+    await waitFor(() => expect(mockListProjects).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.handleDeleteProject('local-1');
+    });
+
+    await act(async () => {
+      await result.current.handleConfirmDelete();
+    });
+
+    expect(mockDeleteProject).toHaveBeenCalledWith('local-1');
+    expect(mockDeleteProjectMeta).toHaveBeenCalledWith('local-1');
+    expect(mockRemoveThumbnail).toHaveBeenCalledWith('local-1', 'Local Cube');
   });
 });

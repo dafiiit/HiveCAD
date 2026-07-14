@@ -202,6 +202,72 @@ export class CodeManager {
         return output.code;
     }
 
+    /**
+     * Transform for incremental (memoized) execution in the worker.
+     *
+     * Each top-level feature declaration inside `main()` is rewritten from an
+     * eager expression into a lazy, memoized one:
+     *
+     *     const shape1 = makeBaseBox(...);
+     *   → const shape1 = await __memo("shape1", async () => (makeBaseBox(...)));
+     *
+     * The thunk is the whole point: `__memo` can return a cached shape from the
+     * worker's persistent store *without ever evaluating the constructor*, so a
+     * clean feature costs nothing. `transformForExecution`'s eager `__record`
+     * cannot do this — its argument has already been computed by the time the
+     * wrapper runs.
+     *
+     * Only statements that are direct children of the `main` body are wrapped:
+     * `await` is illegal at module scope, and module-level helpers are not
+     * features. `main` is forced async so the injected `await`s are valid.
+     */
+    transformForIncremental(): string {
+        if (!this.ast) return this.code;
+
+        const astForExec = parse(this.code, { sourceType: 'module', plugins: ['jsx', 'typescript'] });
+
+        const memoizeBody = (body: any[]) => {
+            for (const stmt of body) {
+                if (!t.isVariableDeclaration(stmt)) continue;
+                for (const decl of stmt.declarations) {
+                    if (t.isIdentifier(decl.id) && decl.init) {
+                        const thunk = t.arrowFunctionExpression([], decl.init, true /* async */);
+                        decl.init = t.awaitExpression(
+                            t.callExpression(t.identifier('__memo'), [
+                                t.stringLiteral(decl.id.name),
+                                thunk,
+                            ])
+                        );
+                    }
+                }
+            }
+        };
+
+        traverse(astForExec, {
+            FunctionDeclaration: (path: any) => {
+                if (path.node.id?.name === 'main' && t.isBlockStatement(path.node.body)) {
+                    path.node.async = true;
+                    memoizeBody(path.node.body.body);
+                    path.stop();
+                }
+            },
+            VariableDeclarator: (path: any) => {
+                if (
+                    t.isIdentifier(path.node.id) && path.node.id.name === 'main' &&
+                    (t.isArrowFunctionExpression(path.node.init) || t.isFunctionExpression(path.node.init)) &&
+                    t.isBlockStatement(path.node.init.body)
+                ) {
+                    path.node.init.async = true;
+                    memoizeBody(path.node.init.body.body);
+                    path.stop();
+                }
+            },
+        });
+
+        const output = generate(astForExec);
+        return output.code;
+    }
+
     private injectIntoBody(body: any[], decl: any, varName: string) {
         // Find the return statement in the body
         const returnIdx = body.findIndex(n => t.isReturnStatement(n));
@@ -289,6 +355,151 @@ export class CodeManager {
 
         this.regenerate();
         return newVarName;
+    }
+
+    /**
+     * Combine several existing features into one via a boolean-style operation.
+     *
+     * Generates a NEW result feature that references the operands by name, e.g.
+     *
+     *     const shape3 = shape1.fuse(shape2);
+     *
+     * and removes the operands from the return array — but KEEPS their
+     * declarations, since the result references them. (The previous approach
+     * appended `.fuse(secondary)` to the primary and then deleted the secondary's
+     * declaration, leaving a dangling reference → "secondary is not defined".)
+     *
+     * The operands stay in the code as consumed sub-features; they no longer
+     * render because the worker drives the render set off the return array.
+     *
+     * @param op            method name on the primary (e.g. 'fuse', 'cut', 'intersect')
+     * @param primaryId     the base operand
+     * @param secondaryIds  operands applied in order
+     * @param options.keepTools  when true, the operands stay in the return array
+     *                           (rendered as individual bodies alongside the result);
+     *                           when false (default) they are consumed.
+     * @returns the new result feature's variable name
+     */
+    combineFeatures(
+        op: string,
+        primaryId: string,
+        secondaryIds: string[],
+        options: { keepTools?: boolean } = {},
+    ): string | undefined {
+        if (!this.ast) return;
+
+        // A selection id may be a sub-entity like "shape2:face-0"; the boolean
+        // operates on the owning solid, so strip the suffix. Then dedupe and drop
+        // any operand equal to the primary.
+        const base = (id: string) => id.split(':')[0];
+        primaryId = base(primaryId);
+        secondaryIds = [...new Set(secondaryIds.map(base))].filter(id => id !== primaryId);
+        if (secondaryIds.length === 0) return;
+
+        // Build: primary.op(sec1).op(sec2)...
+        let init: t.Expression = t.identifier(primaryId);
+        for (const secId of secondaryIds) {
+            init = t.callExpression(
+                t.memberExpression(init, t.identifier(op)),
+                [t.identifier(secId)],
+            );
+        }
+
+        // Operands are consumed (removed from the return array) unless the caller
+        // asked to keep them as individual bodies.
+        const consumed = options.keepTools ? [] : [primaryId, ...secondaryIds];
+        return this.insertResultFeature(init, consumed);
+    }
+
+    /**
+     * Apply an edge/face feature operation (fillet, chamfer, shell) to a base
+     * body, referencing the sub-entities by their stable MappedNames. Generates:
+     *
+     *     const shape3 = __fillet(shape1, ["E[shape1#F0~shape1#F1]"], 2);
+     *
+     * The base body is consumed (replaced by the result); the worker resolves the
+     * names to the current edges/faces at execution time, so the operation keeps
+     * targeting the right entities after upstream edits.
+     *
+     * @param fnName    worker global to call ('__fillet' | '__chamfer' | '__shell')
+     * @param baseId    the body being modified
+     * @param refNames  stable names of the selected edges/faces
+     * @param value     radius / distance / thickness
+     * @returns the new result feature's variable name
+     */
+    applyReferenceOp(
+        fnName: string,
+        baseId: string,
+        refNames: string[],
+        value: number,
+    ): string | undefined {
+        if (!this.ast) return;
+        baseId = baseId.split(':')[0];
+        const names = [...new Set(refNames)].filter(Boolean);
+        if (names.length === 0) return;
+
+        const init = t.callExpression(t.identifier(fnName), [
+            t.identifier(baseId),
+            t.arrayExpression(names.map(n => t.stringLiteral(n))),
+            t.numericLiteral(value),
+        ]);
+
+        return this.insertResultFeature(init, [baseId]);
+    }
+
+    /**
+     * Inject `const shapeN = <init>` into main(), add it to the returned array,
+     * and remove the `consumed` operands from the return array (keeping their
+     * declarations, since the result references them). Shared by combineFeatures
+     * and applyReferenceOp. Returns the new feature name, or undefined if main()
+     * could not be found.
+     */
+    private insertResultFeature(init: t.Expression, consumed: string[]): string | undefined {
+        if (!this.ast) return;
+
+        const resultName = this.allocateName('shape');
+        const decl = t.variableDeclaration('const', [
+            t.variableDeclarator(t.identifier(resultName), init),
+        ]);
+        const consumedSet = new Set(consumed);
+
+        const patchBody = (body: any[]) => {
+            this.injectIntoBody(body, decl, resultName);
+            body.forEach((node: any) => {
+                if (!t.isReturnStatement(node) || !node.argument) return;
+                if (t.isArrayExpression(node.argument)) {
+                    node.argument.elements = node.argument.elements.filter(
+                        (el: any) => !(t.isIdentifier(el) && consumedSet.has(el.name)),
+                    );
+                }
+            });
+        };
+
+        let patched = false;
+        traverse(this.ast, {
+            FunctionDeclaration: (path: any) => {
+                if (path.node.id?.name === 'main' && t.isBlockStatement(path.node.body)) {
+                    patchBody(path.node.body.body);
+                    patched = true;
+                    path.stop();
+                }
+            },
+            VariableDeclarator: (path: any) => {
+                if (
+                    t.isIdentifier(path.node.id) && path.node.id.name === 'main' &&
+                    (t.isArrowFunctionExpression(path.node.init) || t.isFunctionExpression(path.node.init)) &&
+                    t.isBlockStatement(path.node.init.body)
+                ) {
+                    patchBody(path.node.init.body.body);
+                    patched = true;
+                    path.stop();
+                }
+            },
+        });
+
+        if (!patched) return;
+        this.regenerate();
+        return resultName;
     }
 
     addOperation(featureId: string, type: string, params: any[]) {

@@ -72,8 +72,8 @@ export interface FeatureCache {
     vertexData: Float32Array | null;
 
     /** Face and edge mappings */
-    faceMapping?: Array<{ start: number; count: number; faceId: number }>;
-    edgeMapping?: Array<{ start: number; count: number; edgeId: number }>;
+    faceMapping?: Array<{ start: number; count: number; faceId: number; name?: string }>;
+    edgeMapping?: Array<{ start: number; count: number; edgeId: number; name?: string }>;
 
     /** Hash of inputs when this cache was created */
     inputHash: string;
@@ -553,10 +553,13 @@ export function mergeExecutionResults(
         fromCache: boolean;
     }> = [];
 
+    const consumed = new Set<string>();
+
     for (const id of executionOrder) {
         const newResult = newResultsMap.get(id);
         if (newResult) {
             result.push({ ...newResult, fromCache: false });
+            consumed.add(id);
         } else {
             const cachedResult = cached.get(id);
             if (cachedResult) {
@@ -570,6 +573,16 @@ export function mergeExecutionResults(
                     fromCache: true,
                 });
             }
+        }
+    }
+
+    // Shapes that main() returned but which are not tracked features — e.g. a bare
+    // `return a.fuse(b)` with no binding, meshed under a fallback id like "gen-0".
+    // They were just computed, so render them; they simply don't participate in
+    // feature-level caching.
+    for (const newResult of newResults) {
+        if (!consumed.has(newResult.id)) {
+            result.push({ ...newResult, fromCache: false });
         }
     }
 

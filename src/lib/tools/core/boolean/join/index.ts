@@ -1,4 +1,5 @@
 import type { Tool, ToolContext } from '../../../types';
+import { resolveBooleanOperands } from '../operands';
 
 export const joinTool: Tool = {
     metadata: {
@@ -9,26 +10,16 @@ export const joinTool: Tool = {
         description: 'Fuse multiple solids into one',
         shortcut: 'Ctrl+J'
     },
-    uiProperties: [],
-    selectionRequirements: {
-        min: 2,
-        allowedTypes: ['solid']
-    },
+    uiProperties: [
+        { key: 'target', label: 'Body 1', type: 'selection', default: null, allowedTypes: ['solid'] },
+        { key: 'tool', label: 'Body 2', type: 'selection', default: null, allowedTypes: ['solid'] },
+        { key: 'keepTools', label: 'Keep original bodies', type: 'boolean', default: false },
+    ],
     execute(context: ToolContext): void {
-        const { codeManager } = context;
-        const selectedIds = context.scene.selectedIds;
-        if (selectedIds.length < 2) return;
-
-        const primaryId = selectedIds[0];
-        const secondaryIds = selectedIds.slice(1);
-
-        secondaryIds.forEach(id => {
-            codeManager.addOperation(primaryId, 'fuse', [{ type: 'raw', content: id }]);
-        });
-
-        // Remove secondary objects from being returned
-        secondaryIds.forEach(id => {
-            codeManager.removeFeature(id);
+        const operands = resolveBooleanOperands(context);
+        if (!operands) return;
+        context.codeManager.combineFeatures('fuse', operands.primary, operands.secondaries, {
+            keepTools: operands.keepTools,
         });
     }
 };

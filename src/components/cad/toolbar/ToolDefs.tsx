@@ -23,7 +23,6 @@ import { CSS } from '@dnd-kit/utilities';
  */
 const NOT_IMPLEMENTED_TOOLS = [
     'move', 'rotate', 'scale',
-    'join', 'cut', 'intersect',
     'pattern',
     'plane', 'axis', 'point',
     'measure', 'analyze',

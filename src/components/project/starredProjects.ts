@@ -1,3 +1,5 @@
+import { readStorageItem, removeStorageItem, writeStorageItem } from '@/lib/storage/browserStorage';
+
 const STARRED_PROJECTS_STORAGE_KEY = 'hivecad_starred_projects';
 
 const normalizeStarredProjects = (value: unknown): string[] => {
@@ -10,7 +12,7 @@ const normalizeStarredProjects = (value: unknown): string[] => {
 
 export const loadStarredProjects = (): string[] => {
     try {
-        const raw = localStorage.getItem(STARRED_PROJECTS_STORAGE_KEY);
+        const raw = readStorageItem(STARRED_PROJECTS_STORAGE_KEY);
         if (!raw) {
             return [];
         }
@@ -24,7 +26,7 @@ export const loadStarredProjects = (): string[] => {
 
 export const saveStarredProjects = (projectIds: string[]) => {
     try {
-        localStorage.setItem(STARRED_PROJECTS_STORAGE_KEY, JSON.stringify(normalizeStarredProjects(projectIds)));
+        writeStorageItem(STARRED_PROJECTS_STORAGE_KEY, JSON.stringify(normalizeStarredProjects(projectIds)));
     } catch (error) {
         console.warn('[StarredProjects] Failed to save starred projects', error);
     }
@@ -40,7 +42,7 @@ export const toggleStarredProject = (projectIds: string[], projectId: string) =>
 
 export const clearStarredProjects = () => {
     try {
-        localStorage.removeItem(STARRED_PROJECTS_STORAGE_KEY);
+        removeStorageItem(STARRED_PROJECTS_STORAGE_KEY);
     } catch (error) {
         console.warn('[StarredProjects] Failed to clear starred projects', error);
     }

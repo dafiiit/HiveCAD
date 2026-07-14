@@ -15,6 +15,7 @@ import { ImportWarningModal } from "./ImportWarningModal";
 import { MeshingProgress } from "./MeshingProgress";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { useTabManager } from "@/components/layout/TabContext";
+import { getDashboardTabId } from "@/components/layout/tabNavigation";
 
 
 const CADLayout = () => {
@@ -88,14 +89,14 @@ const CADLayout = () => {
         } else if (isSketchMode) {
           finishSketch();
           toast("Sketch finished");
-        } else {
-          // In 3D view with no active tool — go back to workspace
-          const dashboardTab = tabs.find(t => t.type === 'dashboard');
-          if (dashboardTab) {
-            switchToTab(dashboardTab.id);
           } else {
-            closeTab(activeTabId);
-          }
+            // In 3D view with no active tool — go back to workspace
+            const dashboardTabId = getDashboardTabId(tabs);
+            if (dashboardTabId) {
+              switchToTab(dashboardTabId);
+            } else {
+              closeTab(activeTabId);
+            }
         }
       }
     };

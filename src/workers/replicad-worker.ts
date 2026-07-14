@@ -1,6 +1,14 @@
 
-import opencascade from 'replicad-opencascadejs/src/replicad_single.js';
+// The exceptions-enabled OCCT build. The smaller `replicad_single` build has
+// exceptions disabled, so a failure OCCT raises internally — an unresolvable
+// fillet, a degenerate boolean — traps and poisons the WASM instance instead of
+// throwing a catchable error. That makes fillet/chamfer/shell unshippable.
+import opencascade from 'replicad-opencascadejs/src/replicad_with_exceptions.js';
+import wasmUrl from 'replicad-opencascadejs/src/replicad_with_exceptions.wasm?url';
 import * as replicad from 'replicad';
+import { installOps } from './ops/install';
+import { getElementMap, setElementMap, elementMapOf, buildEdgeMap, type ElementMap, type EdgeGeom } from './ops/elementMap';
+import { filletNamed, chamferNamed, shellNamed, edgeGeomOf } from './ops/features';
 
 declare const __record: any;
 let initialized = false;
@@ -9,9 +17,11 @@ let initialized = false;
 const initPromise = (async () => {
     try {
         const OC = await opencascade({
-            locateFile: () => '/replicad_single.wasm'
+            locateFile: () => wasmUrl
         });
         replicad.setOC(OC);
+        // Route booleans through our history-capturing ops layer (Stage 2).
+        installOps();
         initialized = true;
         console.log("Worker: CAD Kernel Initialized");
     } catch (e) {
@@ -39,6 +49,12 @@ async function generateMesh(shapesArray: any[]) {
         const shape = item.shape || item;
         const astId = (shape as any)._astId || `gen-${shapeIndex}`;
 
+        // Stable face names for this shape (attached composed map for a derived
+        // shape, or a fresh root map for a primitive). Shared by face + edge naming.
+        const elemMap = (shape && shape.faces) ? elementMapOf(shape, astId) : new Map<number, string>();
+        // edgeHash → stable combo name, filled during seam analysis below.
+        const edgeNameMap = new Map<number, string>();
+
         let meshData = null;
         let edgeData = null;
         let faceMapping: any[] = [];
@@ -61,6 +77,8 @@ async function generateMesh(shapesArray: any[]) {
                 const faces = Array.from(shape.faces);
                 const totalFaces = faces.length;
 
+                // `faceId` is the volatile OCCT index; `name` is what survives
+                // regeneration (elemMap was computed once at the top of the loop).
                 for (let i = 0; i < totalFaces; i++) {
                     const face: any = faces[i];
                     const faceMesh = face.mesh({ tolerance: 0.1, angularTolerance: 30.0 });
@@ -73,11 +91,13 @@ async function generateMesh(shapesArray: any[]) {
                         const faceIndices = Array.from(faceMesh.triangles).map((idx: any) => (idx as number) + vertexOffset);
                         indices.push(...faceIndices);
 
-                        // Record mapping: start index in the INDICES array, count, and face ID (index)
+                        // Record mapping: index in the INDICES array, count, volatile
+                        // face index, and the stable MappedName for durable selection.
                         faceMapping.push({
                             start: indexOffset,
                             count: faceIndices.length,
-                            faceId: i
+                            faceId: i,
+                            name: elemMap.get(face.hashCode),
                         });
 
                         vertexOffset += faceMesh.vertices.length / 3;
@@ -162,6 +182,23 @@ async function generateMesh(shapesArray: any[]) {
                     } catch (_) { /* some face types may not expose edges */ }
                 }
 
+                // Derive stable edge names from the adjacent faces' names (combo
+                // names), disambiguating any face-pair collisions by geometry.
+                const edgeAdjacency = new Map<number, number[]>();
+                for (const [edgeHash, adjFaces] of edgeFaceMap) {
+                    edgeAdjacency.set(edgeHash, adjFaces.map((f: any) => f.hashCode));
+                }
+                const edgeGeom = new Map<number, EdgeGeom>();
+                for (const edge of edges) {
+                    try {
+                        const h = edge.hashCode;
+                        if (!edgeGeom.has(h)) edgeGeom.set(h, edgeGeomOf(edge));
+                    } catch { /* skip */ }
+                }
+                for (const [edgeHash, name] of buildEdgeMap(edgeAdjacency, elemMap, edgeGeom)) {
+                    edgeNameMap.set(edgeHash, name);
+                }
+
                 for (const edge of edges) {
                     try {
                         const h = edge.hashCode;
@@ -223,6 +260,8 @@ async function generateMesh(shapesArray: any[]) {
                             start: segStart,
                             count: group.count,
                             edgeId: newEdgeId++,
+                            // Stable combo name for durable edge selection (fillet/chamfer).
+                            name: edgeNameMap.get(group.edgeId),
                         });
                     }
 
@@ -306,6 +345,12 @@ async function generateMesh(shapesArray: any[]) {
             }
         } catch (err) {
             console.error(`Worker: Failed to extract vertices ${shapeIndex}`, err);
+        }
+
+        const namedFaces = faceMapping.filter(f => f.name).length;
+        if (namedFaces > 0) {
+            const sample = faceMapping.slice(0, 4).map(f => f.name).filter(Boolean).join(', ');
+            console.log(`Worker: named ${namedFaces}/${faceMapping.length} faces for ${astId} (e.g. ${sample})`);
         }
 
         meshes.push({
@@ -439,152 +484,210 @@ async function processSTEP(combined: Uint8Array, total: number) {
     self.postMessage({ type: 'IMPORT_SUCCESS', meshes });
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Persistent shape store (Stage 1: incremental regeneration)
+//
+// This worker is the single, long-lived CAD kernel. Between RECOMPUTE calls it
+// keeps the computed shape of every feature, keyed by feature id, so a feature
+// whose inputs did not change is never rebuilt. The store holds one *clone* per
+// feature; the live copy flows through the user's script and is consumed there.
+// ────────────────────────────────────────────────────────────────────────────
+const shapeStore = new Map<string, any>();
+/**
+ * Composed ElementMap per feature, kept in parallel to shapeStore. A cached
+ * shape is returned as a `.clone()`, and a clone does not carry the WeakMap
+ * element-map entry — so we persist maps by feature id here and re-attach them.
+ */
+const elementMapStore = new Map<string, ElementMap>();
+/** The document these shapes belong to. Switching documents clears the store. */
+let storeSession: string | null = null;
+
+/** Free an OCCT-backed shape if it exposes a destructor. */
+const disposeShape = (shape: any) => {
+    try { shape?.delete?.(); } catch { /* already gone */ }
+};
+
+const isShapeLike = (v: any): boolean =>
+    !!v && typeof v === 'object' && typeof v.clone === 'function';
+
+/**
+ * Turn whatever OCCT/replicad threw into a message. OpenCascade's WASM
+ * exceptions are frequently a raw pointer (number) or a bare object with no
+ * `.message`, which would otherwise surface to the user as "Unknown kernel
+ * error". Richer OCCT diagnostics need the OC instance and will come with the
+ * Stage 2 ops layer; this at least never yields an empty string.
+ */
+const describeError = (error: any): string => {
+    if (error == null) return 'Unknown kernel error';
+    if (typeof error === 'string') return error;
+    if (typeof error === 'number') return `OCCT exception (code ${error})`;
+    if (typeof error.message === 'string' && error.message) return error.message;
+    try {
+        const s = String(error);
+        return s && s !== '[object Object]' ? s : 'Kernel operation failed (no detail available)';
+    } catch {
+        return 'Unknown kernel error';
+    }
+};
+
+/** Tag a value with its feature id (used for mesh↔object mapping). */
+const tagShape = (id: string, shape: any) => {
+    if (shape && typeof shape === 'object') {
+        try { (shape as any)._astId = id; } catch { /* frozen — ignore */ }
+    }
+    return shape;
+};
+
+/** Drop every stored shape (on document switch or explicit reset). */
+const clearShapeStore = () => {
+    for (const shape of shapeStore.values()) disposeShape(shape);
+    shapeStore.clear();
+    elementMapStore.clear();
+};
+
+// Helper to access a face from a solid by its display index
+function getFace(solid: any, faceIndex: number): any {
+    if (!solid) {
+        throw new Error(`Cannot get face: solid is null or undefined`);
+    }
+
+    // Clone the solid to ensure we have a valid reference
+    const workingSolid = solid.clone ? solid.clone() : solid;
+
+    if (!workingSolid.faces) {
+        console.error("Solid object:", workingSolid);
+        throw new Error(`Cannot get face: object does not have faces property`);
+    }
+
+    const faces = Array.from(workingSolid.faces);
+    if (faceIndex < 0 || faceIndex >= faces.length) {
+        throw new Error(`Face index ${faceIndex} out of range (0-${faces.length - 1})`);
+    }
+    return faces[faceIndex];
+}
+
+// Helper to extrude a face from a solid
+// Creates a Sketch from the face's outer wire and extrudes it along the face normal
+// Based on the approach from replicad manual section 5.2.3
+function extrudeFace(solid: any, faceIndex: number, distance: number, options?: any): any {
+    const face = getFace(solid, faceIndex);
+
+    // Clone the face to prevent "object has been deleted" errors
+    // OpenCascade may garbage collect the face reference
+    const faceClone = face.clone ? face.clone() : face;
+
+    // Get the face's properties for creating a sketch
+    const outerWire = faceClone.outerWire ? faceClone.outerWire() : null;
+    const faceNormal = faceClone.normalAt ? faceClone.normalAt() : null;
+    const faceCenter = faceClone.center;
+
+    if (!outerWire) {
+        throw new Error(`Cannot extract outer wire from face ${faceIndex}`);
+    }
+
+    if (!faceNormal) {
+        throw new Error(`Cannot get normal for face ${faceIndex}`);
+    }
+
+    // Create a Sketch from the face's outer wire
+    const Sketch = (replicad as any).Sketch;
+
+    let faceSketch;
+    if (Sketch) {
+        try {
+            faceSketch = new Sketch(outerWire.clone(), {
+                defaultDirection: faceNormal,
+                defaultOrigin: faceCenter
+            });
+        } catch (e) {
+            console.error("Failed to create Sketch from wire:", e);
+        }
+    }
+
+    // Determine extrusion direction (along face normal)
+    const extrusionDir = options?.extrusionDirection || [
+        faceNormal.x * Math.sign(distance),
+        faceNormal.y * Math.sign(distance),
+        faceNormal.z * Math.sign(distance)
+    ];
+
+    let extrudedShape = null;
+
+    // Method 1: Extrude the sketch we created
+    if (faceSketch && faceSketch.extrude) {
+        try {
+            extrudedShape = faceSketch.extrude(Math.abs(distance), {
+                extrusionDirection: extrusionDir
+            });
+        } catch (e) {
+            console.error("Sketch extrusion failed:", e);
+        }
+    }
+
+    // Method 2: Try face.extrude directly if available
+    if (!extrudedShape && face.extrude) {
+        try {
+            extrudedShape = face.extrude(distance, {
+                extrusionDirection: extrusionDir
+            });
+        } catch (e) {
+            console.error("Face.extrude failed:", e);
+        }
+    }
+
+    // Method 3: Try basicFaceExtrusion
+    if (!extrudedShape && face.basicFaceExtrusion) {
+        try {
+            extrudedShape = face.basicFaceExtrusion(distance);
+        } catch (e) {
+            console.error("basicFaceExtrusion failed:", e);
+        }
+    }
+
+    if (!extrudedShape) {
+        throw new Error(`Face extrusion failed for face ${faceIndex}. None of the available methods worked.`);
+    }
+
+    // If options specify fusing with original solid
+    if (options?.fuseWithOriginal !== false && solid.fuse) {
+        try {
+            return solid.fuse(extrudedShape);
+        } catch (e) {
+            console.error("Fuse failed, returning standalone extrusion:", e);
+            return extrudedShape;
+        }
+    }
+
+    return extrudedShape;
+}
+
 self.onmessage = async (e) => {
-    await initPromise;
+    try {
+        await initPromise;
+    } catch (error: any) {
+        // Without this the rejection is unhandled, no message is ever posted,
+        // and the caller waits for its timeout.
+        self.postMessage({
+            type: 'ERROR',
+            error: `CAD kernel failed to initialize: ${error?.message ?? error}`,
+        });
+        return;
+    }
 
     const { type, code, params } = e.data;
 
     if (type === 'EXECUTE') {
         try {
-            // Define instrumentation for ID tracking
-            const __record = (uuid: string, shape: any) => {
-                if (shape && typeof shape === 'object') {
-                    try {
-                        (shape as any)._astId = uuid;
-                    } catch (e) {
-                        // ignore
-                    }
-                }
-                return shape;
-            };
-
-            // Helper to access a face from a solid by its display index
-            const getFace = (solid: any, faceIndex: number): any => {
-                if (!solid) {
-                    throw new Error(`Cannot get face: solid is null or undefined`);
-                }
-
-                // Clone the solid to ensure we have a valid reference
-                const workingSolid = solid.clone ? solid.clone() : solid;
-
-                if (!workingSolid.faces) {
-                    console.error("Solid object:", workingSolid);
-                    throw new Error(`Cannot get face: object does not have faces property`);
-                }
-
-                const faces = Array.from(workingSolid.faces);
-                if (faceIndex < 0 || faceIndex >= faces.length) {
-                    throw new Error(`Face index ${faceIndex} out of range (0-${faces.length - 1})`);
-                }
-                return faces[faceIndex];
-            };
-
-            // Helper to extrude a face from a solid
-            // Creates a Sketch from the face's outer wire and extrudes it along the face normal
-            // Based on the approach from replicad manual section 5.2.3
-            const extrudeFace = (solid: any, faceIndex: number, distance: number, options?: any): any => {
-                const face = getFace(solid, faceIndex);
-
-                // Clone the face to prevent "object has been deleted" errors
-                // OpenCascade may garbage collect the face reference
-                const faceClone = face.clone ? face.clone() : face;
-
-                // Get the face's properties for creating a sketch
-                const outerWire = faceClone.outerWire ? faceClone.outerWire() : null;
-                const faceNormal = faceClone.normalAt ? faceClone.normalAt() : null;
-                const faceCenter = faceClone.center;
-
-                if (!outerWire) {
-                    throw new Error(`Cannot extract outer wire from face ${faceIndex}`);
-                }
-
-                if (!faceNormal) {
-                    throw new Error(`Cannot get normal for face ${faceIndex}`);
-                }
-
-                // Create a Sketch from the face's outer wire
-                // Based on: new r.Sketch(triBase.clone().outerWire(), { 
-                //   defaultDirection: triBase.normalAt(triBase.center), 
-                //   defaultOrigin: triBase.center 
-                // })
-                const Sketch = (replicad as any).Sketch;
-
-                let faceSketch;
-                if (Sketch) {
-                    try {
-                        faceSketch = new Sketch(outerWire.clone(), {
-                            defaultDirection: faceNormal,
-                            defaultOrigin: faceCenter
-                        });
-                    } catch (e) {
-                        console.error("Failed to create Sketch from wire:", e);
-                    }
-                }
-
-                // Determine extrusion direction (along face normal)
-                const extrusionDir = options?.extrusionDirection || [
-                    faceNormal.x * Math.sign(distance),
-                    faceNormal.y * Math.sign(distance),
-                    faceNormal.z * Math.sign(distance)
-                ];
-
-                let extrudedShape = null;
-
-                // Method 1: Extrude the sketch we created
-                if (faceSketch && faceSketch.extrude) {
-                    try {
-                        extrudedShape = faceSketch.extrude(Math.abs(distance), {
-                            extrusionDirection: extrusionDir
-                        });
-                    } catch (e) {
-                        console.error("Sketch extrusion failed:", e);
-                    }
-                }
-
-                // Method 2: Try face.extrude directly if available
-                if (!extrudedShape && face.extrude) {
-                    try {
-                        extrudedShape = face.extrude(distance, {
-                            extrusionDirection: extrusionDir
-                        });
-                    } catch (e) {
-                        console.error("Face.extrude failed:", e);
-                    }
-                }
-
-                // Method 3: Try basicFaceExtrusion
-                if (!extrudedShape && face.basicFaceExtrusion) {
-                    try {
-                        extrudedShape = face.basicFaceExtrusion(distance);
-                    } catch (e) {
-                        console.error("basicFaceExtrusion failed:", e);
-                    }
-                }
-
-                if (!extrudedShape) {
-                    throw new Error(`Face extrusion failed for face ${faceIndex}. None of the available methods worked.`);
-                }
-
-                // If options specify fusing with original solid
-                if (options?.fuseWithOriginal !== false && solid.fuse) {
-                    try {
-                        return solid.fuse(extrudedShape);
-                    } catch (e) {
-                        console.error("Fuse failed, returning standalone extrusion:", e);
-                        return extrudedShape;
-                    }
-                }
-
-                return extrudedShape;
-            };
-
             const hasDefaultParams = /const\s+defaultParams\s*=/.test(code);
             const mainCall = hasDefaultParams
                 ? "\nreturn main(replicad, defaultParams);"
                 : "\nreturn main();";
 
-            const evaluator = new Function('replicad', '__record', 'getFace', 'extrudeFace', code + mainCall);
-            let result = evaluator(replicad, __record, getFace, extrudeFace);
+            const evaluator = new Function(
+                'replicad', '__record', 'getFace', 'extrudeFace', '__fillet', '__chamfer', '__shell',
+                code + mainCall,
+            );
+            let result = evaluator(replicad, tagShape, getFace, extrudeFace, filletNamed, chamferNamed, shellNamed);
 
             // Support async main
             if (result instanceof Promise) {
@@ -604,25 +707,115 @@ self.onmessage = async (e) => {
 
         } catch (error: any) {
             console.error("Worker: Execution Error", error);
-            self.postMessage({ type: 'ERROR', error: error.message });
+            self.postMessage({ type: 'ERROR', error: describeError(error) });
         }
-    } else if (type === 'EXPORT_STL' || type === 'EXPORT_STEP') {
+    } else if (type === 'RECOMPUTE') {
+        // Incremental execution. The code has been transformed so every feature
+        // declaration is `await __memo("id", async () => (expr))`. We only rebuild
+        // features whose id is in `dirtyIds` (or that we have no stored shape for),
+        // reuse the rest from the store, and mesh only what changed.
         try {
-            const __record = (uuid: string, shape: any) => {
-                if (shape && typeof shape === 'object') {
-                    try {
-                        (shape as any)._astId = uuid;
-                    } catch (e) {
-                        // ignore
-                    }
+            const { sessionId, dirtyIds } = e.data as {
+                sessionId?: string; dirtyIds?: string[];
+            };
+
+            // A different document owns the store now — start clean.
+            if (sessionId !== storeSession) {
+                clearShapeStore();
+                storeSession = sessionId ?? null;
+            }
+
+            const dirty = new Set<string>(dirtyIds ?? []);
+            const seen = new Set<string>();
+
+            const __memo = async (id: string, thunk: () => any) => {
+                seen.add(id);
+
+                // Clean *and* already built → hand back a private clone, untouched original stays cached.
+                if (!dirty.has(id) && shapeStore.has(id)) {
+                    const clone = tagShape(id, shapeStore.get(id).clone());
+                    // A clone doesn't carry the WeakMap element-map entry; re-attach it.
+                    const em = elementMapStore.get(id);
+                    if (em) setElementMap(clone, em);
+                    return clone;
                 }
-                return shape;
+
+                // Dirty, or never built in this session → (re)compute.
+                let value = thunk();
+                if (value instanceof Promise) value = await value;
+                tagShape(id, value);
+
+                if (isShapeLike(value)) {
+                    const previous = shapeStore.get(id);
+                    if (previous && previous !== value) disposeShape(previous);
+                    shapeStore.set(id, value.clone());
+                    // Persist the composed map (booleans attach one); primitives have
+                    // none here and get a root map on demand at mesh time.
+                    const em = getElementMap(value);
+                    if (em) elementMapStore.set(id, em);
+                }
+                return value;
             };
 
             const hasDefaultParams = /const\s+defaultParams\s*=/.test(code);
+            const mainCall = hasDefaultParams
+                ? "\nreturn main(replicad, defaultParams);"
+                : "\nreturn main();";
+
+            const evaluator = new Function(
+                'replicad', '__memo', 'getFace', 'extrudeFace', '__fillet', '__chamfer', '__shell',
+                code + mainCall,
+            );
+            let result = await evaluator(replicad, __memo, getFace, extrudeFace, filletNamed, chamferNamed, shellNamed);
+
+            let shapesArray: any[] = [];
+            if (Array.isArray(result)) {
+                shapesArray = result.flat(Infinity);
+            } else if (result) {
+                shapesArray = [result];
+            }
+
+            // Evict features that no longer exist in the script (deleted/renamed).
+            for (const id of Array.from(shapeStore.keys())) {
+                if (!seen.has(id)) {
+                    disposeShape(shapeStore.get(id));
+                    shapeStore.delete(id);
+                    elementMapStore.delete(id);
+                }
+            }
+
+            // Mesh only what changed. A returned shape with no id (e.g. an inline
+            // `return makeBaseBox(...)`) can't be cached, so always mesh it.
+            const toMesh = shapesArray.filter(
+                (s: any) => !s?._astId || dirty.has(s._astId)
+            );
+            const meshes = await generateMesh(toMesh);
+
+            // The exact set of shapes main() returned. The main thread renders
+            // precisely these — pulling clean ones from its mesh cache — so a
+            // feature that is still declared but no longer returned (e.g. an
+            // operand consumed by a boolean) correctly disappears.
+            const returnedIds = shapesArray
+                .map((s: any) => s?._astId)
+                .filter((id: any): id is string => typeof id === 'string');
+
+            self.postMessage({ type: 'SUCCESS', meshes, returnedIds });
+
+        } catch (error: any) {
+            console.error("Worker: Recompute Error", error);
+            self.postMessage({ type: 'ERROR', error: describeError(error) });
+        }
+    } else if (type === 'EXPORT_STL' || type === 'EXPORT_STEP') {
+        try {
+            const __record = tagShape;
+
+            const hasDefaultParams = /const\s+defaultParams\s*=/.test(code);
             const mainCall = hasDefaultParams ? "\nreturn main(replicad, defaultParams);" : "\nreturn main();";
-            const evaluator = new Function('replicad', '__record', code + mainCall);
-            let result = evaluator(replicad, __record);
+            const evaluator = new Function(
+                'replicad', '__record', 'getFace', 'extrudeFace', '__fillet', '__chamfer', '__shell',
+                code + mainCall,
+            );
+            let result = evaluator(replicad, __record, getFace, extrudeFace, filletNamed, chamferNamed, shellNamed);
             if (result instanceof Promise) result = await result;
 
             let shapesArray: any[] = [];
@@ -654,7 +847,7 @@ self.onmessage = async (e) => {
             self.postMessage({ type: 'EXPORT_SUCCESS', blob });
         } catch (error: any) {
             console.error(`Worker: Export Error (${type})`, error);
-            self.postMessage({ type: 'ERROR', error: error.message });
+            self.postMessage({ type: 'ERROR', error: describeError(error) });
         }
     } else if (type === 'IMPORT_STL' || type === 'IMPORT_STEP') {
         try {
@@ -666,7 +859,10 @@ self.onmessage = async (e) => {
             }
         } catch (error: any) {
             console.error(`Worker: Import Error (${type})`, error);
-            self.postMessage({ type: 'ERROR', error: error.message });
+            self.postMessage({ type: 'ERROR', error: describeError(error) });
         }
+    } else {
+        // Every task must terminate with a SUCCESS or an ERROR, or the caller hangs.
+        self.postMessage({ type: 'ERROR', error: `Unknown kernel task type: ${type}` });
     }
 };

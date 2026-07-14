@@ -14,6 +14,7 @@ import type { ProjectMeta, ProjectData, TagEntry, FolderEntry } from '@/lib/stor
 import { createBlank3DModel, uuid } from '@/lib/storage/projectUtils';
 import { StorageManager } from '@/lib/storage/StorageManager';
 import { EXAMPLES } from '@/lib/data/examples';
+import { readJsonStorage, readStorageItem, removeStorageItem, writeStorageItem } from '@/lib/storage/browserStorage';
 import { clearStarredProjects, loadStarredProjects, saveStarredProjects, toggleStarredProject } from './starredProjects';
 
 type DashboardMode = 'workspace' | 'discover';
@@ -104,10 +105,9 @@ export function useProjectDashboard() {
     const [tags, setTags] = useState<TagEntry[]>([]);
     const [activeTags, setActiveTags] = useState<string[]>([]);
     const [starredProjects, setStarredProjects] = useState<string[]>(() => loadStarredProjects());
-    const [lastOpenedAt, setLastOpenedAt] = useState<Record<string, number>>(() => {
-        try { return JSON.parse(localStorage.getItem(LAST_OPENED_STORAGE_KEY) || '{}'); }
-        catch { return {}; }
-    });
+    const [lastOpenedAt, setLastOpenedAt] = useState<Record<string, number>>(() =>
+        readJsonStorage<Record<string, number>>(LAST_OPENED_STORAGE_KEY, {})
+    );
 
     // ─── Dialog State ─────────────────────────────────────────────────────────
     const [contextMenuProject, setContextMenuProject] = useState<string | null>(null);
@@ -130,10 +130,9 @@ export function useProjectDashboard() {
     const [deleteInput, setDeleteInput] = useState('');
     const [showHistoryDialog, setShowHistoryDialog] = useState<string | null>(null);
 
-    const [exampleOpenedAt, setExampleOpenedAt] = useState<Record<string, number>>(() => {
-        try { return JSON.parse(localStorage.getItem('hivecad_example_opens') || '{}'); }
-        catch { return {}; }
-    });
+    const [exampleOpenedAt, setExampleOpenedAt] = useState<Record<string, number>>(() =>
+        readJsonStorage<Record<string, number>>('hivecad_example_opens', {})
+    );
 
     const autoOpenHandledRef = useRef(false);
     const mgr = StorageManager.getInstance();
@@ -147,7 +146,7 @@ export function useProjectDashboard() {
 
     useEffect(() => {
         try {
-            localStorage.setItem(LAST_OPENED_STORAGE_KEY, JSON.stringify(lastOpenedAt));
+            writeStorageItem(LAST_OPENED_STORAGE_KEY, JSON.stringify(lastOpenedAt));
         } catch (e) {
             console.warn('[Dashboard] Failed to save last opened timestamps', e);
         }
@@ -156,7 +155,7 @@ export function useProjectDashboard() {
     // ─── Folder Persistence ───────────────────────────────────────────────────
 
     const persistFolders = useCallback(async (newFolders: FolderEntry[]) => {
-        try { localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(newFolders)); }
+        try { writeStorageItem(FOLDERS_STORAGE_KEY, JSON.stringify(newFolders)); }
         catch (e) { console.warn('[Folders] Failed to save to localStorage', e); }
         const userId = user?.id;
         if (userId && mgr.supabaseMeta) {
@@ -172,13 +171,13 @@ export function useProjectDashboard() {
             try {
                 const remote = await mgr.supabaseMeta.getUserFolders(userId);
                 if (remote.length > 0) {
-                    localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(remote));
+                    writeStorageItem(FOLDERS_STORAGE_KEY, JSON.stringify(remote));
                     return remote;
                 }
             } catch (e) { console.warn('[Folders] Failed to load from Supabase', e); }
         }
         try {
-            const raw = localStorage.getItem(FOLDERS_STORAGE_KEY);
+            const raw = readStorageItem(FOLDERS_STORAGE_KEY);
             if (raw) return JSON.parse(raw);
         } catch (e) { console.warn('[Folders] Failed to load from localStorage', e); }
         return [];
@@ -324,10 +323,10 @@ export function useProjectDashboard() {
 
         const DEFAULT_THUMBNAIL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
         try {
-            const currentThumbnails = JSON.parse(localStorage.getItem('hivecad_thumbnails') || '{}');
+            const currentThumbnails = readJsonStorage<Record<string, string>>('hivecad_thumbnails', {});
             currentThumbnails[projectId] = DEFAULT_THUMBNAIL;
             currentThumbnails[name] = DEFAULT_THUMBNAIL;
-            localStorage.setItem('hivecad_thumbnails', JSON.stringify(currentThumbnails));
+            writeStorageItem('hivecad_thumbnails', JSON.stringify(currentThumbnails));
         } catch (e) { console.warn('Failed to set default thumbnail', e); }
 
         markProjectOpened(newProject.meta.id);
@@ -401,7 +400,7 @@ export function useProjectDashboard() {
     const handleOpenExample = (example: typeof EXAMPLES[0]) => {
         const newOpens = { ...exampleOpenedAt, [example.id]: Date.now() };
         setExampleOpenedAt(newOpens);
-        localStorage.setItem('hivecad_example_opens', JSON.stringify(newOpens));
+        writeStorageItem('hivecad_example_opens', JSON.stringify(newOpens));
 
         const projectData: ProjectData = {
             meta: {
@@ -452,7 +451,7 @@ export function useProjectDashboard() {
             }
             try { await mgr.supabaseMeta?.deleteProjectMeta(projectId); }
             catch (err) { console.warn(`[Dashboard] Failed to delete ${projectId} from Supabase:`, err); }
-            removeThumbnail(projectName);
+            removeThumbnail(projectId, projectName);
             setStarredProjects(prev => prev.filter(id => id !== projectId));
             toast.success(`Deleted "${projectName}"`);
             await refreshProjects();
@@ -656,10 +655,10 @@ export function useProjectDashboard() {
         try {
             await mgr.resetAll((msg) => setLoadingMessage(msg));
             closeProject();
-            localStorage.removeItem('hivecad_thumbnails');
-            localStorage.removeItem('hivecad_example_opens');
-            localStorage.removeItem('hivecad_thumbnails_cache');
-            localStorage.removeItem(LAST_OPENED_STORAGE_KEY);
+            removeStorageItem('hivecad_thumbnails');
+            removeStorageItem('hivecad_example_opens');
+            removeStorageItem('hivecad_thumbnails_cache');
+            removeStorageItem(LAST_OPENED_STORAGE_KEY);
             clearStarredProjects();
             setStarredProjects([]);
             setFolders([]);

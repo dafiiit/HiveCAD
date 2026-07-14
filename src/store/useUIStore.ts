@@ -20,6 +20,7 @@ const INITIAL_TOOLBARS: CustomToolbar[] = [
             { id: generateId(), label: 'CREATE', toolIds: ['sketch', `folder:${BODY_FOLDER_ID}`, 'extrusion', 'revolve'] },
             { id: generateId(), label: 'MODIFY', toolIds: ['move', 'rotate', 'scale', 'duplicate', 'delete'] },
             { id: generateId(), label: 'COMBINE', toolIds: ['join', 'cut', 'intersect'] },
+            { id: generateId(), label: 'MODIFY 3D', toolIds: ['fillet', 'chamfer', 'shell'] },
             { id: generateId(), label: 'CONFIGURE', toolIds: ['parameters', 'pattern'] },
             { id: generateId(), label: 'CONSTRUCT', toolIds: ['plane', 'axis', 'point'] },
             { id: generateId(), label: 'INSPECT', toolIds: ['measure', 'analyze'] }

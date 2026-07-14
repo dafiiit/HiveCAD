@@ -6,7 +6,7 @@
  */
 
 import { boxTool, cylinderTool, sphereTool, torusTool, coilTool } from './primitive';
-import { extrusionTool, revolveTool, pivotTool, translatePlaneTool } from './operation';
+import { extrusionTool, revolveTool, pivotTool, translatePlaneTool, filletTool, chamferTool, shellTool } from './operation';
 import { joinTool, cutTool, intersectTool } from './boolean';
 import { moveTool, rotateTool, scaleTool, duplicateTool, deleteTool, toggleConstructionTool, trimTool, offsetTool, mirrorTool, dimensionTool } from './modify';
 import { parametersTool, patternTool } from './configure';
@@ -49,7 +49,7 @@ export const allCoreTools = [
     // Primitives
     boxTool, cylinderTool, sphereTool, torusTool, coilTool,
     // Operations
-    extrusionTool, revolveTool, pivotTool, translatePlaneTool,
+    extrusionTool, revolveTool, pivotTool, translatePlaneTool, filletTool, chamferTool, shellTool,
     // Boolean
     joinTool, cutTool, intersectTool,
     // Modify

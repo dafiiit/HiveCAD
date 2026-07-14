@@ -7,7 +7,8 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
-    include: ["src/lib/**/*.test.ts"],
+    setupFiles: ["src/test/setup.ts"],
+    include: ["src/lib/**/*.test.ts", "src/workers/**/*.test.ts"],
     exclude: ["**/*.tsx", "src/test/**", "src/lib/topology/**/*.test.ts"],
   },
   resolve: {

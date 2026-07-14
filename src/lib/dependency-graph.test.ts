@@ -469,4 +469,34 @@ describe('mergeExecutionResults', () => {
         expect(merged[0].fromCache).toBe(false);
         expect(merged[0].meshData?.vertices[0]).toBe(2);
     });
+
+    it('surfaces freshly-meshed shapes that are not tracked features (bare return)', () => {
+        // A `return a.fuse(b)` with no binding meshes under a fallback id like
+        // "gen-0" that never appears in executionOrder. It must still render.
+        const cached = new Map();
+        const newResults = [
+            { id: 'gen-0', meshData: { vertices: new Float32Array([9]), indices: new Uint32Array([0]), normals: new Float32Array([1]) }, edgeData: null, vertexData: null },
+        ];
+        const executionOrder = ['box', 'top', 'socket', 'base']; // tracked features, none returned directly
+
+        const merged = mergeExecutionResults(cached, newResults, executionOrder);
+
+        expect(merged).toHaveLength(1);
+        expect(merged[0].id).toBe('gen-0');
+        expect(merged[0].fromCache).toBe(false);
+        expect(merged[0].meshData?.vertices[0]).toBe(9);
+    });
+
+    it('does not duplicate a tracked shape that is also in newResults', () => {
+        const cached = new Map();
+        const newResults = [
+            { id: 'shape2', meshData: null, edgeData: null, vertexData: null },
+        ];
+        const executionOrder = ['shape1', 'shape2'];
+
+        const merged = mergeExecutionResults(cached, newResults, executionOrder);
+
+        // shape2 appears once (from executionOrder), not appended again.
+        expect(merged.filter(r => r.id === 'shape2')).toHaveLength(1);
+    });
 });

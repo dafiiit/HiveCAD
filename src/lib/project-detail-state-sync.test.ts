@@ -121,4 +121,12 @@ describe('ProjectDetailView project switching', () => {
     expect((screen.getByPlaceholderText('Search in Child Project...') as HTMLInputElement).value).toBe('');
     expect(screen.getByText('Beta Model')).toBeTruthy();
   });
+
+  it('uses readable theme tokens for sub-project titles', () => {
+    renderView(rootProject);
+
+    const subProjectTitle = screen.getByRole('heading', { name: 'Child Project' });
+    expect(subProjectTitle.className).toContain('text-foreground');
+    expect(subProjectTitle.className).not.toContain('text-zinc-200');
+  });
 });

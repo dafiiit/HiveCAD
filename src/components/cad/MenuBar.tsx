@@ -13,6 +13,7 @@ import { useCADStore, useCADStoreApi } from "@/hooks/useCADStore";
 import { useUIStore } from "@/store/useUIStore";
 import { useGlobalStore } from "@/store/useGlobalStore";
 import { useTabManager } from "@/components/layout/TabContext";
+import { getDashboardTabId } from "@/components/layout/tabNavigation";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CloudConnectionsDialog } from "@/components/ui/CloudConnectionsDialog";
@@ -173,7 +174,15 @@ const MenuBar = ({ fileName, isSaved }: MenuBarProps) => {
         <div className="flex items-center gap-1 h-full">
           <button
             className="p-1 rounded transition-colors flex items-center justify-center hover:bg-secondary"
-            onClick={() => closeTab(activeTabId)}
+            onClick={() => {
+              const dashboardTabId = getDashboardTabId(tabs);
+              if (dashboardTabId) {
+                switchToTab(dashboardTabId);
+                return;
+              }
+
+              closeTab(activeTabId);
+            }}
             title="Back to Dashboard"
           >
             <img src="/favicon.ico" alt="HiveCAD Logo" className="w-5 h-5" />

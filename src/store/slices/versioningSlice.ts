@@ -421,9 +421,9 @@ export const createVersioningSlice: StateCreator<
         set({ projectThumbnails: { ...get().projectThumbnails, [name]: thumb } });
     },
 
-    removeThumbnail: (name) => {
+    removeThumbnail: (projectId, projectName) => {
         set({
-            projectThumbnails: removeProjectThumbnail(get().projectThumbnails, get().projectId, name),
+            projectThumbnails: removeProjectThumbnail(get().projectThumbnails, projectId, projectName),
         });
     },
 

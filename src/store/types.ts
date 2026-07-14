@@ -39,8 +39,8 @@ export interface CADObject {
     geometry?: THREE.BufferGeometry;
     edgeGeometry?: THREE.BufferGeometry;
     vertexGeometry?: THREE.BufferGeometry;
-    faceMapping?: { start: number; count: number; faceId: number }[];
-    edgeMapping?: { start: number; count: number; edgeId: number }[];
+    faceMapping?: { start: number; count: number; faceId: number; name?: string }[];
+    edgeMapping?: { start: number; count: number; edgeId: number; name?: string }[];
 
     /**
      * Extension-specific data storage.
@@ -82,12 +82,24 @@ export interface SketchPrimitive {
 export interface ObjectSlice {
     objects: CADObject[];
     selectedIds: Set<string>;
+    /**
+     * Durable names for face selections: selectionId ("obj:face-N") → stable
+     * MappedName. Lets a selection survive regeneration even when the volatile
+     * face index shifts. See lib/selection/durableSelection.
+     */
+    selectionNames: Map<string, string>;
     activeTool: ToolType;
     activeTab: 'SOLID' | 'SURFACE' | 'MESH' | 'SHEET' | 'PLASTIC' | 'MANAGE' | 'UTILITIES' | 'SKETCH' | string;
     code: string;
     activeOperation: { type: string; params: any } | null;
     pendingImport: { file: File; type: string; extension: string } | null;
     meshingProgress: { id: string; stage: string; progress: number } | null;
+    /**
+     * The typed document graph — source of truth when `code` is a flat feature
+     * program the model can fully represent (D1 flip), else null (imperative code
+     * stays code-as-truth). Kept in sync with `code` via lib/document/sync.
+     */
+    document: import('../lib/document/document').Document | null;
 
     addObject: (type: CADObject['type'] | string, options?: Partial<CADObject>) => void;
     updateObject: (id: string, updates: Partial<CADObject>) => Promise<void>;
@@ -100,7 +112,6 @@ export interface ObjectSlice {
     setActiveTab: (tab: ObjectSlice['activeTab']) => void;
     setCode: (code: string) => void;
     runCode: () => Promise<void>;
-    executeOperation: (type: 'join' | 'cut' | 'intersect') => Promise<void>;
     startOperation: (type: string) => void;
     updateOperationParams: (params: any) => void;
     cancelOperation: () => void;
@@ -215,7 +226,7 @@ export interface VersioningSlice {
     setProjectFolder: (folder: string) => void;
     closeProject: () => void;
     updateThumbnail: (name: string, thumbnail: string) => void;
-    removeThumbnail: (name: string) => void;
+    removeThumbnail: (projectId?: string | null, projectName?: string | null) => void;
     addComment: (text: string, position?: [number, number, number]) => void;
     deleteComment: (id: string) => void;
     toggleComments: () => void;

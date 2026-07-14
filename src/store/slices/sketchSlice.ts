@@ -1,6 +1,7 @@
 import { StateCreator } from 'zustand';
 import { toast } from 'sonner';
 import { CADState, SketchSlice } from '../types';
+import { deriveFromToolCode } from '../../lib/document/sync';
 import {
     createSketchObject,
     serializeSketch,
@@ -240,9 +241,10 @@ export const createSketchSlice: StateCreator<
         const newSketches = new Map(state.sketches);
         newSketches.set(sketchObj.id, sketchObj);
 
-        // Success
+        // Success — sketch is a tool mutation; sync the document (code-as-truth if
+        // the resulting program isn't flat).
         set({
-            code: result.code,
+            ...deriveFromToolCode(result.code),
             isSketchMode: false,
             sketchPoints: [],
             activeSketchPrimitives: [],

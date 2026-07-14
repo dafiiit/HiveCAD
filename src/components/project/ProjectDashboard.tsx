@@ -340,9 +340,9 @@ export function ProjectDashboard() {
                                                                         e.stopPropagation();
                                                                         setContextMenuFolder(contextMenuFolder === folder.id ? null : folder.id);
                                                                     }}
-                                                                    className="p-1 hover:bg-zinc-700 rounded-md transition-colors"
+                                                                    className="p-1 hover:bg-muted rounded-md transition-colors"
                                                                 >
-                                                                    <MoreVertical className="w-4 h-4 text-zinc-500 hover:text-white" />
+                                                                    <MoreVertical className="w-4 h-4 text-muted-foreground hover:text-foreground" />
                                                                 </button>
                                                             </div>
 
@@ -355,7 +355,7 @@ export function ProjectDashboard() {
                                                                             setRenameFolderDialog(folder);
                                                                             setRenameFolderInput(folder.name);
                                                                         }}
-                                                                        className="w-full text-left px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3"
+                                                                        className="w-full text-left px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3"
                                                                     >
                                                                         <div className="w-3" /> RENAME
                                                                     </button>
@@ -380,12 +380,12 @@ export function ProjectDashboard() {
                                                             )}
                                                         </div>
                                                         <div>
-                                                            <h4 className="font-bold text-zinc-200 group-hover:text-primary transition-colors truncate">{folder.name}</h4>
-                                                            <p className="text-[10px] text-zinc-500 font-medium">
+                                                            <h4 className="font-bold text-foreground group-hover:text-primary transition-colors truncate">{folder.name}</h4>
+                                                            <p className="text-[10px] text-muted-foreground font-medium">
                                                                 {userProjects.filter(p => p.folder === folder.id).length} 3D models
                                                             </p>
                                                             {folder.description && (
-                                                                <p className="text-[10px] text-zinc-500 truncate mt-0.5">{folder.description}</p>
+                                                                <p className="text-[10px] text-muted-foreground truncate mt-0.5">{folder.description}</p>
                                                             )}
                                                         </div>
                                                     </div>

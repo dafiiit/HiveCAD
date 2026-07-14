@@ -31,6 +31,13 @@ export const ExtensionStoreDialog: React.FC<ExtensionStoreDialogProps> = ({
     const [extensions, setExtensions] = useState<ExtensionEntry[]>([]);
     const [loading, setLoading] = useState(false);
 
+    useEffect(() => {
+        if (open) {
+            setView("browse");
+            setSearchQuery("");
+        }
+    }, [open]);
+
     const fetchExtensions = useCallback(async (query: string) => {
         setLoading(true);
         try {

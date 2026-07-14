@@ -255,11 +255,11 @@ export function ProjectDetailView({
                         >
                             <Folder className="w-6 h-6" style={{ color: sub.color }} />
                             <div>
-                                <h4 className="font-bold text-sm text-zinc-200 group-hover:text-primary transition-colors truncate">
+                                <h4 className="font-bold text-sm text-foreground group-hover:text-primary transition-colors truncate">
                                     {sub.name}
                                 </h4>
                                 {sub.description && (
-                                    <p className="text-[10px] text-zinc-500 truncate mt-0.5">{sub.description}</p>
+                                    <p className="text-[10px] text-muted-foreground truncate mt-0.5">{sub.description}</p>
                                 )}
                             </div>
                         </div>

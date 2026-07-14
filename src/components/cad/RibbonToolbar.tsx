@@ -238,17 +238,9 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
     toast.success(`Deleted ${ids.length} object(s)`);
   };
 
-  const handleJoin = () => {
-    storeApi.getState().executeOperation('join');
-  };
-
-  const handleCut = () => {
-    storeApi.getState().executeOperation('cut');
-  };
-
-  const handleIntersect = () => {
-    storeApi.getState().executeOperation('intersect');
-  };
+  const handleJoin = () => handleOperation('join');
+  const handleCut = () => handleOperation('cut');
+  const handleIntersect = () => handleOperation('intersect');
 
   const handleMeasure = () => {
     toast("Click two points to measure distance");
@@ -274,6 +266,9 @@ const RibbonToolbar = ({ activeTab, setActiveTab, isSketchMode, onFinishSketch }
     join: handleJoin,
     cut: handleCut,
     intersect: handleIntersect,
+    fillet: () => handleOperation('fillet'),
+    chamfer: () => handleOperation('chamfer'),
+    shell: () => handleOperation('shell'),
     measure: handleMeasure,
     import: handleImport,
     export: exportJSON,

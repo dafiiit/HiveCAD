@@ -1,12 +1,11 @@
 import { StateCreator } from 'zustand';
 import { toast } from 'sonner';
-import { initCAD } from '../../lib/cad-kernel';
 import { CodeManager } from '../../lib/code-manager';
 import { getDependencyGraph, mergeExecutionResults } from '../../lib/dependency-graph';
 import { toolRegistry } from '../../lib/tools';
 import { invokeToolCreate, invokeToolExecute } from '../../lib/tools/invoke';
 import { CADState, ObjectSlice, CADObject } from '../types';
-import { getReplicadWorkerPool } from '../../lib/workers/WorkerPool';
+import { getKernelWorker } from '../../lib/workers/KernelWorker';
 import {
     registerGeometries,
     disposeGeometries,
@@ -23,10 +22,22 @@ import {
     matchesImportFormat,
     type ImportFormat,
 } from '../../lib/storage/import';
+import { selectionNameOf, reconcileFaceSelections } from '../../lib/selection/durableSelection';
+import { documentFromFeatures } from '../../lib/document/fromCode';
+import { deriveFromToolCode, deriveFromCodeEdit } from '../../lib/document/sync';
 
 const DEFAULT_CODE = `const main = () => {
   return;
 };`;
+
+/**
+ * The document whose shapes currently populate the worker's shape store and the
+ * main-thread mesh cache. Feature ids (`shape1`, `shape2`, …) collide across
+ * documents, so both caches must be reset together when the active document
+ * changes — otherwise an incremental recompute could reuse the previous
+ * document's geometry. `null` until the first run.
+ */
+let activeRecomputeSession: string | null = null;
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 const WARN_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -41,6 +52,8 @@ export const createObjectSlice: StateCreator<
 > = (set, get) => ({
     objects: [],
     selectedIds: new Set(),
+    selectionNames: new Map(),
+    document: null,
     activeTool: 'select',
     activeTab: 'SOLID',
     code: DEFAULT_CODE,
@@ -49,13 +62,8 @@ export const createObjectSlice: StateCreator<
     meshingProgress: null,
 
     addObject: async (type: CADObject['type'] | string, options: Partial<CADObject> = {}) => {
-        try {
-            await initCAD();
-        } catch (e) {
-            console.error("Failed to initialize CAD kernel:", e);
-            return;
-        }
-
+        // No main-thread kernel init here: the kernel lives in the worker, and
+        // nothing on this path calls into it directly.
         const currentState = get();
         const cm = new CodeManager(currentState.code);
         const tool = toolRegistry.get(type);
@@ -102,7 +110,12 @@ export const createObjectSlice: StateCreator<
 
                             // Check the object's type
                             if (reqs.allowedTypes?.includes(obj.type as any)) return false;
-                            const isSolid = ['box', 'cylinder', 'sphere', 'torus', 'coil', 'extrusion', 'revolve'].includes(obj.type);
+                            // Primitives and every operation that yields a body — the
+                            // result of a boolean/fillet/chamfer/shell is itself a solid.
+                            const isSolid = [
+                                'box', 'cylinder', 'sphere', 'torus', 'coil', 'extrusion', 'revolve',
+                                'fuse', 'cut', 'intersect', 'fillet', 'chamfer', 'shell',
+                            ].includes(obj.type);
                             const isSketch = obj.type === 'sketch' || toolRegistry.get(obj.type)?.metadata.category === 'sketch';
                             if (reqs.allowedTypes?.includes('solid') && isSolid) return false;
                             if (reqs.allowedTypes?.includes('sketch') && isSketch) return false;
@@ -149,7 +162,9 @@ export const createObjectSlice: StateCreator<
             }
         }
 
-        set({ code: cm.getCode() });
+        // Tool mutation: adopt the document as source of truth (flat code) or fall
+        // back to code-as-truth (imperative code). See lib/document/sync.
+        set({ ...deriveFromToolCode(cm.getCode()) });
         await get().runCode();
         get().pushToHistory('create', `Add ${type}`);
         get().triggerSave();
@@ -175,7 +190,7 @@ export const createObjectSlice: StateCreator<
                 const newDims = { ...d, ...updates.dimensions };
                 cm.updateOperation(id, opIndex, [newDims.radius]);
             }
-            set({ code: cm.getCode() });
+            set({ ...deriveFromToolCode(cm.getCode()) });
             await get().runCode();
             get().pushToHistory('modify', `Update ${id}`);
             get().triggerSave();
@@ -223,7 +238,7 @@ export const createObjectSlice: StateCreator<
         cm.removeFeature(id);
         const newCode = cm.getCode();
         if (newCode !== state.code) {
-            set({ code: newCode });
+            set({ ...deriveFromToolCode(newCode) });
             await get().runCode();
             get().pushToHistory('delete', `Delete ${id}`);
             get().triggerSave();
@@ -254,24 +269,30 @@ export const createObjectSlice: StateCreator<
         // Additive selection: always toggle the clicked feature on/off.
         // This allows marking multiple features (faces, edges, vertices)
         // simultaneously. Background click uses clearSelection() instead.
+        const wasSelected = state.selectedIds.has(id);
         const newSelected = new Set(state.selectedIds);
-        if (newSelected.has(id)) {
+        const newNames = new Map(state.selectionNames);
+        if (wasSelected) {
             newSelected.delete(id);
+            newNames.delete(id);
         } else {
             newSelected.add(id);
+            // Record the entity's stable name so the selection survives regeneration.
+            const name = selectionNameOf(id, state.objects);
+            if (name) newNames.set(id, name);
         }
 
         const updatedObjects = state.objects.map(obj => ({
             ...obj,
             selected: newSelected.has(obj.id),
         }));
-        set({ objects: updatedObjects, selectedIds: newSelected });
+        set({ objects: updatedObjects, selectedIds: newSelected, selectionNames: newNames });
     },
 
     clearSelection: () => {
         const state = get();
         const updatedObjects = state.objects.map(obj => ({ ...obj, selected: false }));
-        set({ objects: updatedObjects, selectedIds: new Set() });
+        set({ objects: updatedObjects, selectedIds: new Set(), selectionNames: new Map() });
     },
 
     // todo:everything Implement duplicate selection in Code First.
@@ -284,8 +305,10 @@ export const createObjectSlice: StateCreator<
     })),
     setActiveTab: (tab) => set({ activeTab: tab }),
     setCode: (code) => {
-        set({ code, isSaved: false });
-        // We don't push to history on every character, 
+        // Code-first edit: keep the user's text verbatim, derive the document as a
+        // view (null when the code isn't representable). Preserves comments/formatting.
+        set({ ...deriveFromCodeEdit(code), isSaved: false });
+        // We don't push to history on every character,
         // usually history is pushed after runCode (manual or auto-run)
         get().triggerSave();
     },
@@ -294,10 +317,20 @@ export const createObjectSlice: StateCreator<
         const state = get();
         try {
             const cm = new CodeManager(state.code);
-            const executableCode = cm.transformForExecution();
+            const executableCode = cm.transformForIncremental();
 
             // DAG-based incremental execution
             const depGraph = getDependencyGraph();
+
+            // Reset both caches together when the active document changes, so the
+            // worker's persistent shape store and depGraph's mesh cache never
+            // disagree about a feature id shared between documents.
+            const sessionId = state.projectId ?? 'default';
+            if (sessionId !== activeRecomputeSession) {
+                depGraph.clearCache();
+                activeRecomputeSession = sessionId;
+            }
+
             const analysis = depGraph.analyze(state.code);
             const plan = depGraph.createExecutionPlan(state.code, analysis);
 
@@ -309,14 +342,14 @@ export const createObjectSlice: StateCreator<
                 console.log(`[Incremental] Executing ${plan.toExecute.length} features, reusing ${plan.toCache.length} from cache`);
             }
 
-            const workerPool = getReplicadWorkerPool();
-            if (!workerPool) {
+            const kernel = getKernelWorker();
+            if (!kernel) {
                 toast.error('Web workers are not available in this environment');
                 return;
             }
 
-            const result = await workerPool.execute(
-                { type: 'EXECUTE', code: executableCode },
+            const result = await kernel.execute(
+                { type: 'RECOMPUTE', code: executableCode, dirtyIds: plan.toExecute, sessionId },
                 (progressData) => {
                     if (progressData.type === 'MESH_PROGRESS') {
                         set({
@@ -331,19 +364,30 @@ export const createObjectSlice: StateCreator<
             );
             set({ meshingProgress: null });
 
-            // Merge new results with cached results
+            // Merge new results with cached results. Drive the render set off the
+            // shapes main() actually returned (reported by the worker), not the
+            // full feature list — so a feature that is still declared but no longer
+            // returned (e.g. a solid consumed by a boolean) stops rendering instead
+            // of lingering as a ghost from the mesh cache.
             const executedResults = result.meshes;
+            const renderOrder: string[] = result.returnedIds ?? analysis.executionOrder;
             const mergedResults = mergeExecutionResults(
                 cachedResults,
                 executedResults,
-                analysis.executionOrder
+                renderOrder
             );
 
             // Update cache with newly executed results
             depGraph.updateCache(executedResults);
 
             const shapesArray = mergedResults;
-            // Record if this was a significant change (already handled by pushToHistory)
+
+            // Interpret the script into a typed document, and read each object's
+            // type/label from it — the principled replacement for the old
+            // `lastOpName.includes('box')` guessing, which mislabelled booleans,
+            // fillets, chamfers and shells all as "box".
+            const doc = documentFromFeatures(cm.getFeatures());
+
             const newObjects: CADObject[] = shapesArray.map((item: { id: string; meshData?: any; edgeData?: any; vertexData?: any; faceMapping?: any; edgeMapping?: any; fromCache?: boolean }, index: number) => {
                 const astId = item.id;
                 const existing = state.objects.find(o => o.id === astId);
@@ -362,24 +406,13 @@ export const createObjectSlice: StateCreator<
                     vertexGeometry.computeBoundingSphere();
                 }
 
-                let type: CADObject['type'] = existing?.type || 'box';
-                const feature = cm.getFeatures().find(f => f.id === astId);
-                if (feature && feature.operations.length > 0) {
-                    const lastOp = feature.operations[feature.operations.length - 1];
-                    const lastOpName = lastOp.name.toLowerCase();
-                    if (lastOpName.includes('box')) type = 'box';
-                    else if (lastOpName.includes('cylinder')) type = 'cylinder';
-                    else if (lastOpName.includes('sphere')) type = 'sphere';
-                    else if (lastOpName.includes('torus')) type = 'torus';
-                    else if (lastOpName.includes('extrude')) type = 'extrusion';
-                    else if (lastOpName.includes('revolve')) type = 'revolve';
-                    else if (lastOpName.includes('draw') || lastOpName.includes('sketch')) type = 'sketch';
-                    else if (lastOpName.includes('plane')) type = 'plane';
-                }
+                const docObj = doc.getObject(astId);
+                const type: CADObject['type'] = docObj?.type || existing?.type || 'box';
+
                 const dimensions = { ...(existing?.dimensions || {}) };
-                const featurePlaneOp = feature?.operations.find(op => op.name === 'sketchOnPlane');
-                if (featurePlaneOp && featurePlaneOp.args.length > 0 && featurePlaneOp.args[0].type === 'StringLiteral') {
-                    dimensions.sketchPlane = featurePlaneOp.args[0].value;
+                const planeProp = docObj?.properties.plane;
+                if (docObj?.type === 'sketch' && planeProp?.kind === 'text') {
+                    dimensions.sketchPlane = planeProp.value;
                 }
                 return {
                     id: astId,
@@ -411,37 +444,25 @@ export const createObjectSlice: StateCreator<
             });
 
             newObjects.push(...getOriginAxes());
-            set({ objects: newObjects });
+
+            // Re-resolve face selections against the regenerated geometry: a face
+            // that moved to a new index keeps its selection, a face that vanished
+            // is dropped. This is the Topological Naming fix at the selection layer.
+            // Read the latest selection (runCode is async).
+            const cur = get();
+            const rec = reconcileFaceSelections(cur.selectedIds, cur.selectionNames, newObjects);
+            if (rec.changed) {
+                newObjects.forEach(o => { o.selected = rec.selectedIds.has(o.id); });
+                set({ objects: newObjects, selectedIds: rec.selectedIds, selectionNames: rec.selectionNames });
+            } else {
+                set({ objects: newObjects });
+            }
         } catch (e: unknown) {
             console.error("Error executing code:", e);
+            set({ meshingProgress: null });
             const errorMessage = e instanceof Error ? e.message : String(e);
             toast.error(`Error: ${errorMessage}`);
         }
-    },
-
-    executeOperation: async (type) => {
-        const state = get();
-        const selectedIds = [...state.selectedIds];
-        if (selectedIds.length < 2) {
-            toast.error("Select at least 2 objects for this operation");
-            return;
-        }
-        const cm = new CodeManager(state.code);
-        const primaryId = selectedIds[0];
-        const secondaryIds = selectedIds.slice(1);
-        const methodMap = { join: 'fuse', cut: 'cut', intersect: 'intersect' };
-        const methodName = methodMap[type];
-        secondaryIds.forEach(id => {
-            cm.addOperation(primaryId, methodName, [{ type: 'raw', content: id }]);
-        });
-        secondaryIds.forEach(id => {
-            cm.removeFeature(id);
-        });
-        set({ code: cm.getCode() });
-        await get().runCode();
-        get().pushToHistory('modify', `${type} operation`);
-        get().triggerSave();
-        toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} operation applied`);
     },
 
     startOperation: (type) => {
@@ -463,6 +484,17 @@ export const createObjectSlice: StateCreator<
             }
         };
         const params = getDefaultDimensions(type);
+
+        // Pre-fill boolean operands from an existing selection so a preselection
+        // shows up in the dialog (instead of "0 ausgewählt"); the pickers stay
+        // editable so selecting in the dialog still works.
+        if (type === 'join' || type === 'cut' || type === 'intersect') {
+            const base = (id: string) => id.split(':')[0];
+            const bodies = [...new Set([...state.selectedIds].map(base))];
+            if (bodies[0]) params.target = bodies[0];
+            if (bodies[1]) params.tool = bodies[1];
+        }
+
         set({ activeOperation: { type, params } });
     },
 
@@ -480,6 +512,21 @@ export const createObjectSlice: StateCreator<
         const state = get();
         if (!state.activeOperation) return;
         const { type, params } = state.activeOperation;
+
+        // Booleans need two distinct bodies. Validate here so the user gets clear
+        // feedback before we mutate the code (the tool itself is a pure no-op when
+        // operands are missing).
+        if (type === 'join' || type === 'cut' || type === 'intersect') {
+            const base = (id: string) => id.split(':')[0];
+            const operands = [...new Set(
+                [params?.target, params?.tool].filter(Boolean).map((id: string) => base(id))
+            )];
+            if (operands.length < 2) {
+                toast.error('Select two different bodies for this operation');
+                return;
+            }
+        }
+
         if ((type === 'extrusion' || type === 'extrude' || type === 'revolve') && params?.selectedShape) {
             const newSelectedIds = new Set([params.selectedShape]);
             set({ selectedIds: newSelectedIds });
@@ -490,13 +537,13 @@ export const createObjectSlice: StateCreator<
 
     exportSTL: async () => {
         const state = get();
-        const workerPool = getReplicadWorkerPool();
-        if (!workerPool) {
+        const kernel = getKernelWorker();
+        if (!kernel) {
             toast.error('Web workers are not available in this environment');
             return;
         }
 
-        const result = await workerPool.execute({ type: 'EXPORT_STL', code: state.code });
+        const result = await kernel.execute({ type: 'EXPORT_STL', code: state.code });
         const blob = result.blob;
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -509,13 +556,13 @@ export const createObjectSlice: StateCreator<
 
     exportSTEP: async () => {
         const state = get();
-        const workerPool = getReplicadWorkerPool();
-        if (!workerPool) {
+        const kernel = getKernelWorker();
+        if (!kernel) {
             toast.error('Web workers are not available in this environment');
             return;
         }
 
-        const result = await workerPool.execute({ type: 'EXPORT_STEP', code: state.code });
+        const result = await kernel.execute({ type: 'EXPORT_STEP', code: state.code });
         const blob = result.blob;
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
